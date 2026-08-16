@@ -22,6 +22,7 @@ install -m 0755 "${APP}/lib/admin_dispatch.sh" "${LIBEXEC}/ywd-hotspot-admin"
 chmod 0755 "${APP}/lib/setup_server.py" "${APP}/lib/setup_admin.py" "${APP}/lib/setup_entry.sh" "${APP}/lib/admin_dispatch.sh"
 
 install -d -m 0700 "${ROOTFS_DIR}/var/lib/ywd-hotspot/setup-tls"
+printf '%s\n' 'M4-firstboot-dev' > "${ROOTFS_DIR}/etc/ywd-hotspot/os-version"
 on_chroot <<'EOF'
 set -e
 chown -R ywd-hotspot:ywd-hotspot /var/lib/ywd-hotspot/setup-tls

@@ -5,16 +5,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OS_DIR="$ROOT_DIR/os"
 PIN_FILE="$OS_DIR/pi-gen/PI-GEN-COMMIT"
 PI_GEN_DIR="$OS_DIR/.pi-gen"
-WORK_DIR="$OS_DIR/work/m2-runtime"
+WORK_DIR="$OS_DIR/work/m3-network"
 DEPLOY_DIR="$OS_DIR/deploy"
 LOCAL_DIR="$OS_DIR/local"
 LOCAL_WIFI="$LOCAL_DIR/provision.env"
 DEV_KEY="$LOCAL_DIR/ywd-os-dev_ed25519"
 HEADLESS_STAGE_SRC="$OS_DIR/pi-gen/stage2/10-ywd-headless"
 HEADLESS_STAGE_DST="$PI_GEN_DIR/stage2/10-ywd-headless"
+NETWORK_STAGE_SRC="$OS_DIR/pi-gen/stage2/15-ywd-network"
+NETWORK_STAGE_DST="$PI_GEN_DIR/stage2/15-ywd-network"
 RUNTIME_STAGE_SRC="$OS_DIR/pi-gen/stage2/20-ywd-runtime"
 RUNTIME_STAGE_DST="$PI_GEN_DIR/stage2/20-ywd-runtime"
-IMG_NAME='ywd-hotspot-os-m2-runtime'
+IMG_NAME='ywd-hotspot-os-m3-network'
 
 if [[ ! -f "$PIN_FILE" ]]; then
   echo "ERROR: missing $PIN_FILE" >&2
@@ -27,7 +29,7 @@ if [[ ! "$PI_GEN_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 
-for stage in "$HEADLESS_STAGE_SRC" "$RUNTIME_STAGE_SRC"; do
+for stage in "$HEADLESS_STAGE_SRC" "$NETWORK_STAGE_SRC" "$RUNTIME_STAGE_SRC"; do
   if [[ ! -d "$stage" ]]; then
     echo "ERROR: missing custom OS stage: $stage" >&2
     exit 1
@@ -44,8 +46,8 @@ SOURCE_COMMIT_SHORT="${SOURCE_COMMIT_SHORT:-unknown}"
 SOURCE_COMMIT_DATE="${SOURCE_COMMIT_DATE:-unknown}"
 
 printf '==================================================\n'
-printf ' YWD-Hotspot OS Image Builder - Milestone 2\n'
-printf ' Hotspot Runtime / RF Safe by Default\n'
+printf ' YWD-Hotspot OS Image Builder - Milestone 3\n'
+printf ' Network Recovery + Phone WiFi Setup\n'
 printf '==================================================\n\n'
 printf 'Source repo:        merberg-ai/ywd-hotspot\n'
 printf 'Source branch:      %s\n' "$SOURCE_BRANCH"
@@ -57,14 +59,15 @@ printf 'Image:              %s\n' "$IMG_NAME"
 printf 'pi-gen commit:      %s\n' "$PI_GEN_COMMIT"
 printf 'Work directory:     %s\n' "$WORK_DIR"
 printf 'Deploy directory:   %s\n\n' "$DEPLOY_DIR"
-printf 'M2 includes:\n'
-printf '  - M1.1 OLED, WiFi provisioning, mDNS and key-only SSH\n'
-printf '  - current YWD-Hotspot app and WebUI\n'
-printf '  - pinned MMDVM-Host and DMRGateway armhf binaries\n'
-printf '  - Pi Zero W PL011 UART configuration\n'
-printf '  - diagnostics, updater plumbing and persistent journal\n'
-printf '\nSAFETY: MMDVM-Host and DMRGateway are DISABLED at boot.\n'
-printf '        BrandMeister is disabled in the placeholder config.\n\n'
+printf 'M3 includes:\n'
+printf '  - M2 YWD-Hotspot runtime with RF disabled\n'
+printf '  - bounded saved-WiFi connection attempts\n'
+printf '  - automatic setup/recovery AP at 10.42.0.1\n'
+printf '  - per-device WPA setup password shown on OLED\n'
+printf '  - phone WiFi setup page with visible/manual/hidden SSID support\n'
+printf '  - automatic return to recovery AP after failed credentials\n'
+printf '\nSAFETY: MMDVM-Host and DMRGateway remain DISABLED at boot.\n'
+printf '        BrandMeister remains disabled in the placeholder config.\n\n'
 
 mkdir -p "$OS_DIR" "$WORK_DIR" "$DEPLOY_DIR" "$LOCAL_DIR"
 chmod 0700 "$LOCAL_DIR"
@@ -82,20 +85,25 @@ git -C "$PI_GEN_DIR" checkout --quiet --detach "$PI_GEN_COMMIT"
 git -C "$PI_GEN_DIR" reset --hard --quiet "$PI_GEN_COMMIT"
 git -C "$PI_GEN_DIR" clean -fdx --quiet
 
-# Recreate our custom stage destinations from scratch after cleaning the pinned
-# upstream tree. Copy directory CONTENTS (SRC/.) instead of relying on cp's
-# destination-directory semantics, which can accidentally create nested stages
-# when a destination exists from an interrupted run.
-rm -rf "$HEADLESS_STAGE_DST" "$RUNTIME_STAGE_DST"
-mkdir -p "$HEADLESS_STAGE_DST" "$RUNTIME_STAGE_DST"
-cp -a "$HEADLESS_STAGE_SRC/." "$HEADLESS_STAGE_DST/"
-cp -a "$RUNTIME_STAGE_SRC/." "$RUNTIME_STAGE_DST/"
+# Recreate custom stages after cleaning the pinned upstream tree.
+for pair in \
+  "$HEADLESS_STAGE_SRC|$HEADLESS_STAGE_DST" \
+  "$NETWORK_STAGE_SRC|$NETWORK_STAGE_DST" \
+  "$RUNTIME_STAGE_SRC|$RUNTIME_STAGE_DST"; do
+  src="${pair%%|*}"
+  dst="${pair#*|}"
+  rm -rf "$dst"
+  mkdir -p "$dst"
+  cp -a "$src/." "$dst/"
+done
 chmod +x "$HEADLESS_STAGE_DST/01-run.sh"
 chmod +x "$HEADLESS_STAGE_DST/files/ywd-headless-oled.py"
 chmod +x "$HEADLESS_STAGE_DST/files/ywd-headless-provision.sh"
+chmod +x "$NETWORK_STAGE_DST/01-run.sh"
+chmod +x "$NETWORK_STAGE_DST/files/ywd-network-manager.py"
 chmod +x "$RUNTIME_STAGE_DST/01-run.sh"
 
-# Build the M2 appliance payload from the exact current YWD-Hotspot source tree.
+# Build the appliance payload from this exact YWD-Hotspot source tree.
 RUNTIME_APP="$RUNTIME_STAGE_DST/files/app"
 rm -rf "$RUNTIME_APP"
 mkdir -p "$RUNTIME_APP"
@@ -111,11 +119,12 @@ mkdir -p "$RUNTIME_APP/assets/branding"
 install -m 0644 "$ROOT_DIR/assets/branding/ywd-hotspot-badge-256.webp" \
   "$RUNTIME_APP/assets/branding/ywd-hotspot-badge-256.webp"
 
-# The runtime stage sources this metadata and records it in build-info.json.
+# Runtime provenance and OS milestone metadata.
 {
   printf 'YWD_GIT_BRANCH=%q\n' "$SOURCE_BRANCH"
   printf 'YWD_GIT_COMMIT=%q\n' "$SOURCE_COMMIT"
   printf 'YWD_GIT_COMMIT_DATE=%q\n' "$SOURCE_COMMIT_DATE"
+  printf 'YWD_OS_VERSION=%q\n' 'M3-network-dev'
 } > "$RUNTIME_STAGE_DST/files/build.env"
 chmod 0644 "$RUNTIME_STAGE_DST/files/build.env"
 
@@ -124,19 +133,23 @@ if [[ -f "$LOCAL_WIFI" ]]; then
   source "$LOCAL_WIFI"
   if [[ -n "${WIFI_SSID:-}" ]]; then
     install -m 0600 "$LOCAL_WIFI" "$HEADLESS_STAGE_DST/files/provision.env"
-    printf '[INFO] WiFi provisioning: %s\n' "$WIFI_SSID"
+    printf '[INFO] Initial WiFi provisioning: %s\n' "$WIFI_SSID"
   else
-    printf '[INFO] WiFi provisioning file exists but has no SSID; skipping.\n'
+    printf '[INFO] WiFi provisioning file exists but has no SSID; M3 will enter setup AP.\n'
   fi
 else
-  printf '[INFO] No local WiFi provisioning configured. OLED will show WIFI NO CONFIG.\n'
-  printf '       Optional setup: bash os/builder/CONFIGURE-WIFI.sh\n'
+  printf '[INFO] No local WiFi provisioning configured. M3 will enter setup AP.\n'
+  printf '       Optional build-time setup: bash os/builder/CONFIGURE-WIFI.sh\n'
 fi
 
-# Verify the exact files the M2 stage requires BEFORE spending time inside
-# pi-gen. This also makes an interrupted/nested custom-stage copy obvious.
-echo '[3/8] Verifying injected M2 payload...'
+# Catch broken custom-stage wiring before the expensive pi-gen run.
+echo '[3/8] Verifying injected M3 payload...'
 required_payload=(
+  "$HEADLESS_STAGE_DST/files/ywd-headless-oled.py"
+  "$NETWORK_STAGE_DST/00-packages"
+  "$NETWORK_STAGE_DST/01-run.sh"
+  "$NETWORK_STAGE_DST/files/ywd-network-manager.py"
+  "$NETWORK_STAGE_DST/files/ywd-network-manager.service"
   "$RUNTIME_STAGE_DST/01-run.sh"
   "$RUNTIME_STAGE_DST/files/build.env"
   "$RUNTIME_APP/pins.env"
@@ -149,14 +162,15 @@ required_payload=(
 )
 for f in "${required_payload[@]}"; do
   if [[ ! -f "$f" ]]; then
-    echo "ERROR: injected M2 payload is incomplete: $f" >&2
-    echo "Runtime stage contents:" >&2
-    find "$RUNTIME_STAGE_DST" -maxdepth 4 -type f -printf '  %P\n' | sort >&2 || true
+    echo "ERROR: injected M3 payload is incomplete: $f" >&2
     exit 1
   fi
 done
-printf '[OK] M2 payload staged: %s files, app version %s\n' \
-  "$(find "$RUNTIME_APP" -type f | wc -l)" "$(tr -d '\r\n' < "$RUNTIME_APP/VERSION")"
+python3 -m py_compile \
+  "$HEADLESS_STAGE_DST/files/ywd-headless-oled.py" \
+  "$NETWORK_STAGE_DST/files/ywd-network-manager.py"
+printf '[OK] M3 payload staged and Python preflight passed; app version %s\n' \
+  "$(tr -d '\r\n' < "$RUNTIME_APP/VERSION")"
 
 if ! command -v ssh-keygen >/dev/null 2>&1; then
   echo 'ERROR: ssh-keygen is required on the builder host (install openssh-client).' >&2
@@ -173,13 +187,11 @@ else
 fi
 
 PUBKEY="$(cat "$DEV_KEY.pub")"
-# pi-gen requires a password when retaining a fixed first user. Generate a
-# per-build random value, then disable password SSH completely below.
 DEV_PASS="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
 
 cat > "$PI_GEN_DIR/config" <<EOF
 IMG_NAME='$IMG_NAME'
-PI_GEN_RELEASE='YWD-Hotspot OS M2 runtime development image'
+PI_GEN_RELEASE='YWD-Hotspot OS M3 network recovery development image'
 RELEASE='trixie'
 ARCH='armhf'
 TARGET_HOSTNAME='ywd-hotspot'
@@ -199,21 +211,19 @@ DEPLOY_COMPRESSION='xz'
 COMPRESSION_LEVEL=6
 WORK_DIR='$WORK_DIR'
 DEPLOY_DIR='$DEPLOY_DIR'
-# M2 is still a Lite appliance image. Explicitly limiting STAGE_LIST prevents
-# desktop/full image exporters from being registered.
 STAGE_LIST="\$BASE_DIR/stage0 \$BASE_DIR/stage1 \$BASE_DIR/stage2"
 EOF
 chmod 0600 "$PI_GEN_DIR/config"
 
-# Do not mix a failed/partial M2 export with this run. M1/M1.1 artifacts remain.
+# Preserve older milestone artifacts while removing only stale M3 output.
 find "$DEPLOY_DIR" -maxdepth 1 -type f -name "*${IMG_NAME}*" -delete
-rm -f "$DEPLOY_DIR/SHA256SUMS-M2"
+rm -f "$DEPLOY_DIR/SHA256SUMS-M3"
 
 echo '[5/8] Running builder doctor...'
 bash "$OS_DIR/builder/DOCTOR.sh"
 
-echo '[6/8] Building Raspberry Pi OS Lite + YWD-Hotspot runtime...'
-echo '      The MMDVM-Host/DMRGateway compile step may be quiet for a while.'
+echo '[6/8] Building Raspberry Pi OS Lite + YWD-Hotspot M3...'
+echo '      MMDVM-Host/DMRGateway compilation and final xz compression may be quiet.'
 if [[ "$EUID" -eq 0 ]]; then
   (cd "$PI_GEN_DIR" && ./build.sh)
 else
@@ -226,14 +236,14 @@ echo '[7/8] Generating SHA-256 checksum and verifying compressed image...'
   shopt -s nullglob
   files=( *"$IMG_NAME"*.img *"$IMG_NAME"*.img.xz *"$IMG_NAME"*.img.gz *"$IMG_NAME"*.zip )
   if (( ${#files[@]} == 0 )); then
-    echo 'ERROR: pi-gen completed but no M2 deploy image was found.' >&2
+    echo 'ERROR: pi-gen completed but no M3 deploy image was found.' >&2
     exit 1
   fi
-  sha256sum "${files[@]}" > SHA256SUMS-M2
+  sha256sum "${files[@]}" > SHA256SUMS-M3
 )
-M2_XZ="$(find "$DEPLOY_DIR" -maxdepth 1 -type f -name "*${IMG_NAME}*.img.xz" -print -quit)"
-if [[ -n "$M2_XZ" ]]; then
-  xz -t "$M2_XZ"
+M3_XZ="$(find "$DEPLOY_DIR" -maxdepth 1 -type f -name "*${IMG_NAME}*.img.xz" -print -quit)"
+if [[ -n "$M3_XZ" ]]; then
+  xz -t "$M3_XZ"
   echo '[OK] XZ integrity test passed.'
 else
   echo '[INFO] No .img.xz artifact found; skipping xz integrity test.'
@@ -241,16 +251,15 @@ fi
 
 echo '[8/8] Build artifacts ready.'
 printf '\n==================================================\n'
-printf ' M2 BUILD COMPLETE\n'
+printf ' M3 BUILD COMPLETE\n'
 printf '==================================================\n'
 printf 'Artifacts:\n'
-find "$DEPLOY_DIR" -maxdepth 1 -type f \( -name "*${IMG_NAME}*" -o -name 'SHA256SUMS-M2' \) -printf '  %f\n' | sort
-printf '\nAfter flashing and booting:\n'
+find "$DEPLOY_DIR" -maxdepth 1 -type f \( -name "*${IMG_NAME}*" -o -name 'SHA256SUMS-M3' \) -printf '  %f\n' | sort
+printf '\nNormal connected mode:\n'
 printf '  WebUI: http://ywd-hotspot.local:8080/\n'
 printf '  SSH:   ssh -i %s ywd@ywd-hotspot.local\n' "$DEV_KEY"
-printf '\nExpected safety state:\n'
-printf '  ywd-dashboard.service   active\n'
-printf '  ywd-activity.service    active\n'
-printf '  ywd-mmdvmhost.service  disabled/inactive\n'
-printf '  ywd-dmrgateway.service  disabled/inactive\n'
-printf '\nDo not enable RF until the real station/DMR/radio configuration has been applied.\n'
+printf '\nSetup/recovery mode when normal WiFi is unavailable:\n'
+printf '  OLED shows SSID + per-device AP password\n'
+printf '  Connect phone to YWD-Hotspot-xxxx\n'
+printf '  Open http://10.42.0.1/\n'
+printf '\nRF remains disabled until real station/radio configuration is explicitly applied.\n'

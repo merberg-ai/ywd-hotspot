@@ -30,11 +30,11 @@ install -m 0644 files/ywd-motd.sh "${ROOTFS_DIR}/etc/profile.d/90-ywd-motd.sh"
 
 install -m 0644 files/issue "${ROOTFS_DIR}/etc/issue"
 install -m 0644 files/issue "${ROOTFS_DIR}/etc/issue.net"
+install -m 0644 files/motd "${ROOTFS_DIR}/etc/motd"
 
-# Suppress the stock Debian/Raspberry Pi MOTD clutter. YWD's dynamic banner is
-# printed from /etc/profile.d only for interactive terminals, so scp/sftp and
-# non-interactive SSH commands remain clean.
-: > "${ROOTFS_DIR}/etc/motd"
+# Suppress stock dynamic MOTD fragments. YWD's live status is printed from
+# /etc/profile.d only for interactive terminals, so scp/sftp and noninteractive
+# SSH commands remain clean while PAM may still show our static /etc/motd.
 if [ -d "${ROOTFS_DIR}/etc/update-motd.d" ]; then
   find "${ROOTFS_DIR}/etc/update-motd.d" -maxdepth 1 -type f -exec chmod -x {} + || true
 fi

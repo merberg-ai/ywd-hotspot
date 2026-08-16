@@ -82,9 +82,14 @@ git -C "$PI_GEN_DIR" checkout --quiet --detach "$PI_GEN_COMMIT"
 git -C "$PI_GEN_DIR" reset --hard --quiet "$PI_GEN_COMMIT"
 git -C "$PI_GEN_DIR" clean -fdx --quiet
 
-# Re-inject our custom stages after cleaning the pinned upstream tree.
-cp -a "$HEADLESS_STAGE_SRC" "$HEADLESS_STAGE_DST"
-cp -a "$RUNTIME_STAGE_SRC" "$RUNTIME_STAGE_DST"
+# Recreate our custom stage destinations from scratch after cleaning the pinned
+# upstream tree. Copy directory CONTENTS (SRC/.) instead of relying on cp's
+# destination-directory semantics, which can accidentally create nested stages
+# when a destination exists from an interrupted run.
+rm -rf "$HEADLESS_STAGE_DST" "$RUNTIME_STAGE_DST"
+mkdir -p "$HEADLESS_STAGE_DST" "$RUNTIME_STAGE_DST"
+cp -a "$HEADLESS_STAGE_SRC/." "$HEADLESS_STAGE_DST/"
+cp -a "$RUNTIME_STAGE_SRC/." "$RUNTIME_STAGE_DST/"
 chmod +x "$HEADLESS_STAGE_DST/01-run.sh"
 chmod +x "$HEADLESS_STAGE_DST/files/ywd-headless-oled.py"
 chmod +x "$HEADLESS_STAGE_DST/files/ywd-headless-provision.sh"
@@ -99,6 +104,7 @@ for item in \
   INSTALL.sh INSTALL-core.sh UPDATE.sh UPDATE-core.sh UNINSTALL.sh \
   GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh \
   VERSION pins.env README.md MANIFEST.txt; do
+  [[ -e "$ROOT_DIR/$item" ]] || { echo "ERROR: runtime payload source missing: $item" >&2; exit 1; }
   cp -a "$ROOT_DIR/$item" "$RUNTIME_APP/"
 done
 mkdir -p "$RUNTIME_APP/assets/branding"
@@ -127,18 +133,43 @@ else
   printf '       Optional setup: bash os/builder/CONFIGURE-WIFI.sh\n'
 fi
 
+# Verify the exact files the M2 stage requires BEFORE spending time inside
+# pi-gen. This also makes an interrupted/nested custom-stage copy obvious.
+echo '[3/8] Verifying injected M2 payload...'
+required_payload=(
+  "$RUNTIME_STAGE_DST/01-run.sh"
+  "$RUNTIME_STAGE_DST/files/build.env"
+  "$RUNTIME_APP/pins.env"
+  "$RUNTIME_APP/VERSION"
+  "$RUNTIME_APP/lib/dashboard.py"
+  "$RUNTIME_APP/lib/generate-config.py"
+  "$RUNTIME_APP/web/index.html"
+  "$RUNTIME_APP/systemd/ywd-dashboard.service"
+  "$RUNTIME_APP/assets/branding/ywd-hotspot-badge-256.webp"
+)
+for f in "${required_payload[@]}"; do
+  if [[ ! -f "$f" ]]; then
+    echo "ERROR: injected M2 payload is incomplete: $f" >&2
+    echo "Runtime stage contents:" >&2
+    find "$RUNTIME_STAGE_DST" -maxdepth 4 -type f -printf '  %P\n' | sort >&2 || true
+    exit 1
+  fi
+done
+printf '[OK] M2 payload staged: %s files, app version %s\n' \
+  "$(find "$RUNTIME_APP" -type f | wc -l)" "$(tr -d '\r\n' < "$RUNTIME_APP/VERSION")"
+
 if ! command -v ssh-keygen >/dev/null 2>&1; then
   echo 'ERROR: ssh-keygen is required on the builder host (install openssh-client).' >&2
   exit 1
 fi
 
 if [[ ! -f "$DEV_KEY" ]]; then
-  echo '[3/8] Generating local OS development SSH key...'
+  echo '[4/8] Generating local OS development SSH key...'
   ssh-keygen -q -t ed25519 -N '' -C 'ywd-hotspot-os-dev' -f "$DEV_KEY"
   chmod 0600 "$DEV_KEY"
   chmod 0644 "$DEV_KEY.pub"
 else
-  echo '[3/8] Reusing local OS development SSH key...'
+  echo '[4/8] Reusing local OS development SSH key...'
 fi
 
 PUBKEY="$(cat "$DEV_KEY.pub")"
@@ -178,10 +209,10 @@ chmod 0600 "$PI_GEN_DIR/config"
 find "$DEPLOY_DIR" -maxdepth 1 -type f -name "*${IMG_NAME}*" -delete
 rm -f "$DEPLOY_DIR/SHA256SUMS-M2"
 
-echo '[4/8] Running builder doctor...'
+echo '[5/8] Running builder doctor...'
 bash "$OS_DIR/builder/DOCTOR.sh"
 
-echo '[5/8] Building Raspberry Pi OS Lite + YWD-Hotspot runtime...'
+echo '[6/8] Building Raspberry Pi OS Lite + YWD-Hotspot runtime...'
 echo '      The MMDVM-Host/DMRGateway compile step may be quiet for a while.'
 if [[ "$EUID" -eq 0 ]]; then
   (cd "$PI_GEN_DIR" && ./build.sh)
@@ -189,7 +220,7 @@ else
   (cd "$PI_GEN_DIR" && sudo ./build.sh)
 fi
 
-echo '[6/8] Generating SHA-256 checksum...'
+echo '[7/8] Generating SHA-256 checksum and verifying compressed image...'
 (
   cd "$DEPLOY_DIR"
   shopt -s nullglob
@@ -200,8 +231,6 @@ echo '[6/8] Generating SHA-256 checksum...'
   fi
   sha256sum "${files[@]}" > SHA256SUMS-M2
 )
-
-echo '[7/8] Verifying compressed image integrity...'
 M2_XZ="$(find "$DEPLOY_DIR" -maxdepth 1 -type f -name "*${IMG_NAME}*.img.xz" -print -quit)"
 if [[ -n "$M2_XZ" ]]; then
   xz -t "$M2_XZ"

@@ -375,7 +375,6 @@ class NetworkManager:
                 "802-11-wireless.channel", str(AP_CHANNEL),
                 "802-11-wireless.hidden", "no",
                 "802-11-wireless.powersave", "2",
-                "802-11-wireless-security.key-mgmt", "none",
                 "ipv4.method", "shared",
                 "ipv4.addresses", AP_CIDR,
                 "ipv4.never-default", "yes",

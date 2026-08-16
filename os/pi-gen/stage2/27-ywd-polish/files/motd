@@ -1,0 +1,8 @@
+===============================================================
+                     YWD-HOTSPOT OS
+             Raspberry Pi DMR Hotspot Appliance
+===============================================================
+Live appliance status follows on interactive login.
+Commands: ywd-info | ywd-services | ywd-build | ywd-logs
+GitHub:   https://github.com/merberg-ai/ywd-hotspot
+

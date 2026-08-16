@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""SSD1306 boot/network display for YWD-Hotspot OS.
-
-M3 reads the network manager's state file so the OLED is the authoritative
-headless console for station, setup AP, recovery AP, and reconnect states.
-"""
+"""SSD1306 boot/network/setup display for YWD-Hotspot OS."""
 import json
 from pathlib import Path
+import signal
 import subprocess
+import sys
 import time
 
 import smbus
@@ -28,6 +26,9 @@ FONT = {
 PROVISION = Path('/etc/ywd-headless/provision.env')
 RUNTIME_VERSION = Path('/opt/ywd-hotspot/app/VERSION')
 NETWORK_STATE = Path('/run/ywd-hotspot-os/network.json')
+SETUP_RUNTIME = Path('/run/ywd-hotspot/setup.json')
+SETUP_STATE = Path('/var/lib/ywd-hotspot/setup-state.json')
+ACTIVE_OLED = None
 
 
 def sh(args, timeout=2):
@@ -58,12 +59,24 @@ def dashboard_active():
     return sh(['systemctl', 'is-active', 'ywd-dashboard.service']) == 'active'
 
 
-def network_state():
+def json_file(path):
     try:
-        obj = json.loads(NETWORK_STATE.read_text())
+        obj = json.loads(Path(path).read_text())
         return obj if isinstance(obj, dict) else {}
     except Exception:
         return {}
+
+
+def network_state():
+    return json_file(NETWORK_STATE)
+
+
+def setup_runtime():
+    return json_file(SETUP_RUNTIME)
+
+
+def setup_complete():
+    return json_file(SETUP_STATE).get('state') == 'complete'
 
 
 def temp():
@@ -80,13 +93,10 @@ def compact_error(state):
     for prefix in ('Error: ', 'error: '):
         if text.startswith(prefix):
             text = text[len(prefix):]
-    replacements = (
+    for old, new in (
         ('Connection activation failed', 'ACTIVATION FAILED'),
         ('Failed to activate connection', 'ACTIVATION FAILED'),
-        ('dnsmasq', 'DNSMASQ'),
-        ('supplicant', 'SUPPLICANT'),
-    )
-    for old, new in replacements:
+        ('dnsmasq', 'DNSMASQ'), ('supplicant', 'SUPPLICANT')):
         text = text.replace(old, new)
     return text[:21]
 
@@ -117,22 +127,22 @@ class OLED:
         for ch in text:
             data += FONT.get(ch, FONT[' ']) + [0]
         data = (data + [0] * 128)[:128]
-        self.cmd(0xB0 + page)
-        self.cmd(0x00)
-        self.cmd(0x10)
+        self.cmd(0xB0 + page); self.cmd(0x00); self.cmd(0x10)
         for pos in range(0, 128, 16):
             self.bus.write_i2c_block_data(self.addr, 0x40, data[pos:pos + 16])
 
     def line(self, page, text):
         text = str(text).upper()[:21]
         if self.last[page] != text:
-            self._write(page, text)
-            self.last[page] = text
+            self._write(page, text); self.last[page] = text
+
+    def lines(self, rows):
+        for page, text in enumerate(rows[:8]):
+            self.line(page, text)
 
     def clear(self):
         for page in range(8):
-            self._write(page, '')
-            self.last[page] = ''
+            self._write(page, ''); self.last[page] = ''
 
 
 def open_oled_forever():
@@ -143,26 +153,52 @@ def open_oled_forever():
             time.sleep(2)
 
 
+def shutdown_handler(signum, frame):
+    oled = ACTIVE_OLED
+    if oled is not None:
+        try:
+            oled.lines([
+                'YWD HOTSPOT OS',
+                'SHUTTING DOWN',
+                'PLEASE WAIT',
+                '',
+                'RF SERVICES STOPPING',
+                'SYSTEM HALTING',
+                '',
+                temp(),
+            ])
+            time.sleep(0.4)
+        except Exception:
+            pass
+    raise SystemExit(0)
+
+
 def legacy_lines(runtime):
-    current_ip = ip_addr()
-    current_ssid = ssid()
-    if current_ip:
-        state = 'WIFI ONLINE'
-    elif PROVISION.exists():
-        state = 'WIFI SETUP'
-    elif wifi_profile_exists():
-        state = 'WIFI WAITING'
-    else:
-        state = 'WIFI NO CONFIG'
+    current_ip = ip_addr(); current_ssid = ssid()
+    if current_ip: state = 'WIFI ONLINE'
+    elif PROVISION.exists(): state = 'WIFI SETUP'
+    elif wifi_profile_exists(): state = 'WIFI WAITING'
+    else: state = 'WIFI NO CONFIG'
+    return [
+        'YWD HOTSPOT OS', 'M2 RUNTIME' if runtime else 'M1.1 HEADLESS',
+        'WEB 8080 RF OFF' if runtime and dashboard_active() else ('WEB STARTING RF OFF' if runtime else ''),
+        'BOOT OK', state, current_ssid or '', current_ip or 'NO IP', f'{temp()} YWD-HOTSPOT.LOCAL']
+
+
+def first_boot_lines(state):
+    setup = setup_runtime()
+    code = str(setup.get('code') or '')
+    net_ssid = str(state.get('ssid') or '')
+    ip = str(state.get('ip') or '')
     return [
         'YWD HOTSPOT OS',
-        'M2 RUNTIME' if runtime else 'M1.1 HEADLESS',
-        'WEB 8080 RF OFF' if runtime and dashboard_active() else ('WEB STARTING RF OFF' if runtime else ''),
-        'BOOT OK',
-        state,
-        current_ssid or '',
-        current_ip or 'NO IP',
-        f'{temp()} YWD-HOTSPOT.LOCAL',
+        'M4 FIRST BOOT',
+        'SETUP REQUIRED',
+        f'CODE {code}' if code else 'SETUP STARTING',
+        net_ssid,
+        ip or 'NO IP',
+        'HTTPS PORT 8443',
+        'RF OFF',
     ]
 
 
@@ -172,83 +208,33 @@ def m3_lines(runtime, state):
     ip = str(state.get('ip') or '')
     web = 'WEB 8080 RF OFF' if runtime and dashboard_active() else ('WEB STARTING RF OFF' if runtime else '')
 
+    if runtime and mode == 'online' and not setup_complete():
+        return first_boot_lines(state)
     if mode in ('setup_ap', 'recovery_ap'):
         verified = bool(state.get('ap_verified'))
-        return [
-            'YWD HOTSPOT OS',
-            'M3 NETWORK',
-            web,
-            ('RECOVERY AP' if mode == 'recovery_ap' else 'SETUP AP') if verified else 'AP VERIFYING',
-            str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
-            'OPEN WIFI CH 6',
-            '10.42.0.1',
-            'OPEN 10.42.0.1',
-        ]
+        return ['YWD HOTSPOT OS','M3 NETWORK',web,
+                ('RECOVERY AP' if mode == 'recovery_ap' else 'SETUP AP') if verified else 'AP VERIFYING',
+                str(state.get('ap_ssid') or 'YWD-HOTSPOT'),'OPEN WIFI CH 6','10.42.0.1','OPEN 10.42.0.1']
     if mode == 'ap_starting':
-        return [
-            'YWD HOTSPOT OS',
-            'M3 NETWORK',
-            web,
-            'AP STARTING',
-            str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
-            'OPEN WIFI CH 6',
-            'PLEASE WAIT',
-            temp(),
-        ]
+        return ['YWD HOTSPOT OS','M3 NETWORK',web,'AP STARTING',str(state.get('ap_ssid') or 'YWD-HOTSPOT'),'OPEN WIFI CH 6','PLEASE WAIT',temp()]
     if mode == 'ap_failed':
-        return [
-            'YWD HOTSPOT OS',
-            'M3 NETWORK',
-            web,
-            'AP START FAILED',
-            str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
-            'RETRY IN 30S',
-            compact_error(state),
-            temp(),
-        ]
+        return ['YWD HOTSPOT OS','M3 NETWORK',web,'AP START FAILED',str(state.get('ap_ssid') or 'YWD-HOTSPOT'),'RETRY IN 30S',compact_error(state),temp()]
     if mode == 'online':
-        return [
-            'YWD HOTSPOT OS',
-            'M3 NETWORK',
-            web,
-            'WIFI ONLINE',
-            net_ssid,
-            ip or 'NO IP',
-            'YWD-HOTSPOT.LOCAL',
-            temp(),
-        ]
+        return ['YWD HOTSPOT OS','M3 NETWORK',web,'WIFI ONLINE',net_ssid,ip or 'NO IP','YWD-HOTSPOT.LOCAL',temp()]
     if mode == 'connecting':
-        return [
-            'YWD HOTSPOT OS',
-            'M3 NETWORK',
-            web,
-            'WIFI CONNECTING',
-            net_ssid,
-            '',
-            'PLEASE WAIT',
-            temp(),
-        ]
-    return [
-        'YWD HOTSPOT OS',
-        'M3 NETWORK',
-        web,
-        'WIFI WAITING',
-        net_ssid,
-        ip or 'NO IP',
-        str(state.get('reason') or '')[:21],
-        temp(),
-    ]
+        return ['YWD HOTSPOT OS','M3 NETWORK',web,'WIFI CONNECTING',net_ssid,'','PLEASE WAIT',temp()]
+    return ['YWD HOTSPOT OS','M3 NETWORK',web,'WIFI WAITING',net_ssid,ip or 'NO IP',str(state.get('reason') or '')[:21],temp()]
 
 
 def main():
-    oled = open_oled_forever()
+    global ACTIVE_OLED
+    ACTIVE_OLED = open_oled_forever()
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
     while True:
         try:
-            runtime = RUNTIME_VERSION.exists()
-            state = network_state()
-            lines = m3_lines(runtime, state) if state else legacy_lines(runtime)
-            for page, text in enumerate(lines):
-                oled.line(page, text)
+            runtime = RUNTIME_VERSION.exists(); state = network_state()
+            ACTIVE_OLED.lines(m3_lines(runtime, state) if state else legacy_lines(runtime))
         except OSError:
             pass
         except Exception:

@@ -74,6 +74,23 @@ def temp():
         return '--C'
 
 
+def compact_error(state):
+    diag = state.get('ap_diagnostic') if isinstance(state.get('ap_diagnostic'), dict) else {}
+    text = str(diag.get('error') or state.get('reason') or '')
+    for prefix in ('Error: ', 'error: '):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+    replacements = (
+        ('Connection activation failed', 'ACTIVATION FAILED'),
+        ('Failed to activate connection', 'ACTIVATION FAILED'),
+        ('dnsmasq', 'DNSMASQ'),
+        ('supplicant', 'SUPPLICANT'),
+    )
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text[:21]
+
+
 class OLED:
     def __init__(self, bus=1, addr=0x3C):
         self.bus = smbus.SMBus(bus)
@@ -185,8 +202,8 @@ def m3_lines(runtime, state):
             web,
             'AP START FAILED',
             str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
-            'RETRYING',
-            str(state.get('reason') or '')[:21],
+            'RETRY IN 30S',
+            compact_error(state),
             temp(),
         ]
     if mode == 'online':

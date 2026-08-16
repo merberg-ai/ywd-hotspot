@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Minimal SSD1306 boot/network display for YWD-Hotspot OS M1.1.
+"""Minimal SSD1306 boot/network display for YWD-Hotspot OS.
 
-This intentionally does not depend on the full YWD-Hotspot application. Its
-only job is to prove that the Pi Zero booted far enough to reach userspace and
-to expose enough network state to manage a headless test image.
+This display intentionally does not depend on the full RF runtime. It stays
+available during early boot, Wi-Fi provisioning, recovery work, and M2's
+RF-disabled appliance state.
 """
 from pathlib import Path
 import subprocess
@@ -26,6 +26,7 @@ FONT = {
 }
 
 PROVISION = Path('/etc/ywd-headless/provision.env')
+RUNTIME_VERSION = Path('/opt/ywd-hotspot/app/VERSION')
 
 
 def sh(args, timeout=2):
@@ -50,6 +51,10 @@ def ssid():
 def wifi_profile_exists():
     out = sh(['nmcli', '-t', '-f', 'TYPE', 'connection', 'show'])
     return any(line.strip() in ('802-11-wireless', 'wifi') for line in out.splitlines())
+
+
+def dashboard_active():
+    return sh(['systemctl', 'is-active', 'ywd-dashboard.service']) == 'active'
 
 
 def temp():
@@ -117,13 +122,19 @@ def open_oled_forever():
 def main():
     oled = open_oled_forever()
     oled.line(0, 'YWD HOTSPOT OS')
-    oled.line(1, 'M1.1 HEADLESS')
     oled.line(3, 'BOOT OK')
 
     while True:
         try:
+            runtime = RUNTIME_VERSION.exists()
             current_ip = ip_addr()
             current_ssid = ssid()
+
+            oled.line(1, 'M2 RUNTIME' if runtime else 'M1.1 HEADLESS')
+            if runtime:
+                oled.line(2, 'WEB 8080 RF OFF' if dashboard_active() else 'WEB STARTING RF OFF')
+            else:
+                oled.line(2, '')
 
             if current_ip:
                 state = 'WIFI ONLINE'

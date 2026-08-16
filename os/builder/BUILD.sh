@@ -49,10 +49,6 @@ git -C "$PI_GEN_DIR" checkout --quiet --detach "$PI_GEN_COMMIT"
 git -C "$PI_GEN_DIR" reset --hard --quiet "$PI_GEN_COMMIT"
 git -C "$PI_GEN_DIR" clean -fdx --quiet
 
-# Stage 2 is Raspberry Pi OS Lite and already contains EXPORT_IMAGE.
-# Skip desktop/full stages so milestone 1 produces only the Lite image.
-touch "$PI_GEN_DIR/stage3/SKIP" "$PI_GEN_DIR/stage4/SKIP" "$PI_GEN_DIR/stage5/SKIP"
-
 cat > "$PI_GEN_DIR/config" <<EOF
 IMG_NAME='ywd-hotspot-os-m1-vanilla'
 PI_GEN_RELEASE='YWD-Hotspot OS development base'
@@ -72,6 +68,11 @@ DEPLOY_COMPRESSION='xz'
 COMPRESSION_LEVEL=6
 WORK_DIR='$WORK_DIR'
 DEPLOY_DIR='$DEPLOY_DIR'
+# Milestone 1 intentionally builds only the Lite path. Explicitly limiting
+# STAGE_LIST is safer than placing SKIP files in later stages because pi-gen
+# registers EXPORT_IMAGE before evaluating SKIP. A skipped stage4 can therefore
+# still try to export a nonexistent stage4/rootfs.
+STAGE_LIST="\$BASE_DIR/stage0 \$BASE_DIR/stage1 \$BASE_DIR/stage2"
 EOF
 
 echo '[3/5] Running builder doctor...'

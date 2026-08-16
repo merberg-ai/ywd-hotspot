@@ -1,5 +1,5 @@
-# YWD-Hotspot Alpha6: the unprivileged dashboard may invoke only these
-# validated root-helper actions. The helper itself is root-owned and contains
+# YWD-Hotspot: the unprivileged dashboard/setup services may invoke only these
+# validated root-helper actions. The dispatcher itself is root-owned and has
 # no arbitrary-command action.
 Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin config-save, \
@@ -8,6 +8,7 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin set-hotspot-password, \
  /usr/local/libexec/ywd-hotspot-admin set-bm-api-key, \
  /usr/local/libexec/ywd-hotspot-admin set-web-password, \
+ /usr/local/libexec/ywd-hotspot-admin setup-finish, \
  /usr/local/libexec/ywd-hotspot-admin rf-start, \
  /usr/local/libexec/ywd-hotspot-admin rf-stop, \
  /usr/local/libexec/ywd-hotspot-admin rf-restart, \

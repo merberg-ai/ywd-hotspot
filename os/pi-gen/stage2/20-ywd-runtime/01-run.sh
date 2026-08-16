@@ -1,14 +1,25 @@
 #!/bin/bash -e
 
-APP_SRC="${SUB_STAGE_DIR}/files/app"
-BUILD_ENV="${SUB_STAGE_DIR}/files/build.env"
+# pi-gen executes substage run scripts after pushd'ing into the substage, but
+# SUB_STAGE_DIR is a non-exported parent-shell variable. Anchor all payload
+# paths to this script's actual working directory instead of relying on that
+# variable being inherited.
+THIS_STAGE="$(pwd -P)"
+APP_SRC="${THIS_STAGE}/files/app"
+BUILD_ENV="${THIS_STAGE}/files/build.env"
+
+printf 'M2 runtime stage directory: %s\n' "$THIS_STAGE"
+printf 'M2 runtime app payload:    %s\n' "$APP_SRC"
 
 if [ ! -d "${APP_SRC}" ] || [ ! -f "${APP_SRC}/pins.env" ]; then
   echo "ERROR: M2 runtime app payload was not injected by os/builder/BUILD.sh" >&2
+  echo "       Expected: ${APP_SRC}/pins.env" >&2
+  ls -la "${THIS_STAGE}/files" 2>/dev/null || true
   exit 1
 fi
 if [ ! -f "${BUILD_ENV}" ]; then
   echo "ERROR: M2 build metadata was not injected by os/builder/BUILD.sh" >&2
+  echo "       Expected: ${BUILD_ENV}" >&2
   exit 1
 fi
 

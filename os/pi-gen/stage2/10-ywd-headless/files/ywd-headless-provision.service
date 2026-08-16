@@ -1,0 +1,14 @@
+[Unit]
+Description=YWD-Hotspot OS temporary build-time WiFi provisioning
+After=NetworkManager.service
+Wants=NetworkManager.service
+ConditionPathExists=/etc/ywd-headless/provision.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ywd-headless-provision
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

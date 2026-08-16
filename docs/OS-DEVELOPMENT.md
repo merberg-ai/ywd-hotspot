@@ -7,116 +7,130 @@ YWD-Hotspot OS development is isolated on the `dev-os` branch.
 - `main` — stable YWD-Hotspot application releases.
 - `dev` — normal next-version application development.
 - `dev-os` — experimental OS/image-builder work.
-- `dev-os-m1.1-known-good` — frozen known-good headless baseline.
-- `dev-os-m2-known-good` — frozen M2 runtime checkpoint before M3 networking work.
+- `dev-os-m1.1-known-good` — frozen headless baseline.
+- `dev-os-m2-known-good` — frozen runtime checkpoint.
+- `dev-os-m3-known-good` — physically proven Wi-Fi setup/recovery checkpoint.
 
-Normal application changes may be merged from `dev` into `dev-os` as needed so images can consume the current application. Do not merge `dev-os` wholesale back into `dev`. If OS work produces a reusable application feature, move that feature back as a focused commit or pull request.
+Normal application changes may be merged from `dev` into `dev-os` as needed so images can consume the current application. OS-only behavior must be gated so existing root install/update workflows remain independent of `os/`.
 
 ## Safety rules
 
-1. Existing root-level install/update workflows must continue to work without any dependency on `os/`.
-2. OS build scripts must never modify the builder host's installed YWD-Hotspot instance.
-3. Generated images, work trees, caches, logs, release payloads, Wi-Fi credentials, and private keys stay out of Git history.
-4. Raspberry Pi `pi-gen` is pinned by commit rather than vendored wholesale.
-5. Each milestone is boot-tested on the target Pi Zero W before adding the next major layer.
-6. Development images use key-only SSH; no shared/default SSH password is shipped.
-7. RF services remain disabled until real station/radio configuration is explicitly applied and RF is deliberately enabled.
+1. Existing root-level install/update workflows must continue without any dependency on `os/`.
+2. OS build scripts never modify the builder host's installed YWD-Hotspot instance.
+3. Generated images, work trees, logs, Wi-Fi credentials, keys, and secrets stay out of Git history.
+4. Raspberry Pi `pi-gen` is pinned by commit.
+5. Each milestone is target-tested on the original Pi Zero W before the next major layer.
+6. Development images use key-only SSH.
+7. RF services remain disabled until real station/radio configuration is validated and RF is deliberately enabled.
+8. First-boot completion is represented by an explicit persistent state marker, never inferred only from placeholder callsign/DMR values.
 
 ## Target
 
 - Hardware: Raspberry Pi Zero W / Zero WH
 - Architecture: `armhf`
 - Base: Raspberry Pi OS Lite / Trixie
-- Builder host: Raspberry Pi 5 or a faster compatible Linux builder with a 4K-page kernel for armhf pi-gen builds
+- Builders: Pi 5 or compatible 4K-page Linux host; x86_64 builders use qemu-user for armhf chroot work.
 
 ## Milestone history
 
 ### M1 — builder pipeline
 
-Complete. The Pi 5 produced a valid compressed Raspberry Pi OS Lite armhf image. The initial export-stage issue was fixed by explicitly limiting pi-gen to stages 0, 1, and 2.
+Complete. Reproducible Raspberry Pi OS Lite armhf image creation and export.
 
 ### M1.1 — headless boot validation
 
-Complete and frozen as `dev-os-m1.1-known-good`.
-
-Validated on the reference Pi Zero W:
-
-- Raspbian 13 Trixie boots as `armv6l`.
-- Build-time Wi-Fi provisioning succeeds through NetworkManager.
-- `ywd-hotspot.local` resolves over mDNS.
-- Key-only SSH works with the builder-local ed25519 key.
-- SSD1306 OLED is detected on I2C bus 1 at `0x3c`.
-- The headless OLED service stays active.
-- The one-shot Wi-Fi provisioner completes successfully.
-- `systemctl --failed` reports zero failed units.
+Complete and frozen as `dev-os-m1.1-known-good`. The reference Pi Zero W boots as armv6l with OLED/I2C, NetworkManager Wi-Fi, mDNS, key-only SSH, sudo and zero failed units.
 
 ### M2 — hotspot runtime
 
-Runtime injection/build and target boot were proven before M3 networking work began. The checkpoint is frozen as `dev-os-m2-known-good`.
+Complete checkpoint frozen as `dev-os-m2-known-good`. Added YWD-Hotspot, pinned MMDVM-Host/DMRGateway, PL011 UART setup, dashboard/activity services, persistent journal, placeholder schema-3 config and RF-off safety state.
 
-M2 added:
+### M3 — network recovery + phone Wi-Fi setup
 
-- Current YWD-Hotspot app and WebUI under `/opt/ywd-hotspot/app`.
-- Git-managed source checkout under `/opt/ywd-hotspot/repo`.
-- Pinned MMDVM-Host and DMRGateway built inside the armhf image rootfs.
-- Pi Zero W PL011 UART configuration.
-- YWD user, permissions, sudoers helper, diagnostics and systemd units.
-- Schema-3 placeholder config with BrandMeister disabled and `rf_autostart=false`.
-- Activity collector, dashboard, persistent journal and build provenance.
-- RF services disabled/inactive at first boot.
+Complete and physically proven on the reference Pi Zero W. Frozen as `dev-os-m3-known-good`.
 
-The M2 target boot exposed an important appliance problem: a headless hotspot with no usable IPv4 address leaves the user with no recovery path. M3 addresses that directly.
+Validated behavior:
 
-## M3 — network recovery + phone Wi-Fi setup
+- No usable station Wi-Fi falls back to an open `YWD-Hotspot-xxxx` 2.4 GHz setup/recovery AP.
+- AP uses channel 6 and `10.42.0.1/24` with NetworkManager shared mode.
+- AP readiness is verified from actual `wlan0` AP mode + active profile + address, not merely an `nmcli` return code.
+- Phone UI at `http://10.42.0.1/` configures visible, manual or hidden Wi-Fi.
+- Successful credentials tear down the AP and hand off cleanly to normal station Wi-Fi.
+- Failed credentials restore recovery AP mode.
+- After handoff, `ywd-hotspot.local` and the normal WebUI are reachable.
+- `dnsmasq-base` and `iptables` are explicitly installed for NetworkManager sharing.
+- RF remains disabled throughout network onboarding.
+
+The open AP is intentionally a short-lived development onboarding network. Its HTTP Wi-Fi credential page should be used in a physically trusted environment.
+
+## M4 — secure first-boot appliance wizard
 
 Current development milestone.
 
-M3 adds a dedicated OS network manager for the Pi Zero W's single `wlan0` interface:
+M4 begins only after M3 has handed `wlan0` to a normal station network. The sequence is:
 
-- Consumes optional builder-injected Wi-Fi credentials on first boot.
-- Tries existing saved station profiles for a bounded period.
-- If no Wi-Fi configuration exists, enters **Setup AP** mode.
-- If saved Wi-Fi exists but cannot provide a usable IPv4 address, enters **Recovery AP** mode.
-- If a previously healthy station connection disappears for 90 seconds, enters Recovery AP mode.
-- Setup/recovery SSID is `YWD-Hotspot-xxxx`, where `xxxx` comes from the Wi-Fi MAC address.
-- Setup/recovery AP is intentionally **open** for simple phone onboarding; no AP password is required or displayed.
-- AP is pinned to 2.4 GHz channel 6 with Wi-Fi power saving disabled while hosting.
-- AP address is fixed at `10.42.0.1/24` using NetworkManager shared mode.
-- The network manager verifies that `wlan0` is actually in AP mode, the `YWD Setup AP` profile is active, and `10.42.0.1` is assigned before reporting the AP as ready.
-- AP startup is retried automatically if activation or post-start verification fails; the OLED shows starting/failed/retrying states instead of falsely claiming the AP is available.
-- Phone setup UI is served at `http://10.42.0.1/` only after the AP verifies successfully.
-- The setup page shows visible networks captured before AP activation and also supports manual/hidden SSIDs.
-- Submitting credentials tears down the AP and tries station mode.
-- Successful credentials remain as a normal NetworkManager profile and the temporary builder credential file is removed.
-- Failed credentials automatically restore Recovery AP mode.
-- Once AP fallback is active it does not flap between AP/station modes on its own; it stays available until the user submits credentials or reboots.
-- The OLED consumes `/run/ywd-hotspot-os/network.json` and displays online/waiting/setup/recovery/connecting/AP-failure state, AP SSID, open/channel status, and setup address.
-- The normal YWD WebUI remains on port 8080; the recovery setup UI uses port 80.
-- RF services and BrandMeister remain disabled throughout M3 networking operations.
+```text
+boot
+  -> M3 Wi-Fi setup/recovery if needed
+  -> station IPv4 online
+  -> M4 six-digit OLED ownership code
+  -> HTTPS first-boot wizard on :8443
+  -> canonical validation/apply
+  -> persistent setup-state.json completion marker
+  -> normal dashboard
+```
 
-Expected verified fallback display:
+Security/design details:
+
+- `/var/lib/ywd-hotspot/setup-state.json` exists only after successful first-boot completion.
+- Missing/corrupt normal configuration does not by itself reopen anonymous factory setup after completion.
+- `ywd-setup.service` runs as unprivileged `ywd-hotspot`, not root.
+- A random six-digit code is generated in `/run/ywd-hotspot/setup.json`, displayed on the OLED, expires after 30 minutes and changes after service/reboot regeneration.
+- Unlock attempts are rate-limited to five failures per minute per client address.
+- Setup authorization uses an in-memory session with `Secure`, `HttpOnly`, `SameSite=Strict` cookie attributes.
+- First-boot configuration is served only over HTTPS on port 8443 using a per-device self-signed certificate generated locally with OpenSSL. A browser trust warning is expected for development images.
+- The setup web process can sudo only the `setup-finish` action through a root-owned dispatcher.
+- `setup-finish` validates the full canonical schema and secrets before changes, stops/disables RF first, applies generated MMDVM/DMRGateway configuration, creates the permanent scrypt dashboard password, optionally saves the BrandMeister API key, and writes the completion marker last.
+- BrandMeister Hotspot Security password is required when BrandMeister networking is enabled.
+- Final RF enable is an explicit unchecked-by-default choice. If not selected, MMDVM-Host and DMRGateway remain disabled/inactive.
+- The normal port-8080 dashboard redirects to the wizard only on an M4 OS image while factory setup is incomplete; normal/manual YWD-Hotspot installs are not affected.
+
+Wizard pages cover dashboard security, callsign/base DMR ID/ESSID, station description/URL/location/coordinates, frequency/color code/modem levels and advanced modem fields, BrandMeister settings/secrets, OLED/appliance settings, a redacted review page and the final RF gate.
+
+Expected M4 OLED after Wi-Fi handoff:
 
 ```text
 YWD HOTSPOT OS
-M3 NETWORK
-WEB 8080 RF OFF
-RECOVERY AP
-YWD-Hotspot-xxxx
-OPEN WIFI CH 6
-10.42.0.1
-OPEN 10.42.0.1
+M4 FIRST BOOT
+SETUP REQUIRED
+CODE 482731
+<SSID>
+<station IPv4>
+HTTPS PORT 8443
+RF OFF
 ```
 
-### Open setup-AP security note
+### Shutdown OLED
 
-The open AP is a deliberate usability choice for short-lived local provisioning. Because the setup page is plain HTTP on an open WLAN, the Wi-Fi password submitted to `10.42.0.1` is not protected by link-layer encryption. Use setup/recovery mode in a trusted physical environment and complete provisioning promptly. A later production-hardening milestone may replace this development behavior with a more secure pairing/onboarding mechanism without returning to an unreadable long OLED password.
+The OS-level OLED handles SIGTERM/SIGINT and writes a shutdown screen before exiting:
+
+```text
+YWD HOTSPOT OS
+SHUTTING DOWN
+PLEASE WAIT
+
+RF SERVICES STOPPING
+SYSTEM HALTING
+```
+
+The OLED retains this state while Linux continues shutting down.
 
 ## Current milestone sequence
 
 1. **M1 — complete:** reproducible Raspberry Pi OS Lite image.
 2. **M1.1 — complete:** headless OLED/Wi-Fi/mDNS/SSH validation.
-3. **M2 — checkpoint:** bake in YWD-Hotspot + pinned RF runtime with RF disabled.
-4. **M3 — current:** setup AP, recovery AP, phone Wi-Fi onboarding, network-state OLED.
-5. Add persistent first-boot appliance state and transition from OS setup UI into the full YWD configuration wizard.
-6. Add complete callsign/DMR/BrandMeister/radio first-boot wizard with explicit RF-enable gate.
-7. Add release metadata, checksums/signing and eventual YWD-Hotspot Imager integration.
+3. **M2 — complete checkpoint:** hotspot runtime baked in, RF safe by default.
+4. **M3 — complete checkpoint:** phone Wi-Fi setup/recovery and successful station handoff.
+5. **M4 — current:** secure first-boot ownership/configuration wizard + shutdown OLED.
+6. Calibration/setup polish and controlled transition to the normal runtime OLED.
+7. Production/release metadata, signing/checksums and eventual imager integration.

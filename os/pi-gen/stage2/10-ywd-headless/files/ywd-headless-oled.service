@@ -1,0 +1,15 @@
+[Unit]
+Description=YWD-Hotspot OS headless boot status OLED
+After=local-fs.target systemd-modules-load.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/libexec/ywd-headless-oled.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

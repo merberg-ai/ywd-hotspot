@@ -1,0 +1,4 @@
+python3-smbus
+i2c-tools
+avahi-daemon
+openssh-server

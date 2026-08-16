@@ -13,7 +13,7 @@ import smbus
 
 FONT = {
     ' ':[0,0,0,0,0], '-':[8,8,8,8,8], '.':[0,96,96,0,0], '/':[32,16,8,4,2], ':':[0,54,54,0,0],
-    '0':[62,81,73,69,62], '1':[0,66,127,64,0], '2':[66,97,81,73,70], '3':[33,65,69,75,49],
+    '0':[62,81,73,69,62], '1':[0,66,127,64,0], '2':[66,97,81,73,70], '3':[33,65,69,75,49,49],
     '4':[24,20,18,127,16], '5':[39,69,69,69,57], '6':[60,74,73,73,48], '7':[1,113,9,5,3],
     '8':[54,73,73,73,54], '9':[6,73,73,41,30],
     'A':[126,17,17,17,126], 'B':[127,73,73,73,54], 'C':[62,65,65,65,34], 'D':[127,65,65,34,28],
@@ -156,15 +156,38 @@ def m3_lines(runtime, state):
     web = 'WEB 8080 RF OFF' if runtime and dashboard_active() else ('WEB STARTING RF OFF' if runtime else '')
 
     if mode in ('setup_ap', 'recovery_ap'):
+        verified = bool(state.get('ap_verified'))
         return [
             'YWD HOTSPOT OS',
             'M3 NETWORK',
             web,
-            'RECOVERY AP' if mode == 'recovery_ap' else 'SETUP AP',
+            ('RECOVERY AP' if mode == 'recovery_ap' else 'SETUP AP') if verified else 'AP VERIFYING',
             str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
-            f"PASS {state.get('ap_password') or ''}",
+            'OPEN WIFI CH 6',
             '10.42.0.1',
             'OPEN 10.42.0.1',
+        ]
+    if mode == 'ap_starting':
+        return [
+            'YWD HOTSPOT OS',
+            'M3 NETWORK',
+            web,
+            'AP STARTING',
+            str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
+            'OPEN WIFI CH 6',
+            'PLEASE WAIT',
+            temp(),
+        ]
+    if mode == 'ap_failed':
+        return [
+            'YWD HOTSPOT OS',
+            'M3 NETWORK',
+            web,
+            'AP START FAILED',
+            str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
+            'RETRYING',
+            str(state.get('reason') or '')[:21],
+            temp(),
         ]
     if mode == 'online':
         return [

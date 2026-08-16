@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Minimal SSD1306 boot/network display for YWD-Hotspot OS.
+"""SSD1306 boot/network display for YWD-Hotspot OS.
 
-This display intentionally does not depend on the full RF runtime. It stays
-available during early boot, Wi-Fi provisioning, recovery work, and M2's
-RF-disabled appliance state.
+M3 reads the network manager's state file so the OLED is the authoritative
+headless console for station, setup AP, recovery AP, and reconnect states.
 """
+import json
 from pathlib import Path
 import subprocess
 import time
@@ -27,6 +27,7 @@ FONT = {
 
 PROVISION = Path('/etc/ywd-headless/provision.env')
 RUNTIME_VERSION = Path('/opt/ywd-hotspot/app/VERSION')
+NETWORK_STATE = Path('/run/ywd-hotspot-os/network.json')
 
 
 def sh(args, timeout=2):
@@ -55,6 +56,14 @@ def wifi_profile_exists():
 
 def dashboard_active():
     return sh(['systemctl', 'is-active', 'ywd-dashboard.service']) == 'active'
+
+
+def network_state():
+    try:
+        obj = json.loads(NETWORK_STATE.read_text())
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
 
 
 def temp():
@@ -113,44 +122,94 @@ def open_oled_forever():
     while True:
         try:
             return OLED()
-        except OSError:
-            time.sleep(2)
         except Exception:
             time.sleep(2)
 
 
+def legacy_lines(runtime):
+    current_ip = ip_addr()
+    current_ssid = ssid()
+    if current_ip:
+        state = 'WIFI ONLINE'
+    elif PROVISION.exists():
+        state = 'WIFI SETUP'
+    elif wifi_profile_exists():
+        state = 'WIFI WAITING'
+    else:
+        state = 'WIFI NO CONFIG'
+    return [
+        'YWD HOTSPOT OS',
+        'M2 RUNTIME' if runtime else 'M1.1 HEADLESS',
+        'WEB 8080 RF OFF' if runtime and dashboard_active() else ('WEB STARTING RF OFF' if runtime else ''),
+        'BOOT OK',
+        state,
+        current_ssid or '',
+        current_ip or 'NO IP',
+        f'{temp()} YWD-HOTSPOT.LOCAL',
+    ]
+
+
+def m3_lines(runtime, state):
+    mode = str(state.get('mode') or 'boot')
+    net_ssid = str(state.get('ssid') or '')
+    ip = str(state.get('ip') or '')
+    web = 'WEB 8080 RF OFF' if runtime and dashboard_active() else ('WEB STARTING RF OFF' if runtime else '')
+
+    if mode in ('setup_ap', 'recovery_ap'):
+        return [
+            'YWD HOTSPOT OS',
+            'M3 NETWORK',
+            web,
+            'RECOVERY AP' if mode == 'recovery_ap' else 'SETUP AP',
+            str(state.get('ap_ssid') or 'YWD-HOTSPOT'),
+            f"PASS {state.get('ap_password') or ''}",
+            '10.42.0.1',
+            'OPEN 10.42.0.1',
+        ]
+    if mode == 'online':
+        return [
+            'YWD HOTSPOT OS',
+            'M3 NETWORK',
+            web,
+            'WIFI ONLINE',
+            net_ssid,
+            ip or 'NO IP',
+            'YWD-HOTSPOT.LOCAL',
+            temp(),
+        ]
+    if mode == 'connecting':
+        return [
+            'YWD HOTSPOT OS',
+            'M3 NETWORK',
+            web,
+            'WIFI CONNECTING',
+            net_ssid,
+            '',
+            'PLEASE WAIT',
+            temp(),
+        ]
+    return [
+        'YWD HOTSPOT OS',
+        'M3 NETWORK',
+        web,
+        'WIFI WAITING',
+        net_ssid,
+        ip or 'NO IP',
+        str(state.get('reason') or '')[:21],
+        temp(),
+    ]
+
+
 def main():
     oled = open_oled_forever()
-    oled.line(0, 'YWD HOTSPOT OS')
-    oled.line(3, 'BOOT OK')
-
     while True:
         try:
             runtime = RUNTIME_VERSION.exists()
-            current_ip = ip_addr()
-            current_ssid = ssid()
-
-            oled.line(1, 'M2 RUNTIME' if runtime else 'M1.1 HEADLESS')
-            if runtime:
-                oled.line(2, 'WEB 8080 RF OFF' if dashboard_active() else 'WEB STARTING RF OFF')
-            else:
-                oled.line(2, '')
-
-            if current_ip:
-                state = 'WIFI ONLINE'
-            elif PROVISION.exists():
-                state = 'WIFI SETUP'
-            elif wifi_profile_exists():
-                state = 'WIFI WAITING'
-            else:
-                state = 'WIFI NO CONFIG'
-
-            oled.line(4, state)
-            oled.line(5, current_ssid or '')
-            oled.line(6, current_ip or 'NO IP')
-            oled.line(7, f'{temp()} YWD-HOTSPOT.LOCAL')
+            state = network_state()
+            lines = m3_lines(runtime, state) if state else legacy_lines(runtime)
+            for page, text in enumerate(lines):
+                oled.line(page, text)
         except OSError:
-            # A transient I2C failure should not take down the boot-status service.
             pass
         except Exception:
             pass

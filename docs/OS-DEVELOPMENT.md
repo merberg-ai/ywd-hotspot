@@ -6,10 +6,12 @@ YWD-Hotspot OS development is isolated on the `dev-os` branch.
 
 - `main` — stable YWD-Hotspot application releases.
 - `dev` — normal next-version application development.
-- `dev-os` — experimental OS/image-builder work.
+- `dev-os` — current experimental OS/image-builder work.
 - `dev-os-m1.1-known-good` — frozen headless baseline.
 - `dev-os-m2-known-good` — frozen runtime checkpoint.
 - `dev-os-m3-known-good` — physically proven Wi-Fi setup/recovery checkpoint.
+- `dev-os-m4-build-base` — exact M4 secure-first-boot source used for the current target build; not yet labeled physically known-good.
+- `dev-os-m4.1-work` — temporary M4.1 console-polish integration branch.
 
 Normal application changes may be merged from `dev` into `dev-os` as needed so images can consume the current application. OS-only behavior must be gated so existing root install/update workflows remain independent of `os/`.
 
@@ -19,10 +21,11 @@ Normal application changes may be merged from `dev` into `dev-os` as needed so i
 2. OS build scripts never modify the builder host's installed YWD-Hotspot instance.
 3. Generated images, work trees, logs, Wi-Fi credentials, keys, and secrets stay out of Git history.
 4. Raspberry Pi `pi-gen` is pinned by commit.
-5. Each milestone is target-tested on the original Pi Zero W before the next major layer.
+5. Each major milestone is target-tested on the original Pi Zero W before the next major layer.
 6. Development images use key-only SSH.
 7. RF services remain disabled until real station/radio configuration is validated and RF is deliberately enabled.
 8. First-boot completion is represented by an explicit persistent state marker, never inferred only from placeholder callsign/DMR values.
+9. Login/MOTD helpers may display only whitelisted non-secret status fields. They must not relax permissions on the protected canonical config.
 
 ## Target
 
@@ -65,9 +68,7 @@ The open AP is intentionally a short-lived development onboarding network. Its H
 
 ## M4 — secure first-boot appliance wizard
 
-Current development milestone.
-
-M4 begins only after M3 has handed `wlan0` to a normal station network. The sequence is:
+M4 begins only after M3 has handed `wlan0` to a normal station network. The exact source used for the first M4 build is frozen as `dev-os-m4-build-base`.
 
 ```text
 boot
@@ -93,7 +94,7 @@ Security/design details:
 - `setup-finish` validates the full canonical schema and secrets before changes, stops/disables RF first, applies generated MMDVM/DMRGateway configuration, creates the permanent scrypt dashboard password, optionally saves the BrandMeister API key, and writes the completion marker last.
 - BrandMeister Hotspot Security password is required when BrandMeister networking is enabled.
 - Final RF enable is an explicit unchecked-by-default choice. If not selected, MMDVM-Host and DMRGateway remain disabled/inactive.
-- The normal port-8080 dashboard redirects to the wizard only on an M4 OS image while factory setup is incomplete; normal/manual YWD-Hotspot installs are not affected.
+- The normal port-8080 dashboard redirects to the wizard only on an M4-family OS image while factory setup is incomplete; normal/manual YWD-Hotspot installs are not affected.
 
 Wizard pages cover dashboard security, callsign/base DMR ID/ESSID, station description/URL/location/coordinates, frequency/color code/modem levels and advanced modem fields, BrandMeister settings/secrets, OLED/appliance settings, a redacted review page and the final RF gate.
 
@@ -125,12 +126,70 @@ SYSTEM HALTING
 
 The OLED retains this state while Linux continues shutting down.
 
+## M4.1 — OS identity + console/SSH polish
+
+M4.1 is a deliberately low-risk polish layer on top of M4. It does not change network onboarding, first-boot authorization, configuration application, BrandMeister behavior, or RF safety.
+
+M4.1 adds a separate `stage2/27-ywd-polish` image stage and a distinct `ywd-hotspot-os-m4-1-polish` artifact.
+
+### OS identity
+
+- Replaces the stock local-console `/etc/issue` with YWD-Hotspot ASCII branding and repository information.
+- Replaces the stock `/etc/motd` with a concise YWD-Hotspot identity/help banner.
+- Disables executable stock `/etc/update-motd.d` fragments so Debian/Raspberry Pi promotional/noise fragments do not reappear.
+- Keeps normal SSH `Last login` behavior intact.
+- Adds `/etc/ywd-hotspot/os-release` as the appliance identity companion without modifying the base distribution's `/etc/os-release`.
+- Makes `/etc/ywd-hotspot/os-version` authoritative for the M4.1 image (`M4.1-polish-dev`) and records the pinned pi-gen commit separately.
+
+### Live login status
+
+Interactive login shells invoke the lightweight root-owned `/usr/local/libexec/ywd-system-info` through the existing development image's passwordless sudo path. The helper reads protected configuration as root but prints only explicitly whitelisted non-secret fields.
+
+The login summary includes:
+
+- appliance state: `SETUP REQUIRED`, `READY`, `RF ACTIVE`, or `ATTENTION`;
+- hostname, OS/app versions, kernel/architecture, uptime and temperature;
+- Wi-Fi SSID/signal and IPv4 address;
+- setup completion, callsign, base DMR ID and RF frequency;
+- RF and BrandMeister status;
+- normal WebUI/setup URLs as appropriate;
+- command and GitHub hints.
+
+The six-digit first-boot ownership code, BrandMeister Hotspot Security password, BrandMeister API key, Wi-Fi credentials and dashboard password are never printed.
+
+The live MOTD runs only for interactive terminals. `scp`, `sftp`, automation and non-interactive SSH commands remain free of banner output.
+
+### Console commands
+
+```text
+ywd-info              live appliance summary
+ywd-info --all        summary + services + build provenance
+ywd-info --network    Wi-Fi/IP summary
+ywd-services          compact systemd status for the YWD stack
+ywd-build             OS/app/Git/pi-gen/MMDVM/DMRGateway provenance
+ywd-logs              follow combined YWD journals
+ywd-logs network      network manager journal
+ywd-logs web          dashboard journal
+ywd-logs setup        secure setup wizard journal
+ywd-logs rf           MMDVM-Host + DMRGateway journals
+```
+
+### Shell polish
+
+- Exposes `YWD_HOME`, `YWD_CONFIG`, `YWD_WEB`, and `YWD_GITHUB` environment helpers.
+- Uses a restrained `[YWD] user@host path $` Bash prompt.
+- Prompt is refreshed through `PROMPT_COMMAND` so the stock user `.bashrc` does not overwrite it.
+- Setting `YWD_KEEP_PROMPT=1` opts out of the custom prompt.
+
+M4.1 intentionally adds no heavy system-info package; the backend uses the Python standard library, `/proc`, `/sys`, `ip`, `iw` and one batched systemd query.
+
 ## Current milestone sequence
 
 1. **M1 — complete:** reproducible Raspberry Pi OS Lite image.
 2. **M1.1 — complete:** headless OLED/Wi-Fi/mDNS/SSH validation.
 3. **M2 — complete checkpoint:** hotspot runtime baked in, RF safe by default.
 4. **M3 — complete checkpoint:** phone Wi-Fi setup/recovery and successful station handoff.
-5. **M4 — current:** secure first-boot ownership/configuration wizard + shutdown OLED.
-6. Calibration/setup polish and controlled transition to the normal runtime OLED.
-7. Production/release metadata, signing/checksums and eventual imager integration.
+5. **M4 — build/test:** secure first-boot ownership/configuration wizard + shutdown OLED.
+6. **M4.1 — current polish:** YWD OS identity, MOTD, console commands, build/status provenance.
+7. Calibration/setup polish and controlled transition to the normal runtime OLED.
+8. Production/release metadata, signing/checksums and eventual imager integration.

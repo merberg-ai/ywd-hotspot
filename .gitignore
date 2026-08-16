@@ -24,6 +24,19 @@ dist/
 *.zip
 *.SHA256
 
+# YWD-Hotspot OS image-builder output
+os/build/
+os/cache/
+os/work/
+os/deploy/
+os/.pi-gen/
+*.img
+*.img.xz
+*.img.zst
+*.iso
+*.sha256
+SHA256SUMS
+
 # Editors / OS
 .vscode/
 .idea/

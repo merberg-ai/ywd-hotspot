@@ -153,7 +153,17 @@ if [ -f "${CMDLINE_TXT}" ]; then
     "${CMDLINE_TXT}"
 fi
 
+# Parallelize the two C++ builds based on the builder host, but cap concurrency
+# at four jobs to avoid making qemu-user builds unnecessarily memory/CPU heavy.
+DETECTED_CPUS="$(nproc 2>/dev/null || printf '1')"
+case "$DETECTED_CPUS" in
+  ''|*[!0-9]*) DETECTED_CPUS=1 ;;
+esac
+BUILD_JOBS="$DETECTED_CPUS"
+[ "$BUILD_JOBS" -lt 1 ] && BUILD_JOBS=1
+[ "$BUILD_JOBS" -gt 4 ] && BUILD_JOBS=4
 printf 'Building pinned MMDVM-Host and DMRGateway inside armhf rootfs...\n'
+printf 'Runtime compile parallelism: detected %s CPU(s), using -j%s (cap 4)\n' "$DETECTED_CPUS" "$BUILD_JOBS"
 on_chroot <<EOF
 set -e
 rm -rf /tmp/ywd-m2-build
@@ -161,12 +171,12 @@ mkdir -p /tmp/ywd-m2-build
 
 git clone --quiet '${MMDVM_HOST_REPO}' /tmp/ywd-m2-build/MMDVM-Host
 git -C /tmp/ywd-m2-build/MMDVM-Host checkout --quiet --detach '${MMDVM_HOST_COMMIT}'
-make -C /tmp/ywd-m2-build/MMDVM-Host -j1
+make -C /tmp/ywd-m2-build/MMDVM-Host -j${BUILD_JOBS}
 install -m 0755 /tmp/ywd-m2-build/MMDVM-Host/MMDVM-Host /usr/local/bin/MMDVM-Host
 
 git clone --quiet '${DMR_GATEWAY_REPO}' /tmp/ywd-m2-build/DMRGateway
 git -C /tmp/ywd-m2-build/DMRGateway checkout --quiet --detach '${DMR_GATEWAY_COMMIT}'
-make -C /tmp/ywd-m2-build/DMRGateway -j1
+make -C /tmp/ywd-m2-build/DMRGateway -j${BUILD_JOBS}
 install -m 0755 /tmp/ywd-m2-build/DMRGateway/DMRGateway /usr/local/bin/DMRGateway
 rm -rf /tmp/ywd-m2-build
 EOF

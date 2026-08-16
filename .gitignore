@@ -24,12 +24,13 @@ dist/
 *.zip
 *.SHA256
 
-# YWD-Hotspot OS image-builder output
+# YWD-Hotspot OS image-builder output and local secrets
 os/build/
 os/cache/
 os/work/
 os/deploy/
 os/.pi-gen/
+os/local/
 *.img
 *.img.xz
 *.img.zst

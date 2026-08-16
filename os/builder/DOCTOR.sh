@@ -25,9 +25,22 @@ printf 'Kernel:            %s\n' "$(uname -r)"
 printf 'Working tree:      %s\n' "$ROOT_DIR"
 printf 'Free space:        %s\n\n' "$(df -h "$ROOT_DIR" | awk 'NR==2 {print $4}')"
 
-for cmd in git curl rsync xz debootstrap qemu-arm-static parted losetup mount umount sha256sum; do
+# Keep these checks aligned with the pinned pi-gen `depends` file.
+# On current Debian/Raspberry Pi OS, pi-gen requires `qemu-arm`.
+# `qemu-arm-static` was used by older qemu-user-static based setups and is
+# intentionally NOT required here.
+for cmd in git curl rsync xz debootstrap qemu-arm parted losetup mount umount sha256sum; do
   check_cmd "$cmd"
 done
+
+# Give a useful package-level diagnostic when QEMU is the only confusing bit.
+if ! command -v qemu-arm >/dev/null 2>&1; then
+  if command -v dpkg-query >/dev/null 2>&1 && \
+     dpkg-query -W -f='${Status}' qemu-user-binfmt 2>/dev/null | grep -q 'install ok installed'; then
+    printf '[INFO] qemu-user-binfmt is installed, but qemu-arm is not in PATH.\n'
+    printf '       Install/repair the qemu-user package: sudo apt install qemu-user qemu-user-binfmt\n'
+  fi
+fi
 
 if [[ -f "$PIN_FILE" ]] && [[ -s "$PIN_FILE" ]]; then
   printf '[OK]   pi-gen pin: %s\n' "$(tr -d '[:space:]' < "$PIN_FILE")"
@@ -48,6 +61,8 @@ if [[ "$fail" -ne 0 ]]; then
   printf 'On Raspberry Pi OS / Debian, install pi-gen dependencies with:\n\n'
   printf '  sudo apt update\n'
   printf '  sudo apt install coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip \\\n    dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils file git curl bc \\\n    gpg pigz xxd arch-test bmap-tools kmod\n'
+  printf '\nIf qemu-user-binfmt is installed but qemu-arm is still missing, run:\n\n'
+  printf '  sudo apt install qemu-user qemu-user-binfmt\n'
   exit 1
 fi
 

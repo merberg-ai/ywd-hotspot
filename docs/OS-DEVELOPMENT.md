@@ -27,7 +27,7 @@ Normal application changes may be merged from `dev` into `dev-os` as needed so i
 - Hardware: Raspberry Pi Zero W / Zero WH
 - Architecture: `armhf`
 - Base: Raspberry Pi OS Lite / Trixie
-- Builder host: Raspberry Pi 5 with a 4K-page kernel for armhf pi-gen builds
+- Builder host: Raspberry Pi 5 or a faster compatible Linux builder with a 4K-page kernel for armhf pi-gen builds
 
 ## Milestone history
 
@@ -79,19 +79,22 @@ M3 adds a dedicated OS network manager for the Pi Zero W's single `wlan0` interf
 - If saved Wi-Fi exists but cannot provide a usable IPv4 address, enters **Recovery AP** mode.
 - If a previously healthy station connection disappears for 90 seconds, enters Recovery AP mode.
 - Setup/recovery SSID is `YWD-Hotspot-xxxx`, where `xxxx` comes from the Wi-Fi MAC address.
-- A per-device WPA setup password is generated on first boot, stored root-only, and displayed on the OLED.
+- Setup/recovery AP is intentionally **open** for simple phone onboarding; no AP password is required or displayed.
+- AP is pinned to 2.4 GHz channel 6 with Wi-Fi power saving disabled while hosting.
 - AP address is fixed at `10.42.0.1/24` using NetworkManager shared mode.
-- Phone setup UI is served at `http://10.42.0.1/` while AP mode is active.
+- The network manager verifies that `wlan0` is actually in AP mode, the `YWD Setup AP` profile is active, and `10.42.0.1` is assigned before reporting the AP as ready.
+- AP startup is retried automatically if activation or post-start verification fails; the OLED shows starting/failed/retrying states instead of falsely claiming the AP is available.
+- Phone setup UI is served at `http://10.42.0.1/` only after the AP verifies successfully.
 - The setup page shows visible networks captured before AP activation and also supports manual/hidden SSIDs.
 - Submitting credentials tears down the AP and tries station mode.
 - Successful credentials remain as a normal NetworkManager profile and the temporary builder credential file is removed.
 - Failed credentials automatically restore Recovery AP mode.
 - Once AP fallback is active it does not flap between AP/station modes on its own; it stays available until the user submits credentials or reboots.
-- The OLED consumes `/run/ywd-hotspot-os/network.json` and displays online/waiting/setup/recovery/connecting state, AP SSID/password, and setup address.
+- The OLED consumes `/run/ywd-hotspot-os/network.json` and displays online/waiting/setup/recovery/connecting/AP-failure state, AP SSID, open/channel status, and setup address.
 - The normal YWD WebUI remains on port 8080; the recovery setup UI uses port 80.
 - RF services and BrandMeister remain disabled throughout M3 networking operations.
 
-Expected fallback display:
+Expected verified fallback display:
 
 ```text
 YWD HOTSPOT OS
@@ -99,10 +102,14 @@ M3 NETWORK
 WEB 8080 RF OFF
 RECOVERY AP
 YWD-Hotspot-xxxx
-PASS <device-password>
+OPEN WIFI CH 6
 10.42.0.1
 OPEN 10.42.0.1
 ```
+
+### Open setup-AP security note
+
+The open AP is a deliberate usability choice for short-lived local provisioning. Because the setup page is plain HTTP on an open WLAN, the Wi-Fi password submitted to `10.42.0.1` is not protected by link-layer encryption. Use setup/recovery mode in a trusted physical environment and complete provisioning promptly. A later production-hardening milestone may replace this development behavior with a more secure pairing/onboarding mechanism without returning to an unreadable long OLED password.
 
 ## Current milestone sequence
 

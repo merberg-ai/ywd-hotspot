@@ -19,6 +19,7 @@ from pathlib import Path
 
 STATE = Path(os.environ.get('YWD_PLUGIN_STATE', '/etc/ywd-hotspot/plugin-state.json'))
 UNIT_TEMPLATE = Path(os.environ.get('YWD_PLUGIN_UNIT_TEMPLATE', '/etc/systemd/system/ywd-plugin@.service'))
+LOCAL_ROOT = Path(os.environ.get('YWD_LOCAL_PLUGIN_ROOT', '/var/lib/ywd-hotspot/plugin-packages'))
 TELEMETRY_UNITS = ('ywd-mmdvm-telemetry.service', 'ywd-mqtt.service')
 TELEMETRY_UNIT_PATHS = tuple(Path('/etc/systemd/system') / unit for unit in TELEMETRY_UNITS)
 ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
@@ -70,15 +71,24 @@ def read_state_raw():
 
 
 def catalog_service_ids(lib_dir):
-    root = Path(lib_dir) / 'service_plugin_packages'
     ids = set()
-    if not root.is_dir():
-        return ids
-    for child in root.iterdir():
-        if not child.is_dir() or not ID_RE.fullmatch(child.name):
+    roots = [Path(lib_dir) / 'service_plugin_packages', LOCAL_ROOT]
+    for root in roots:
+        if not root.is_dir():
             continue
-        manifest = child / 'plugin.json'
-        if manifest.is_file():
+        for child in root.iterdir():
+            if not child.is_dir() or child.is_symlink() or not ID_RE.fullmatch(child.name):
+                continue
+            manifest = child / 'plugin.json'
+            if not manifest.is_file() or manifest.is_symlink() or manifest.stat().st_size > 65536:
+                continue
+            if root == LOCAL_ROOT:
+                try:
+                    raw = json.loads(manifest.read_text(encoding='utf-8'))
+                except Exception:
+                    continue
+                if not isinstance(raw, dict) or raw.get('kind') != 'service' or raw.get('id') != child.name:
+                    continue
             ids.add(child.name)
     return ids
 
@@ -158,6 +168,12 @@ def load_target_modules(lib_dir):
         sys.path.insert(0, lib)
     import plugin_manager  # type: ignore
     import plugin_service_manager  # type: ignore
+    try:
+        import plugin_catalog_overlay  # type: ignore
+        plugin_catalog_overlay.install()
+    except ImportError:
+        # Older/stable target runtimes do not have an uploaded-package overlay.
+        pass
     return plugin_manager, plugin_service_manager
 
 

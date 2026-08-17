@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,7 +21,6 @@ import plugin_admin_common
 import plugin_admin_state
 import plugin_catalog_overlay
 import plugin_manager
-import plugin_package_manager
 import plugin_service_manager
 import settings_backup
 
@@ -77,9 +75,9 @@ def _snapshot():
     while root.exists():
         n += 1
         root = BACKUP_ROOT / f"pre-settings-restore-{stamp}-{n}"
-    root.mkdir(parents=True, mode=0o700)
+    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
     os.chmod(BACKUP_ROOT, 0o700)
-    os.chmod(root, 0o700)
+    root.mkdir(mode=0o700)
     items = {
         "config": core_admin.CFG,
         "bm-api": core_admin.BMKEY,
@@ -105,7 +103,7 @@ def _snapshot():
     return root
 
 
-def _rollback(root):
+def _rollback_files(root):
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     for key, meta in manifest.get("files", {}).items():
         path = Path(meta["path"])
@@ -130,6 +128,28 @@ def _rollback(root):
         core_admin.config_apply({})
     except Exception:
         pass
+
+
+def _reconcile_restored_plugin_runtime():
+    """Best-effort reconstruction of the plugin runtime policy restored from disk."""
+    plugin_catalog_overlay.install()
+    state = plugin_manager.read_state()
+    desired = {
+        ident for ident, row in (state.get("plugins", {}) or {}).items()
+        if isinstance(row, dict) and row.get("enabled") is True
+    }
+    if not state.get("enabled"):
+        plugin_admin_state.set_system({"enabled": False})
+        return
+    # Services were already forced off before rollback. Keep the restored
+    # activation flags in memory, then re-enable only the exact saved set.
+    plugin_admin_state.set_system({"enabled": True})
+    for ident in sorted(desired):
+        try:
+            plugin_admin_state.set_plugin({"id": ident, "enabled": True})
+        except Exception:
+            # Failure remains fail-closed for that plugin; never block core rollback.
+            pass
 
 
 def _restore_wifi(wifi):
@@ -190,6 +210,8 @@ def preview_settings(data):
 
 
 def restore_settings(data):
+    # Authentication/decryption and schema validation happen completely before
+    # any live file/service is touched.
     doc = settings_backup.decrypt_payload(_decode(data), str(data.get("passphrase") or ""))
     start_rf = bool(data.get("start_rf", False))
     restore_wifi = bool(data.get("restore_wifi", False))
@@ -213,6 +235,8 @@ def restore_settings(data):
             warnings.append(f"plugin shutdown warning: {exc}")
 
         candidate = json.loads(json.dumps(doc["config"]))
+        # The imported backup records old RF intent, but the new appliance uses
+        # the operator's explicit restore choice as the new autostart policy.
         candidate.setdefault("maintenance", {})["rf_autostart"] = start_rf
         candidate = config_model.normalize(candidate)
         old = core_admin.current()
@@ -257,35 +281,44 @@ def restore_settings(data):
                 missing_plugins.append(ident)
             plugin_admin_common.atomic_json(plugin_manager.config_path(ident), clean)
 
-        backup_packages = doc["plugins"].get("packages") or {}
-        installed_map = backup_packages.get("installed", {}) if isinstance(backup_packages, dict) and isinstance(backup_packages.get("installed"), dict) else {}
+        backup_packages = doc["plugins"]["packages"]
+        installed_map = backup_packages.get("installed", {})
+        for ident, installed in installed_map.items():
+            if installed and ident not in available:
+                missing_plugins.append(ident)
         desired_packages = {ident: bool(installed_map.get(ident, False)) for ident in available}
         plugin_admin_common.write_package_map(desired_packages)
 
         pstate = doc["plugins"].get("state") or {}
         desired_enabled = pstate.get("plugins", {}) if isinstance(pstate.get("plugins"), dict) else {}
         master = bool(pstate.get("enabled", False))
+        # Write the desired master state now but leave every service stopped;
+        # core configuration is applied before any plugin service is started.
+        restored_state = {"schema": 1, "enabled": master, "plugins": {}}
+        for ident, row in desired_enabled.items():
+            if plugin_manager.ID_RE.fullmatch(str(ident)) and isinstance(row, dict):
+                restored_state["plugins"][str(ident)] = {"enabled": bool(row.get("enabled", False))}
+        plugin_admin_common.atomic_json(plugin_manager.STATE, restored_state)
+
+        applied = core_admin.config_apply({})
+
+        # Only after the core config/INIs have applied successfully may restored
+        # plugin services be brought back.
         if master:
             plugin_admin_state.set_system({"enabled": True})
             for ident, row in desired_enabled.items():
                 if not isinstance(row, dict) or not row.get("enabled"):
                     continue
                 if ident not in available or not desired_packages.get(ident):
-                    if ident not in missing_plugins:
-                        missing_plugins.append(ident)
+                    missing_plugins.append(ident)
                     continue
                 try:
                     plugin_admin_state.set_plugin({"id": ident, "enabled": True})
                     restored_plugins.append(ident)
                 except Exception as exc:
                     warnings.append(f"{ident} was not enabled: {exc}")
-
-        applied = core_admin.config_apply({})
-        if restore_wifi and doc.get("wifi"):
-            try:
-                wifi_result = _restore_wifi(doc["wifi"])
-            except Exception as exc:
-                warnings.append(f"Wi-Fi profile was not restored: {exc}")
+        else:
+            plugin_admin_state.set_system({"enabled": False})
 
         if first_boot:
             state = {
@@ -305,6 +338,15 @@ def restore_settings(data):
             core_admin.rf_action("rf-start")
         else:
             core_admin.run(["systemctl", "disable", "ywd-dmrgateway.service", "ywd-mmdvmhost.service"], 15)
+
+        # Wi-Fi is optional convenience state. Create it only after all core,
+        # plugin, setup and RF-policy operations have succeeded, and never
+        # activate it under the live HTTP/HTTPS request.
+        if restore_wifi and doc.get("wifi"):
+            try:
+                wifi_result = _restore_wifi(doc["wifi"])
+            except Exception as exc:
+                warnings.append(f"Wi-Fi profile was not restored: {exc}")
 
         core_admin.audit("settings-restore", {"snapshot": str(snap), "changed": changed, "start_rf": start_rf, "first_boot": first_boot, "missing_plugins": sorted(set(missing_plugins)), "warnings": warnings[:20]})
         return {
@@ -326,7 +368,11 @@ def restore_settings(data):
             plugin_admin_state.set_system({"enabled": False})
         except Exception:
             pass
-        _rollback(snap)
+        _rollback_files(snap)
+        try:
+            _reconcile_restored_plugin_runtime()
+        except Exception:
+            pass
         if previous_enabled:
             core_admin.run(["systemctl", "enable", "ywd-mmdvmhost.service", "ywd-dmrgateway.service"], 10)
         else:

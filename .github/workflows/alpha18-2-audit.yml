@@ -29,7 +29,7 @@ jobs:
           cfg['station']['callsign'] = 'KJ6YWD'
           cfg['station']['base_dmr_id'] = '3196104'
           cfg['brandmeister']['enabled'] = False
-          cfg['brandmeister']['password'] = 'secret-hotspot-password'
+          cfg['brandmeister']['password'] = 'bm-test-secret'
           cfg = config_model.normalize(cfg)
           payload = {
             'schema':1,'created_at':'2026-08-17T00:00:00Z','source':{'version':'audit','branch':'audit','commit':'abc'},
@@ -39,7 +39,7 @@ jobs:
           raw = settings_backup.encrypt_payload(payload, 'correct horse battery staple')
           restored = settings_backup.decrypt_payload(raw, 'correct horse battery staple')
           assert restored['config']['station']['callsign'] == 'KJ6YWD'
-          assert restored['config']['brandmeister']['password'] == 'secret-hotspot-password'
+          assert restored['config']['brandmeister']['password'] == 'bm-test-secret'
           assert restored['plugins']['packages'] == {'schema':1,'installed':{}}
           try:
             settings_backup.decrypt_payload(raw, 'wrong password definitely')

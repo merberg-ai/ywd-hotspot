@@ -19,7 +19,11 @@ if [[ -d "$SELF/lib/console" ]]; then
 fi
 for f in \
   lib/update_runner.py lib/update_admin.py lib/oled.py lib/oled_owner.sh \
-  lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_service_manager.py lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin.py lib/dashboard_plugins.py lib/plugin_update_safety.py \
+  lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_service_manager.py \
+  lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py \
+  lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin_upload.py lib/plugin_admin.py \
+  lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_backup.py lib/plugin_update_safety.py \
+  lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
   lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
   lib/plugin_packages/system-info/plugin.json \
   lib/plugin_packages/system-info/config.schema.json \
@@ -31,16 +35,21 @@ for f in \
   lib/service_plugin_packages/mmdvm-live-telemetry/service.py \
   web/update.js web/update.css web/update-progress.js \
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css \
-  web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js web/plugin-telemetry.js \
+  web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js web/plugin-telemetry.js \
+  web/backup-restore.js web/backup-restore.css \
   systemd/ywd-update.service systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service; do
   [[ -f "$SELF/$f" ]] || { echo "[FAIL] Update source missing $f" >&2; exit 1; }
 done
 python3 -m py_compile \
   "$SELF/lib/update_runner.py" "$SELF/lib/update_admin.py" "$SELF/lib/dashboard_update.py" "$SELF/lib/oled.py" \
-  "$SELF/lib/plugin_manifest.py" "$SELF/lib/plugin_manager.py" "$SELF/lib/plugin_package_manager.py" "$SELF/lib/plugin_service_manager.py" "$SELF/lib/plugin_admin_common.py" "$SELF/lib/plugin_admin_state.py" "$SELF/lib/plugin_admin_packages.py" "$SELF/lib/plugin_admin.py" "$SELF/lib/dashboard_plugins.py" \
-  "$SELF/lib/plugin_update_safety.py" "$SELF/lib/mmdvm_telemetry.py" "$SELF/lib/mmdvm_telemetry_bridge.py" "$SELF/lib/telemetry_runtime.py" \
+  "$SELF/lib/plugin_manifest.py" "$SELF/lib/plugin_manager.py" "$SELF/lib/plugin_package_manager.py" "$SELF/lib/plugin_service_manager.py" \
+  "$SELF/lib/plugin_catalog_overlay.py" "$SELF/lib/plugin_package_archive.py" "$SELF/lib/plugin_service_runner.py" \
+  "$SELF/lib/plugin_admin_common.py" "$SELF/lib/plugin_admin_state.py" "$SELF/lib/plugin_admin_packages.py" "$SELF/lib/plugin_admin_upload.py" "$SELF/lib/plugin_admin.py" \
+  "$SELF/lib/dashboard_plugins.py" "$SELF/lib/dashboard_plugin_upload.py" "$SELF/lib/dashboard_backup.py" \
+  "$SELF/lib/plugin_update_safety.py" "$SELF/lib/settings_backup.py" "$SELF/lib/settings_admin.py" "$SELF/lib/setup_restore_server.py" \
+  "$SELF/lib/mmdvm_telemetry.py" "$SELF/lib/mmdvm_telemetry_bridge.py" "$SELF/lib/telemetry_runtime.py" \
   "$SELF/lib/service_plugin_packages/service-heartbeat/service.py" "$SELF/lib/service_plugin_packages/mmdvm-live-telemetry/service.py"
-bash -n "$SELF/lib/oled_owner.sh"
+bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh"
 [[ -f "$SELF/lib/system_branding.sh" ]] && bash -n "$SELF/lib/system_branding.sh"
 
 # Validate both plugin catalogs with isolated missing state/config/package paths.
@@ -51,13 +60,17 @@ bash -n "$SELF/lib/oled_owner.sh"
 PYTHONPATH="$SELF/lib" \
 YWD_PLUGIN_CATALOG="$SELF/lib/plugin_packages" \
 YWD_SERVICE_PLUGIN_CATALOG="$SELF/lib/service_plugin_packages" \
+YWD_LOCAL_PLUGIN_ROOT="$SELF/.plugin-local-does-not-exist" \
+YWD_PLUGIN_TRUST_DIR="$SELF/.plugin-trust-does-not-exist" \
 YWD_PLUGIN_STATE="$SELF/.plugin-state-does-not-exist" \
 YWD_PLUGIN_PACKAGE_STATE="$SELF/.plugin-package-state-does-not-exist" \
 YWD_PLUGIN_CONFIG_DIR="$SELF/.plugin-config-does-not-exist" \
 YWD_PLUGIN_DATA_DIR="$SELF/.plugin-data-does-not-exist" \
 YWD_MMDVM_TELEMETRY="$SELF/.telemetry-does-not-exist" \
 python3 - <<'PY'
-import plugin_manager, plugin_service_manager
+import dashboard_backup, dashboard_plugin_upload
+import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
+import plugin_manager, plugin_service_manager, settings_backup
 base = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
 assert base["system"]["enabled"] is False
 system_info = [p for p in base["plugins"] if p.get("id") == "system-info"]

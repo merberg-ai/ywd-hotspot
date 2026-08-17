@@ -123,7 +123,9 @@
     try {
       const d = await api('/api/settings/preview',{backup_b64:importB64,passphrase:pass});
       el('backupPreview').textContent = previewText(d.preview); el('backupPreview').hidden=false;
-      el('backupStartRf').checked = !!d.preview?.rf_autostart;
+      // The backup shows the prior RF intent, but every new restore starts with
+      // a fresh explicit operator choice before RF can be enabled or started.
+      el('backupStartRf').checked = false;
       el('backupWifiRestore').checked = !!d.preview?.wifi_included;
       button.textContent='RESTORE SETTINGS'; button.onclick=doImport;
       notify('Backup decrypted and authenticated');

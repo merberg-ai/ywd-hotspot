@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from urllib.parse import urlparse
 
+import dashboard_backup
 import dashboard_core as core
+import dashboard_plugin_upload
 import dashboard_plugins
 
 STATUS = core.VAR / "update-status.json"
@@ -80,4 +82,7 @@ def wrap_handler(base):
                 self.send_json({"error": str(exc)[:800]}, 502)
 
     UpdateHandler.__name__ = f"Update{base.__name__}"
-    return dashboard_plugins.wrap_handler(UpdateHandler)
+    handler = dashboard_plugins.wrap_handler(UpdateHandler)
+    handler = dashboard_plugin_upload.wrap_handler(handler)
+    handler = dashboard_backup.wrap_handler(handler)
+    return handler

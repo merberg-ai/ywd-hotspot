@@ -1,0 +1,181 @@
+name: Alpha18.2 Backup and Plugin Package Audit
+on:
+  push:
+    branches: [dev-plugins-alpha18.2-work]
+  pull_request:
+    branches: [dev-plugins]
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static syntax and policy guards
+        run: |
+          set -euxo pipefail
+          openssl version
+          python3 -m py_compile lib/*.py tools/ywdplugin-build.py
+          for f in web/*.js; do node --check "$f"; done
+          bash -n lib/admin_dispatch.sh lib/setup_entry.sh
+          bash -n INSTALL.sh INSTALL-core.sh UPDATE.sh GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh
+          ! grep -q 'confirm(' lib/setup_restore_server.py
+      - name: Encrypted settings round trip and tamper rejection
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'lib')
+          import config_model, settings_backup
+          cfg = config_model.defaults()
+          cfg['station']['callsign'] = 'KJ6YWD'
+          cfg['station']['base_dmr_id'] = '3196104'
+          cfg['brandmeister']['enabled'] = False
+          cfg['brandmeister']['password'] = 'bm-test-secret'
+          cfg = config_model.normalize(cfg)
+          payload = {
+            'schema':1,'created_at':'2026-08-17T00:00:00Z','source':{'version':'audit','branch':'audit','commit':'abc'},
+            'config':cfg,'secrets':{'bm_api_key':'abc123456789xyz','web_auth':None},'calibration_baseline':None,
+            'plugins':{'state':{'schema':1,'enabled':False,'plugins':{}},'packages':{'schema':1,'installed':{}},'configs':{},'trust_keys':{}},'wifi':None,
+          }
+          raw = settings_backup.encrypt_payload(payload, 'correct horse battery staple')
+          restored = settings_backup.decrypt_payload(raw, 'correct horse battery staple')
+          assert restored['config']['station']['callsign'] == 'KJ6YWD'
+          assert restored['config']['brandmeister']['password'] == 'bm-test-secret'
+          assert restored['plugins']['packages'] == {'schema':1,'installed':{}}
+          try:
+            settings_backup.decrypt_payload(raw, 'wrong password definitely')
+          except settings_backup.SettingsBackupError:
+            pass
+          else:
+            raise SystemExit('wrong backup password was accepted')
+          env = json.loads(raw)
+          text = env['ciphertext']
+          env['ciphertext'] = ('A' if text[0] != 'A' else 'B') + text[1:]
+          tampered = (json.dumps(env,separators=(',',':'))+'\n').encode()
+          try:
+            settings_backup.decrypt_payload(tampered, 'correct horse battery staple')
+          except settings_backup.SettingsBackupError:
+            pass
+          else:
+            raise SystemExit('tampered settings backup was accepted')
+          print('settings crypto audit passed')
+          PY
+      - name: Signed and unsigned ywdplugin policy
+        run: |
+          set -euxo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/trust" "$tmp/local" "$tmp/service" "$tmp/decl" "$tmp/fake-first-party"
+          openssl genpkey -algorithm Ed25519 -out "$tmp/private.pem"
+          openssl pkey -in "$tmp/private.pem" -pubout -out "$tmp/trust/audit-key.pem"
+          cat > "$tmp/service/plugin.json" <<'JSON'
+          {"api":1,"id":"audit-signed-service","name":"Audit Signed Service","version":"1.0.0","description":"CI signed service package","trust":"experimental","kind":"service","provider":"sandboxed-service","entrypoint":"service.py","capabilities":["service:lifecycle"],"rf_mode":false,"config_schema":"config.schema.json","dependencies":["python3","systemd"],"hardware":[]}
+          JSON
+          cat > "$tmp/service/config.schema.json" <<'JSON'
+          {"schema":1,"fields":[]}
+          JSON
+          printf '%s\n' 'print("audit service")' > "$tmp/service/service.py"
+          python3 tools/ywdplugin-build.py "$tmp/service" "$tmp/audit-service.ywdplugin" --sign-key "$tmp/private.pem" --key-id audit-key --publisher 'CI Audit'
+
+          cat > "$tmp/decl/plugin.json" <<'JSON'
+          {"api":1,"id":"audit-declarative","name":"Audit Declarative","version":"1.0.0","description":"CI unsigned declarative package","trust":"experimental","kind":"declarative","provider":"system-summary","capabilities":["read:system-summary"],"rf_mode":false,"service":null,"config_schema":"config.schema.json","dependencies":["python3"],"hardware":[]}
+          JSON
+          cat > "$tmp/decl/config.schema.json" <<'JSON'
+          {"schema":1,"fields":[]}
+          JSON
+          python3 tools/ywdplugin-build.py "$tmp/decl" "$tmp/audit-decl.ywdplugin"
+
+          cat > "$tmp/fake-first-party/plugin.json" <<'JSON'
+          {"api":1,"id":"fake-first-party","name":"Fake First Party","version":"1.0.0","description":"Must not self-claim first-party trust","trust":"first-party","kind":"declarative","provider":"system-summary","capabilities":["read:system-summary"],"rf_mode":false,"service":null,"config_schema":"config.schema.json","dependencies":[],"hardware":[]}
+          JSON
+          cat > "$tmp/fake-first-party/config.schema.json" <<'JSON'
+          {"schema":1,"fields":[]}
+          JSON
+          python3 tools/ywdplugin-build.py "$tmp/fake-first-party" "$tmp/fake-first-party.ywdplugin"
+
+          YWD_LOCAL_PLUGIN_ROOT="$tmp/local" YWD_PLUGIN_TRUST_DIR="$tmp/trust" YWD_PLUGIN_PACKAGE_STATE="$tmp/packages.json" python3 - "$tmp/audit-service.ywdplugin" "$tmp/audit-decl.ywdplugin" "$tmp/fake-first-party.ywdplugin" "$tmp/packages.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0,'lib')
+          import plugin_package_archive, plugin_catalog_overlay, plugin_service_manager
+          service, decl, fake, state = map(Path, sys.argv[1:])
+          a = plugin_package_archive.inspect_archive(service.read_bytes(), service.name)
+          assert a['kind'] == 'service' and a['signature']['status'] == 'verified'
+          b = plugin_package_archive.inspect_archive(decl.read_bytes(), decl.name)
+          assert b['kind'] == 'declarative' and b['signature']['status'] == 'unsigned'
+          try:
+            plugin_package_archive.inspect_archive(fake.read_bytes(), fake.name)
+          except plugin_package_archive.PackageArchiveError:
+            pass
+          else:
+            raise SystemExit('uploaded package self-claimed first-party trust')
+          out = plugin_package_archive.install_archive(service.read_bytes(), service.name)
+          assert out['id'] == 'audit-signed-service'
+          state.write_text(json.dumps({'schema':1,'installed':{'audit-signed-service':True}}))
+          plugin_catalog_overlay.install()
+          p = plugin_service_manager.get_plugin('audit-signed-service')
+          assert p['directory'].name == 'audit-signed-service'
+          print('plugin signature/catalog audit passed')
+          PY
+
+          python3 - "$tmp/audit-service.ywdplugin" "$tmp/tampered.ywdplugin" <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+          src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+          with zipfile.ZipFile(src,'r') as zin, zipfile.ZipFile(dst,'w',zipfile.ZIP_DEFLATED) as zout:
+            for info in zin.infolist():
+              data = zin.read(info.filename)
+              if info.filename == 'service.py': data += b'\n# tampered\n'
+              zout.writestr(info.filename,data)
+          PY
+          YWD_LOCAL_PLUGIN_ROOT="$tmp/other-local" YWD_PLUGIN_TRUST_DIR="$tmp/trust" YWD_PLUGIN_PACKAGE_STATE="$tmp/other-state.json" python3 - "$tmp/tampered.ywdplugin" <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,'lib')
+          import plugin_package_archive
+          try:
+            plugin_package_archive.inspect_archive(Path(sys.argv[1]).read_bytes(), 'tampered.ywdplugin')
+          except plugin_package_archive.PackageArchiveError:
+            print('tamper rejected')
+          else:
+            raise SystemExit('tampered plugin package was accepted')
+          PY
+      - name: Persistent uploaded service update-safety discovery
+        run: |
+          set -euxo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/lib/service_plugin_packages" "$tmp/local/audit-persistent-service"
+          cat > "$tmp/local/audit-persistent-service/plugin.json" <<'JSON'
+          {"api":1,"id":"audit-persistent-service","kind":"service"}
+          JSON
+          YWD_LOCAL_PLUGIN_ROOT="$tmp/local" python3 - "$tmp/lib" <<'PY'
+          import sys
+          sys.path.insert(0,'lib')
+          import plugin_update_safety
+          ids = plugin_update_safety.catalog_service_ids(sys.argv[1])
+          assert 'audit-persistent-service' in ids, ids
+          print('persistent uploaded service is visible to update safety')
+          PY
+      - name: First-boot, release and privilege references
+        run: |
+          set -euxo pipefail
+          test "$(cat VERSION)" = '0.1.0-alpha18.2-dev'
+          grep -q 'setup_restore_server.py' lib/setup_entry.sh
+          grep -q 'settings_backup.py' os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
+          grep -q 'settings-import' sudoers/ywd-hotspot
+          grep -q 'plugin-package-upload' sudoers/ywd-hotspot
+          grep -q 'plugin_service_runner.py --check' systemd/ywd-plugin@.service
+          grep -q 'openssl' INSTALL-core.sh
+          grep -q 'rf_autostart.*True' INSTALL-core.sh
+          grep -q 'init-applied' INSTALL-core.sh
+          for f in \
+            docs/BACKUP-RESTORE.md docs/PLUGIN-PACKAGES.md \
+            lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py \
+            lib/plugin_package_archive.py lib/plugin_catalog_overlay.py lib/plugin_service_runner.py \
+            web/backup-restore.js web/plugin-package-upload.js tools/ywdplugin-build.py; do
+            grep -Fxq "$f" MANIFEST.txt
+          done
+          grep -q 'lib/settings_backup.py' GITHUB-UPDATE-core.sh
+          grep -q 'lib/plugin_package_archive.py' GITHUB-UPDATE-core.sh
+          grep -q 'web/backup-restore.js' GITHUB-UPDATE-core.sh

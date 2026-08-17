@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import config_model
-import plugin_catalog_overlay
 import plugin_manager
 import plugin_package_manager
 
@@ -171,6 +170,10 @@ def collect(include_wifi=False):
                     trust[path.stem] = path.read_text(encoding="utf-8")
                 except Exception:
                     pass
+    package_state = plugin_package_manager.read_state()
+    installed = package_state.get("installed") if isinstance(package_state, dict) else {}
+    installed = installed if isinstance(installed, dict) else {}
+    clean_installed = {str(ident): bool(value) for ident, value in installed.items() if plugin_manager.ID_RE.fullmatch(str(ident)) and isinstance(value, bool)}
     return {
         "schema": 1,
         "created_at": now_iso(),
@@ -188,7 +191,7 @@ def collect(include_wifi=False):
         "calibration_baseline": read_json(CAL_BASELINE, None),
         "plugins": {
             "state": read_json(PLUGIN_STATE, {"schema": 1, "enabled": False, "plugins": {}}),
-            "packages": read_json(PACKAGE_STATE, None),
+            "packages": {"schema": 1, "installed": clean_installed},
             "configs": plugin_configs,
             "trust_keys": trust,
         },
@@ -220,6 +223,12 @@ def validate_payload(payload):
     for ident, doc in configs.items():
         if plugin_manager.ID_RE.fullmatch(str(ident)) and isinstance(doc, dict):
             clean_configs[str(ident)] = doc
+    package_doc = plugins.get("packages") if isinstance(plugins.get("packages"), dict) else {}
+    raw_installed = package_doc.get("installed") if isinstance(package_doc.get("installed"), dict) else {}
+    clean_installed = {}
+    for ident, value in raw_installed.items():
+        if plugin_manager.ID_RE.fullmatch(str(ident)) and isinstance(value, bool):
+            clean_installed[str(ident)] = value
     trust = plugins.get("trust_keys") if isinstance(plugins.get("trust_keys"), dict) else {}
     clean_trust = {}
     for key_id, pem in trust.items():
@@ -241,7 +250,7 @@ def validate_payload(payload):
         "calibration_baseline": payload.get("calibration_baseline") if isinstance(payload.get("calibration_baseline"), dict) else None,
         "plugins": {
             "state": plugins.get("state") if isinstance(plugins.get("state"), dict) else {"schema": 1, "enabled": False, "plugins": {}},
-            "packages": plugins.get("packages") if isinstance(plugins.get("packages"), dict) else None,
+            "packages": {"schema": 1, "installed": clean_installed},
             "configs": clean_configs,
             "trust_keys": clean_trust,
         },
@@ -253,8 +262,8 @@ def preview(payload):
     payload = validate_payload(payload)
     cfg = payload["config"]
     pstate = payload["plugins"]["state"]
-    packages = payload["plugins"]["packages"] or {}
-    installed = packages.get("installed", {}) if isinstance(packages, dict) and isinstance(packages.get("installed"), dict) else {}
+    packages = payload["plugins"]["packages"]
+    installed = packages.get("installed", {})
     enabled = pstate.get("plugins", {}) if isinstance(pstate.get("plugins"), dict) else {}
     return {
         "schema": payload["schema"],

@@ -1,6 +1,6 @@
 # 🧱 YWD-Hotspot Architecture
 
-[← Docs index](README.md) · [Project README](../README.md) · [Display](DISPLAY.md) · [Security](../SECURITY.md) · [Development notes](GITHUB-SETUP.md)
+[← Docs index](README.md) · [Project README](../README.md) · [Display](DISPLAY.md) · [OS Image Build](OS-IMAGE-BUILD.md) · [Security](../SECURITY.md) · [Development notes](GITHUB-SETUP.md)
 
 ---
 
@@ -35,6 +35,7 @@ The core RF path does not depend on the dashboard, OLED, or activity presentatio
 | `ywd-headless-oled.service` | YWD-Hotspot OS authoritative SSD1306/I2C owner using the unified renderer |
 | `ywd-oled.service` | Generic/non-OS OLED unit; kept disabled on YWD-Hotspot OS |
 | `ywd-update.service` | Detached one-shot software update job started only through authenticated update control |
+| `ywd-setup.service` | YWD-Hotspot OS secure first-boot setup server; disabled/irrelevant after setup completes |
 | `ywd-dmrid-update.timer` | Periodically refreshes lightweight RadioID data when due |
 
 ## 📟 OLED ownership invariant
@@ -75,7 +76,7 @@ with the restricted sudo policy:
 /etc/sudoers.d/ywd-hotspot
 ```
 
-The dispatcher routes only named actions to dedicated helpers. Software update and OS OLED-owner transitions do not expose arbitrary branch names, shell commands, URLs, or paths to browser input.
+The dispatcher routes only named actions to dedicated helpers. Software update, first-boot finalization and OS OLED-owner transitions do not expose arbitrary branch names, shell commands, URLs, or paths to browser input.
 
 The browser must never directly execute arbitrary shell text or directly edit generated MMDVM-Host/DMRGateway INI files.
 
@@ -112,7 +113,7 @@ regenerate temporary INIs
 atomic apply / scoped service action
 ```
 
-Schema 4 adds OLED runtime-presentation and WebUI instrumentation controls. Existing schema-3 configurations are normalized with conservative defaults: current/basic OLED behavior and enhanced browser instrumentation disabled.
+Current canonical configuration schema is **5**. Schema 5 includes the unified OLED runtime-presentation controls plus the LIVE DMR instrumentation/history/measurement-hold settings introduced in the Alpha12.x line. Older configurations normalize forward with conservative defaults.
 
 Normal configuration history is retained separately for rollback.
 
@@ -125,6 +126,29 @@ YWD-Hotspot treats these as different secrets:
 3. local WebUI control password — unlocks LAN write/admin controls
 
 Reusable secret material must not appear in browser-readable config, support summaries, or public diagnostic bundles.
+
+## 🥧 YWD-Hotspot OS factory/setup path
+
+A generated YWD-Hotspot OS image intentionally starts from a factory placeholder rather than pretending to be a configured transmitter:
+
+```text
+image build
+  ↓
+NOCALL / 00000 / BrandMeister disabled
+RF services disabled
+  ↓
+network onboarding
+  ↓
+secure HTTPS first-boot wizard
+  ↓
+validated canonical config + dashboard credential
+  ↓
+optional explicit RF enable
+```
+
+Without station Wi-Fi, the OS network manager uses the single Pi Zero Wi-Fi interface to create `YWD-Hotspot-XXXX` at `10.42.0.1`. Once station Wi-Fi is online, the OLED supplies a short-lived six-digit setup code for `https://ywd-hotspot.local:8443/`.
+
+The current builder can optionally preseed Wi-Fi, but it does not provide a supported full radio/BrandMeister credential preseed. See **[OS-IMAGE-BUILD.md](OS-IMAGE-BUILD.md)**.
 
 ## 📁 Runtime/state layout
 
@@ -146,12 +170,14 @@ Reusable secret material must not appear in browser-readable config, support sum
   geocode-cache.json
   talkgroup-directory.json
   update-status.json
+  setup-state.json          # YWD-Hotspot OS after first-boot completion
   config-history.json
   audit.json
   private/
 
 /run/ywd-hotspot/
   activity.json
+  setup.json                # temporary YWD-Hotspot OS setup state/code
 
 /var/backups/ywd-hotspot/
 ```
@@ -211,7 +237,7 @@ app.js                       tiny loader
 
 The enhanced LIVE DMR panel reuses the dashboard's existing status payload. It does not add a new daemon or a second server polling loop. When enhanced instrumentation is disabled, the established Basic LIVE DMR renderer remains in use.
 
-The UI uses same-origin external assets so the dashboard can retain a restrictive Content-Security-Policy without `unsafe-inline` styling.
+The UI uses same-origin external assets so the dashboard can retain a restrictive Content-Security-Policy without `unsafe-inline` styling in the normal dashboard.
 
 ## 🥧 Pi Zero performance budget
 
@@ -236,6 +262,6 @@ Avoid turning a Pi Zero into infrastructure cosplay:
 
 ## 📡 RF safety invariant
 
-Install, update, config-apply, runtime-control, display, and UI paths must preserve explicit operator intent.
+Install, image first boot, update, config-apply, runtime-control, display, and UI paths must preserve explicit operator intent.
 
-A UI change, OLED restart, Git pull, dashboard restart, or software update is **never** permission to unexpectedly start a transmitter.
+A UI change, OLED restart, Git pull, dashboard restart, software update, Wi-Fi handoff, or completed setup wizard page is **never** permission to unexpectedly start a transmitter. RF begins only when the operator deliberately requests it through the supported RF-enable path.

@@ -6,9 +6,22 @@ YWD-Hotspot is still alpha software. These are project checkpoints, not a promis
 
 ---
 
+## Promotion note — 2026-08-17
+
+The physically proven unified application + OS-builder Alpha12.2 commit was promoted to the conservative `main` branch:
+
+```text
+0.1.0-alpha12.2-dev
+41f1cf9fcf94b3880d5cf11fb35e2cccb6fd3afd
+```
+
+The same integrated baseline is preserved at `dev-alpha12.2-os-integrated-known-good`. Plain `dev` currently retains that tested runtime commit. `main` may carry later documentation-only commits above it without changing the Alpha12.2 runtime payload. Experimental plugin/MMDVM development remains separate on `dev-plugins` and is not part of the promoted `main` runtime.
+
+Main-line documentation was refreshed at promotion time to cover the integrated image builder, factory/setup-AP path, optional Wi-Fi-only build preseed, secure first-boot HTTPS wizard, single-owner OLED model and current schema-5 runtime.
+
 ## 0.1.0-alpha12.2-dev — Unlock + Update Feedback Polish
 
-**Status:** active `dev` test build. `0.1.0-alpha12.1-dev` is preserved at `dev-alpha12.1-known-good`. No MMDVM-Host or DMRGateway pin changes are included.
+**Status:** physically proven integrated baseline and later promoted to `main`. Preserved at `dev-alpha12.2-os-integrated-known-good`; `0.1.0-alpha12.1-dev` also remains preserved at `dev-alpha12.1-known-good`. No MMDVM-Host or DMRGateway pin changes are included.
 
 Highlights:
 
@@ -19,6 +32,16 @@ Highlights:
 - update-start feedback hands off to the existing progress modal as soon as the detached update job becomes visible
 - modal error/busy presentation remains external-CSS based; strict `style-src 'self'` is unchanged
 - Alpha12.2 cache-busts the updated polish assets
+
+Integrated OS baseline subsequently validated on this commit includes:
+
+- canonical `os/builder/BUILD.sh` unified image builder
+- exact-current-root application packaging rather than stale OS app copies
+- Pi Zero W / armhf Raspberry Pi OS Lite image target
+- setup/recovery AP and secure HTTPS first-boot wizard
+- factory RF-off safety gate
+- unified headless OLED ownership
+- managed `main` / `dev` update channel after imaging
 
 ## 0.1.0-alpha12.1-dev — Instrument Panel + CSP Polish
 
@@ -198,7 +221,7 @@ The recommendation uses average BER and does not silently change modem settings.
 
 ## 0.1.0-alpha6 — GitHub Integration + About
 
-`main` currently remains on the Alpha6 line while later work is exercised on `dev`.
+At the time Alpha6 was introduced, `main` remained on the Alpha6 line while later work was exercised on `dev`. This historical note no longer describes the current `main` head; see the promotion note at the top of this file.
 
 Highlights:
 

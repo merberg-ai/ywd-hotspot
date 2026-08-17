@@ -1,6 +1,6 @@
 # 🚀 Installing YWD-Hotspot
 
-[← Docs index](README.md) · [Project README](../README.md) · [Upgrading](UPGRADING.md) · [Security](../SECURITY.md)
+[← Docs index](README.md) · [Project README](../README.md) · [OS Image Build](OS-IMAGE-BUILD.md) · [Upgrading](UPGRADING.md) · [Security](../SECURITY.md)
 
 ---
 
@@ -21,6 +21,13 @@ The primary development target is:
 | OLED | I2C bus 1, normally `0x3C` |
 | Network | BrandMeister DMR simplex |
 
+Current promoted `main` application baseline:
+
+```text
+0.1.0-alpha12.2-dev
+41f1cf9fcf94b3880d5cf11fb35e2cccb6fd3afd
+```
+
 Useful preflight:
 
 ```bash
@@ -31,9 +38,23 @@ ls -l /dev/serial0 2>/dev/null || true
 readlink -f /dev/serial0 2>/dev/null || true
 ```
 
-## 🚀 Fresh install — promoted `main`
+## 🧭 Choose an installation path
 
-A normal Git clone preserves executable bits. No manual chmod pass is required.
+There are two supported ways to start:
+
+### A. Install onto an existing Raspberry Pi OS system
+
+Use the normal Git clone + installer path below. This is appropriate when the Pi is already running Raspberry Pi OS and you want YWD-Hotspot to install/build the radio stack in place.
+
+### B. Build/flash a complete YWD-Hotspot OS image
+
+Use the integrated image builder when you want a ready-to-flash appliance image containing the current YWD-Hotspot application, pinned radio binaries, network onboarding, OLED boot/setup screens and secure first-boot wizard.
+
+See **[Building a YWD-Hotspot OS image](OS-IMAGE-BUILD.md)**.
+
+## 🚀 Fresh install from promoted `main`
+
+A normal Git clone of the repository's default branch installs the promoted `main` line:
 
 ```bash
 sudo apt update
@@ -45,15 +66,26 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
+If you prefer to make the branch explicit:
+
+```bash
+cd ~
+git clone --branch main https://github.com/merberg-ai/ywd-hotspot.git
+cd ywd-hotspot
+sudo ./INSTALL.sh
+```
+
+A normal Git clone preserves executable bits. No manual chmod pass is required.
+
 If your source came from a ZIP/Windows copy and executable bits were lost:
 
 ```bash
 sudo bash ./INSTALL.sh
 ```
 
-## 🧪 Fresh install — active `dev`
+## 🧪 Fresh install from `dev`
 
-To install the current development line directly:
+To install the normal development line directly:
 
 ```bash
 sudo apt update
@@ -65,7 +97,48 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-`dev` is for active testing. The promoted `main` line is intentionally more conservative.
+`dev` is for active core/application testing. The promoted `main` line is intentionally more conservative.
+
+Experimental plugin/MMDVM work is maintained separately and is not part of the normal `main` installation documented here.
+
+## 🥧 Install using a YWD-Hotspot OS image
+
+The unified OS builder packages the exact application commit used to build the image.
+
+A factory image boots with:
+
+- RF disabled
+- factory `NOCALL` / `00000` identity
+- BrandMeister disabled
+- no WebUI control password
+- no BrandMeister API key
+- `ywd-headless-oled.service` as the sole OLED owner
+
+Without embedded Wi-Fi, the appliance creates a setup AP similar to:
+
+```text
+YWD-Hotspot-ABCD
+```
+
+Connect to it and browse to:
+
+```text
+http://10.42.0.1/
+```
+
+After station Wi-Fi is established, the OLED displays a six-digit setup code and the secure setup wizard becomes available at:
+
+```text
+https://ywd-hotspot.local:8443/
+```
+
+The browser may warn about the locally generated self-signed certificate. Verify you are talking to the local hotspot before continuing.
+
+The first-boot wizard finalizes the canonical station/radio/BrandMeister configuration, dashboard password, optional BrandMeister API key and final RF-enable choice.
+
+RF remains disabled unless the operator explicitly enables it during setup.
+
+The image builder can optionally preseed **Wi-Fi only**. Current `main` does not provide a supported full radio/BrandMeister configuration preseed. See **[OS-IMAGE-BUILD.md](OS-IMAGE-BUILD.md)** for exact build modes and the physical acceptance checklist.
 
 ## 🔁 Existing install → GitHub management
 
@@ -152,9 +225,9 @@ Expected:
 /dev/ttyAMA0
 ```
 
-## 🧱 What a fresh install does
+## 🧱 What a fresh repository install does
 
-A genuinely fresh installation:
+A genuinely fresh clone/install on an existing Raspberry Pi OS system:
 
 1. verifies Raspberry Pi hardware and UART mapping
 2. performs a read-only MMDVM `GET_VERSION` probe
@@ -177,6 +250,8 @@ A genuinely fresh installation:
 > [!NOTE]
 > The original Pi Zero W is not exactly a compile monster. The first upstream build can take a while. Normal YWD application updates do not repeat it.
 
+The OS-image path differs: MMDVM-Host and DMRGateway are compiled inside the image build, and the deployed Pi uses the secure first-boot appliance wizard instead of the command-line fresh-install flow.
+
 ## ⚙️ Canonical configuration
 
 Source of truth:
@@ -194,11 +269,13 @@ Generated outputs:
 
 Do **not** hand-maintain generated INI files. Change configuration through YWD-Hotspot and let it regenerate them.
 
-The configuration wizard covers station identity, DMR ID/ESSID, simplex frequency, Color Code, BrandMeister master/security password, location, offsets/levels, WebUI port, OLED behavior, RF boot policy, and journal policy.
+Current canonical configuration schema is **5**.
 
-## 📡 RF enable confirmation
+The configuration system covers station identity, DMR ID/ESSID, simplex frequency, Color Code, BrandMeister master/security password, location, offsets/levels, WebUI port, OLED behavior, LIVE DMR instrumentation behavior, RF boot policy, and journal policy.
 
-At the end of a fresh install:
+## 📡 RF enable confirmation — repository install
+
+At the end of a fresh repository install:
 
 ```text
 Type ENABLE-RF to start AND enable RF at boot now:
@@ -206,15 +283,19 @@ Type ENABLE-RF to start AND enable RF at boot now:
 
 Only the exact text `ENABLE-RF` starts/enables the RF path. Any other response leaves MMDVM-Host and DMRGateway stopped/disabled.
 
+On YWD-Hotspot OS, the equivalent safety decision is made on the final secure first-boot wizard step.
+
 That invariant also applies to migration and normal application updates: **source management is never permission to key a transmitter.**
 
 ## 🔐 Configure WebUI write control
 
-The dashboard is readable without a write-control session. Configure the local control password with:
+For a repository install, the dashboard is readable without a write-control session. Configure the local control password with:
 
 ```bash
 sudo ywd-hotspotctl web-password
 ```
+
+YWD-Hotspot OS creates this password during the secure first-boot wizard.
 
 This password is separate from BrandMeister credentials.
 
@@ -226,6 +307,8 @@ Static-TG and Drop-QSO controls use a separate BrandMeister API v2 key:
 sudo ywd-hotspotctl bm-api-key
 ```
 
+YWD-Hotspot OS can accept the optional key during first-boot setup.
+
 The API key stays on the Pi and is never returned to browser JavaScript.
 
 ## ✅ Verify the installation
@@ -233,18 +316,27 @@ The API key stays on the Pi and is never returned to browser JavaScript.
 ```bash
 ywd-hotspotctl status
 ywd-hotspotctl source
+systemctl --failed --no-pager
 ```
 
-Expected managed services include:
+Core services include:
 
 ```text
 ywd-mmdvmhost.service
 ywd-dmrgateway.service
 ywd-dashboard.service
 ywd-activity.service
-ywd-oled.service
 ywd-dmrid-update.timer
 ```
+
+OLED ownership depends on installation type:
+
+```text
+Generic/repository install: ywd-oled.service
+YWD-Hotspot OS:             ywd-headless-oled.service
+```
+
+On YWD-Hotspot OS, `ywd-oled.service` should remain inactive so there is only one physical SSD1306 owner.
 
 RF service state depends on the operator's explicit choice.
 
@@ -282,17 +374,19 @@ Before applying updates, read **[UPGRADING.md](UPGRADING.md)**.
 
 ## 📟 OLED notes
 
-The installer scans I2C bus 1. The primary test HAT uses an SSD1306-like display at `0x3C`:
+Generic installer paths scan I2C bus 1. The primary test HAT uses an SSD1306-like display at `0x3C`:
 
 ```bash
 i2cdetect -y 1
 ```
 
+YWD-Hotspot OS enables the headless OLED owner for boot/network/setup/runtime presentation.
+
 OLED failure/absence must not interrupt DMR operation.
 
 ## 🪵 Known harmless DMRGateway MQTT message
 
-Upstream DMRGateway may attempt a localhost MQTT connection and log connection-refused even though YWD-Hotspot does not require a local MQTT broker.
+Upstream DMRGateway may attempt a localhost MQTT connection and log connection-refused even though the promoted `main` line does not require a local MQTT broker.
 
 Do **not** install Mosquitto solely to silence that message.
 
@@ -326,7 +420,11 @@ git -C /opt/ywd-hotspot/repo status --short
 git -C /opt/ywd-hotspot/repo remote -v
 ```
 
-Never paste reusable credentials or protected backups into public issues.
+### OS image / first boot
+
+See **[OS-IMAGE-BUILD.md](OS-IMAGE-BUILD.md)** for setup-AP, Wi-Fi handoff, HTTPS wizard, builder doctor and image-output troubleshooting.
+
+Never paste reusable credentials, protected backups or builder-local private SSH keys into public issues.
 
 ## 🗑️ Uninstall
 
@@ -340,4 +438,4 @@ The uninstaller preserves configuration/runtime data by default so credentials/h
 
 ---
 
-**Next:** [🔄 Upgrading](UPGRADING.md) · [📚 Docs index](README.md)
+**Next:** [🥧 Build an OS image](OS-IMAGE-BUILD.md) · [🔄 Upgrading](UPGRADING.md) · [📚 Docs index](README.md)

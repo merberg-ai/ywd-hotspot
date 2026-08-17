@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="#-quick-install">🚀 Install</a> ·
+  <a href="#-build-a-complete-ywd-hotspot-os-image">🥧 Build OS image</a> ·
   <a href="#-updating">🔄 Update</a> ·
   <a href="#-live-dmr--display">📟 Display</a> ·
   <a href="#-talkgroup-manager">📻 Talkgroups</a> ·
@@ -19,14 +20,14 @@
 ---
 
 > [!IMPORTANT]
-> **Development status:** `0.1.0-alpha12.2-dev` is the active `dev` build. `0.1.0-alpha12.1-dev` is preserved at `dev-alpha12.1-known-good` after successful Pi/mobile/desktop testing. Alpha12.2 is a focused UX hotfix for clearer unlock-password errors and immediate About-page update-start feedback; the RF stack and Alpha12.1 instrumentation/OLED architecture are unchanged.
+> **Promoted runtime baseline:** `main` carries the physically proven unified application + OS-builder runtime from `0.1.0-alpha12.2-dev` (`41f1cf9fcf94b3880d5cf11fb35e2cccb6fd3afd`). Documentation-only commits may sit above that tested runtime commit on `main` without changing the installed application payload. Plain `dev` currently retains the same Alpha12.2 runtime baseline. The integrated checkpoint is preserved at `dev-alpha12.2-os-integrated-known-good`. Experimental plugin/MMDVM work remains separate on `dev-plugins` and is not part of the `main` runtime documented here.
 
 > [!WARNING]
 > The built-in WebUI is plain HTTP for a trusted LAN. Do **not** forward the dashboard port directly to the public Internet.
 
 ## ✨ What is YWD-Hotspot?
 
-YWD-Hotspot is a purpose-built DMR hotspot stack for small Raspberry Pi systems—especially the original **Raspberry Pi Zero W**. The RF path stays on pinned upstream **MMDVM-Host** and **DMRGateway**, while YWD-Hotspot adds a lightweight local UI, CLI, BrandMeister controls, diagnostics, calibration tools, OLED support, and safe GitHub-managed updates.
+YWD-Hotspot is a purpose-built DMR hotspot stack for small Raspberry Pi systems—especially the original **Raspberry Pi Zero W**. The RF path stays on pinned upstream **MMDVM-Host** and **DMRGateway**, while YWD-Hotspot adds a lightweight local UI, CLI, BrandMeister controls, diagnostics, calibration tools, OLED support, safe GitHub-managed updates, and a reproducible appliance-image builder.
 
 The design goal is simple: **make a DMR hotspot feel like a polished appliance without turning a Pi Zero into a tiny web-server science project.**
 
@@ -40,6 +41,7 @@ The design goal is simple: **make a DMR hotspot feel like a polished appliance w
 | 📟 OLED | Unified lightweight runtime/boot display with configurable RX/TX presentation |
 | 💻 CLI | Colorized control console, status/source/calibration helpers |
 | 🔄 Updates | Managed Git checkout, staged validation, About-page updater, stage-driven progress, rollback attempt |
+| 🥧 OS image | Unified Raspberry Pi OS image builder with setup AP, secure first boot, pinned RF binaries and reproducible provenance |
 
 No Node.js runtime. No React/Vue. No SQL server. No Redis. No Docker.
 
@@ -62,7 +64,7 @@ Other Pi models may work, but the original Pi Zero W is the performance budget.
 
 ### Promoted `main` line
 
-A normal Git clone preserves the repository's executable bits, so a fresh install is intentionally short:
+A normal Git clone follows the promoted `main` branch and preserves executable bits:
 
 ```bash
 sudo apt update
@@ -74,9 +76,18 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
+Equivalent explicit branch form:
+
+```bash
+cd ~
+git clone --branch main https://github.com/merberg-ai/ywd-hotspot.git
+cd ywd-hotspot
+sudo ./INSTALL.sh
+```
+
 ### Active `dev` line
 
-For the current development build:
+For normal core/application development testing:
 
 ```bash
 sudo apt update
@@ -91,7 +102,7 @@ sudo ./INSTALL.sh
 > [!NOTE]
 > If you are working from a ZIP/Windows copy that lost executable bits, run the entry point through Bash instead: `sudo bash ./INSTALL.sh`.
 
-A genuinely fresh installation builds the pinned MMDVM-Host and DMRGateway commits with `make -j1`. On an original Pi Zero W, that can take a while. Normal YWD application updates do **not** repeat that compile.
+A genuinely fresh repository installation builds the pinned MMDVM-Host and DMRGateway commits with `make -j1`. On an original Pi Zero W, that can take a while. Normal YWD application updates do **not** repeat that compile.
 
 The installer never starts RF unless you explicitly type:
 
@@ -100,6 +111,39 @@ ENABLE-RF
 ```
 
 Full walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)**
+
+## 🥧 Build a complete YWD-Hotspot OS image
+
+The promoted `main` branch also contains the unified Raspberry Pi OS image builder.
+
+A build packages the **same Git commit that runs the builder**, compiles the pinned RF stack inside the armhf image, configures the Pi Zero UART, installs the headless OLED/network/setup layers, and leaves RF disabled until secure first-boot setup explicitly enables it.
+
+Short build flow on a suitable Linux builder:
+
+```bash
+cd ~/ywd-hotspot
+git switch main
+git pull --ff-only
+bash os/builder/DOCTOR.sh
+bash os/builder/BUILD.sh
+```
+
+Current supported image modes:
+
+- **Factory/unconfigured:** no Wi-Fi embedded; first boot creates `YWD-Hotspot-XXXX`, with onboarding at `http://10.42.0.1/`.
+- **Wi-Fi preseeded:** run `bash os/builder/CONFIGURE-WIFI.sh` before building; the Pi tries that Wi-Fi first and falls back to the setup AP if needed.
+
+In both modes, real station/radio/BrandMeister/control configuration still goes through the secure first-boot wizard at:
+
+```text
+https://ywd-hotspot.local:8443/
+```
+
+after the OLED displays its six-digit setup code.
+
+Current `main` does **not** expose a supported full radio/BrandMeister build-time preseed. The image deliberately starts with `NOCALL` / `00000`, cleared control/API credentials, and RF disabled.
+
+Detailed host prerequisites, builder variables, outputs, flashing, setup flow and acceptance checklist: **[docs/OS-IMAGE-BUILD.md](docs/OS-IMAGE-BUILD.md)**
 
 ## 🔁 Existing install → GitHub management
 
@@ -114,7 +158,7 @@ sudo ./MIGRATE-TO-GITHUB.sh
 
 Migration preserves canonical config, BrandMeister credentials, local WebUI control password, calibration/history/runtime data, and current RF running/enabled policy. It does **not** rebuild MMDVM-Host or DMRGateway.
 
-After migration, cross onto `dev` only if you want the active test line:
+After migration, cross onto `dev` only if you want the active normal development line:
 
 ```bash
 sudo ywd-hotspotctl update --branch dev
@@ -129,9 +173,10 @@ Check the appliance:
 ```bash
 ywd-hotspotctl status
 ywd-hotspotctl source
+systemctl --failed --no-pager
 ```
 
-Configure the local write-control password:
+For a normal repository install, configure the local write-control password:
 
 ```bash
 sudo ywd-hotspotctl web-password
@@ -142,6 +187,8 @@ Configure a separate BrandMeister API v2 key for TG/Drop-QSO controls:
 ```bash
 sudo ywd-hotspotctl bm-api-key
 ```
+
+YWD-Hotspot OS handles those credentials through its secure first-boot wizard.
 
 Then open:
 
@@ -183,11 +230,11 @@ Full details and recovery notes: **[docs/UPGRADING.md](docs/UPGRADING.md)**
 
 ## 📟 LIVE DMR + Display
 
-Alpha12/12.1 adds an optional RF-instrument style Status panel while preserving the established Basic UI.
+The promoted Alpha12.x line provides an optional RF-instrument style Status panel while preserving the established Basic UI.
 
 ### WebUI LIVE DMR modes
 
-**Basic** keeps the current lightweight RX/TX activity card and is the default.
+**Basic** keeps the lightweight RX/TX activity card and is the default.
 
 Enhanced instrumentation can add:
 
@@ -204,7 +251,7 @@ Enhanced instrumentation can add:
 
 RX and TX intentionally use different instruments. During active **RF receive**, RSSI/BER reads `SAMPLING…` / `MEASURING…` until the normal MMDVM-Host completed-call journal summary supplies measured values. During **network → RF TX**, the UI prioritizes configured TX/RF drive and shows network quality as pending until packet-loss/BER results are available.
 
-The pinned MMDVM-Host does have an optional MQTT JSON path for roughly one-second internal RSSI/BER telemetry, but YWD-Hotspot deliberately does not add an MQTT broker/client dependency to the original Pi Zero just to animate gauges. The lightweight journal/activity collector remains the default stability-oriented path.
+The promoted `main` line deliberately does not add a local MQTT dependency merely to animate gauges. The lightweight journal/activity collector remains the default stability-oriented path.
 
 The gauges consume the dashboard's existing status payload; enhanced mode does not create another server polling loop. Missing measurements stay missing rather than being fabricated. The animated RF-energy display is presentation, not an audio VU meter.
 
@@ -301,27 +348,19 @@ YWD-Hotspot keeps three credentials deliberately separate:
 
 The API key stays server-side and is never returned to browser JavaScript. Sanitized diagnostics are preferred for support; protected backups can contain reusable credentials and must remain private.
 
+The image builder also creates builder-local SSH key material under ignored `os/local/`; keep the private key private.
+
 Read **[SECURITY.md](SECURITY.md)** before exposing or sharing anything from a real appliance.
 
 ## 🧭 Build provenance
 
-Install/update writes non-secret provenance to:
+Install/update/image builds write non-secret provenance to:
 
 ```text
 /etc/ywd-hotspot/build-info.json
 ```
 
-The CLI and About page show:
-
-```text
-Version         0.1.0-alpha12.2-dev
-Git branch      dev
-Update channel  dev
-Git commit      <commit SHA>
-Commit date     <commit date>
-Source          github
-Source state    clean
-```
+The CLI and About page show the installed version, source branch, update channel, commit, commit date, source type and source state. For a promoted `main` install/image, the normal branch/channel should be `main`; `dev` builds report `dev`.
 
 ## 💻 CLI quick reference
 
@@ -341,6 +380,7 @@ ywd-hotspotctl calibration
 sudo ywd-hotspotctl update --check
 sudo ywd-hotspotctl update --dry-run
 sudo ywd-hotspotctl update
+sudo ywd-hotspotctl update-channel main
 sudo ywd-hotspotctl update-channel dev
 
 # Config/support
@@ -388,14 +428,16 @@ Do not casually move these pins during calibration/stability work.
 | Guide | Use it for |
 |---|---|
 | **[Documentation index](docs/README.md)** | Find the right guide quickly |
-| **[Installation](docs/INSTALL.md)** | Fresh install, migration, UART/modem preflight |
+| **[Installation](docs/INSTALL.md)** | Main/dev install, migration, UART/modem preflight, OS-image first boot |
+| **[OS Image Build](docs/OS-IMAGE-BUILD.md)** | Full image-builder prerequisites, factory/Wi-Fi-preseed modes, output, flashing, setup and acceptance tests |
+| **[OS Development](docs/OS-DEVELOPMENT.md)** | Builder architecture, branch/integration workflow, promotion rules |
 | **[Upgrading](docs/UPGRADING.md)** | Channels, staged/WebUI updates, rollback/recovery |
 | **[Display + Instrumentation](docs/DISPLAY.md)** | LIVE DMR meters, Basic/Enhanced modes, unified OLED settings |
 | **[Talkgroups](docs/TALKGROUPS.md)** | BrandMeister Talkgroup Manager |
 | **[Calibration](docs/CALIBRATION.md)** | Controlled RX BER workflow |
 | **[Architecture](docs/ARCHITECTURE.md)** | RF path, privilege boundaries, runtime layout |
 | **[Repository / development](docs/GITHUB-SETUP.md)** | Branch model, validation, source workflow |
-| **[Security](SECURITY.md)** | Credentials, exposure, diagnostics |
+| **[Security](SECURITY.md)** | Credentials, exposure, diagnostics, builder-local secrets |
 | **[Contributing](CONTRIBUTING.md)** | Project constraints and PR expectations |
 | **[Changelog](CHANGELOG.md)** | Development checkpoints |
 

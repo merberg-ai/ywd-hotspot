@@ -13,10 +13,11 @@ jobs:
       - name: Static syntax and policy guards
         run: |
           set -euxo pipefail
+          openssl version
           python3 -m py_compile lib/*.py tools/ywdplugin-build.py
           for f in web/*.js; do node --check "$f"; done
           bash -n lib/admin_dispatch.sh lib/setup_entry.sh
-          bash -n INSTALL.sh UPDATE.sh GITHUB-UPDATE.sh
+          bash -n INSTALL.sh INSTALL-core.sh UPDATE.sh GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh
           ! grep -q 'confirm(' lib/setup_restore_server.py
       - name: Encrypted settings round trip and tamper rejection
         run: |
@@ -139,11 +140,40 @@ jobs:
           else:
             raise SystemExit('tampered plugin package was accepted')
           PY
-      - name: First-boot and privilege references
+      - name: Persistent uploaded service update-safety discovery
         run: |
           set -euxo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/lib/service_plugin_packages" "$tmp/local/audit-persistent-service"
+          cat > "$tmp/local/audit-persistent-service/plugin.json" <<'JSON'
+          {"api":1,"id":"audit-persistent-service","kind":"service"}
+          JSON
+          YWD_LOCAL_PLUGIN_ROOT="$tmp/local" python3 - "$tmp/lib" <<'PY'
+          import sys
+          sys.path.insert(0,'lib')
+          import plugin_update_safety
+          ids = plugin_update_safety.catalog_service_ids(sys.argv[1])
+          assert 'audit-persistent-service' in ids, ids
+          print('persistent uploaded service is visible to update safety')
+          PY
+      - name: First-boot, release and privilege references
+        run: |
+          set -euxo pipefail
+          test "$(cat VERSION)" = '0.1.0-alpha18.2-dev'
           grep -q 'setup_restore_server.py' lib/setup_entry.sh
           grep -q 'settings_backup.py' os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
           grep -q 'settings-import' sudoers/ywd-hotspot
           grep -q 'plugin-package-upload' sudoers/ywd-hotspot
           grep -q 'plugin_service_runner.py --check' systemd/ywd-plugin@.service
+          grep -q 'openssl' INSTALL-core.sh
+          for f in \
+            docs/BACKUP-RESTORE.md docs/PLUGIN-PACKAGES.md \
+            lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py \
+            lib/plugin_package_archive.py lib/plugin_catalog_overlay.py lib/plugin_service_runner.py \
+            web/backup-restore.js web/plugin-package-upload.js tools/ywdplugin-build.py; do
+            grep -Fxq "$f" MANIFEST.txt
+          done
+          grep -q 'lib/settings_backup.py' GITHUB-UPDATE-core.sh
+          grep -q 'lib/plugin_package_archive.py' GITHUB-UPDATE-core.sh
+          grep -q 'web/backup-restore.js' GITHUB-UPDATE-core.sh

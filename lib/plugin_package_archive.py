@@ -87,7 +87,7 @@ def _verify_signature(manifest_raw, manifest):
     if not KEY_RE.fullmatch(key_id):
         raise PackageArchiveError("invalid plugin signing key id")
     key = TRUST_DIR / f"{key_id}.pem"
-    if not key.is_file() or key.stat().st_size > 16384:
+    if not key.is_file() or key.is_symlink() or key.stat().st_size > 16384:
         raise PackageArchiveError(f"plugin signing key is not trusted on this hotspot: {key_id}")
     return {"status": "needs-signature", "key_id": key_id, "algorithm": algorithm, "key": key}
 
@@ -125,7 +125,10 @@ def inspect_archive(blob: bytes, filename="upload.ywdplugin"):
             total += info.file_size
             if total > MAX_UNPACKED:
                 raise PackageArchiveError("plugin archive expands beyond the 2 MiB limit")
-            payloads[name] = zf.read(info)
+            raw = zf.read(info)
+            if len(raw) != info.file_size:
+                raise PackageArchiveError(f"package file size mismatch: {name}")
+            payloads[name] = raw
 
     if "ywdplugin.json" not in payloads or "plugin.json" not in payloads:
         raise PackageArchiveError("archive must contain ywdplugin.json and plugin.json")
@@ -146,6 +149,11 @@ def inspect_archive(blob: bytes, filename="upload.ywdplugin"):
     kind = str(plugin_raw.get("kind") or "")
     if kind not in {"declarative", "service"}:
         raise PackageArchiveError("uploaded plugin kind must be declarative or service")
+    # Uploaded code/data cannot self-assert the core-owned first-party trust label.
+    # Signature/source state is displayed separately and is the authoritative
+    # provenance for uploaded packages.
+    if str(plugin_raw.get("trust") or "") != "experimental":
+        raise PackageArchiveError("uploaded plugins must declare trust as experimental")
 
     files = package.get("files")
     if not isinstance(files, dict) or not files or len(files) > MAX_FILES - 1:
@@ -221,7 +229,7 @@ def install_archive(blob: bytes, filename="upload.ywdplugin"):
     with tempfile.TemporaryDirectory(prefix="ywd-plugin-stage-", dir=str(LOCAL_ROOT.parent)) as td:
         stage = Path(td) / ident
         stage.mkdir(mode=0o755)
-        for name, digest in info["files"].items():
+        for name in info["files"]:
             raw = info["payloads"][name]
             path = stage / name
             path.write_bytes(raw)
@@ -270,6 +278,8 @@ def remove_archive(ident):
     try:
         if resolved.parent != LOCAL_ROOT.resolve():
             raise PackageArchiveError("refusing to remove a package outside the local plugin catalog")
+    except PackageArchiveError:
+        raise
     except Exception:
         raise PackageArchiveError("invalid local plugin package path")
     shutil.rmtree(resolved)

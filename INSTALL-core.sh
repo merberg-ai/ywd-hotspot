@@ -179,16 +179,41 @@ cat <<'EOF'
  RF ENABLE CONFIRMATION
 ============================================================
 Starting MMDVM-Host can transmit RF when network traffic arrives.
-Type ENABLE-RF to enable/start MMDVM-Host and DMRGateway at boot and now.
-Press Enter for safe mode (RF stays disabled/stopped).
+Attach a suitable antenna and verify the configured frequency.
 EOF
-read -r rfok
-if [[ "$rfok" == "ENABLE-RF" ]]; then
-  systemctl enable --now ywd-mmdvmhost.service ywd-dmrgateway.service
+read -r -p "Type ENABLE-RF to start AND enable RF at boot now: " rf
+if [[ "$rf" == "ENABLE-RF" ]]; then
+  python3 - <<'PY'
+import json,os
+from pathlib import Path
+p=Path('/etc/ywd-hotspot/config.json'); c=json.load(open(p)); c.setdefault('maintenance',{})['rf_autostart']=True; t=p.with_suffix('.tmp'); t.write_text(json.dumps(c,indent=2)+'\n'); os.chmod(t,0o640)
+try:
+ import grp; os.chown(t,0,grp.getgrnam('ywd-hotspot').gr_gid)
+except Exception: pass
+os.replace(t,p)
+PY
+  systemctl enable --now ywd-mmdvmhost.service; sleep 2; systemctl enable --now ywd-dmrgateway.service
 else
-  systemctl disable --now ywd-mmdvmhost.service ywd-dmrgateway.service 2>/dev/null || true
+  systemctl disable --now ywd-dmrgateway.service ywd-mmdvmhost.service 2>/dev/null || true
+  echo "RF path left stopped/disabled."
 fi
+python3 /opt/ywd-hotspot/app/lib/generate-config.py
+/usr/local/libexec/ywd-hotspot-admin init-applied >/dev/null
 
-echo; /usr/local/sbin/ywd-hotspotctl status || true
-echo "Done. Configure WebUI controls with: sudo ywd-hotspotctl web-password"
-echo "Then configure BrandMeister API key with: sudo ywd-hotspotctl bm-api-key"
+IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; PORT="$(python3 -c "import json;print(json.load(open('/etc/ywd-hotspot/config.json'))['web']['port'])")"
+cat <<EOF
+============================================================
+ Installation complete
+============================================================
+Dashboard : http://${IP:-PI-IP}:$PORT/
+Control   : sudo ywd-hotspotctl
+Status    : ywd-hotspotctl status
+Source    : ywd-hotspotctl source
+Updates   : sudo ywd-hotspotctl update --check
+
+Web WRITE controls are locked until you set a local control password:
+  sudo ywd-hotspotctl web-password
+BrandMeister TG controls also require:
+  sudo ywd-hotspotctl bm-api-key
+EOF
+ywd-hotspotctl status || true

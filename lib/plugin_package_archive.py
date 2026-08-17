@@ -120,12 +120,25 @@ def inspect_archive(blob: bytes, filename="upload.ywdplugin"):
                 raise PackageArchiveError("plugin archives may not contain symbolic links")
             if info.is_dir():
                 raise PackageArchiveError("plugin archive v1 uses files at archive root only")
+            if info.flag_bits & 0x1:
+                raise PackageArchiveError("encrypted ZIP entries are not supported")
+            if info.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
+                raise PackageArchiveError(f"unsupported ZIP compression method for {name}")
             if info.file_size < 0 or info.file_size > MAX_FILE:
                 raise PackageArchiveError(f"package file is too large: {name}")
             total += info.file_size
             if total > MAX_UNPACKED:
                 raise PackageArchiveError("plugin archive expands beyond the 2 MiB limit")
-            raw = zf.read(info)
+            # Bound the decompressor itself rather than trusting only the ZIP
+            # central-directory size. This keeps a malformed compressed stream
+            # from allocating an unbounded output before our size check runs.
+            try:
+                with zf.open(info, "r") as stream:
+                    raw = stream.read(MAX_FILE + 1)
+            except Exception as exc:
+                raise PackageArchiveError(f"could not safely read package file {name}: {exc}")
+            if len(raw) > MAX_FILE:
+                raise PackageArchiveError(f"package file expands beyond the {MAX_FILE}-byte limit: {name}")
             if len(raw) != info.file_size:
                 raise PackageArchiveError(f"package file size mismatch: {name}")
             payloads[name] = raw
@@ -149,9 +162,6 @@ def inspect_archive(blob: bytes, filename="upload.ywdplugin"):
     kind = str(plugin_raw.get("kind") or "")
     if kind not in {"declarative", "service"}:
         raise PackageArchiveError("uploaded plugin kind must be declarative or service")
-    # Uploaded code/data cannot self-assert the core-owned first-party trust label.
-    # Signature/source state is displayed separately and is the authoritative
-    # provenance for uploaded packages.
     if str(plugin_raw.get("trust") or "") != "experimental":
         raise PackageArchiveError("uploaded plugins must declare trust as experimental")
 
@@ -234,7 +244,6 @@ def install_archive(blob: bytes, filename="upload.ywdplugin"):
             path = stage / name
             path.write_bytes(raw)
             os.chmod(path, 0o644)
-        # Validate against the same trusted manifest code used at runtime.
         plugin_catalog_overlay.install()
         if info["kind"] == "declarative":
             manifest = plugin_manager.validate_manifest(stage / "plugin.json")

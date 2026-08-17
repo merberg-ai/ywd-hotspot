@@ -55,8 +55,9 @@ PY
 echo; echo "Installing build/runtime dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends build-essential git ca-certificates libmosquitto-dev libmosquitto1 nlohmann-json3-dev python3 python3-smbus i2c-tools iw sudo
+apt-get install -y --no-install-recommends build-essential git ca-certificates openssl libmosquitto-dev libmosquitto1 nlohmann-json3-dev python3 python3-smbus i2c-tools iw sudo
 [[ -r /usr/include/nlohmann/json.hpp ]] || { echo "[FAIL] nlohmann/json.hpp missing."; exit 1; }
+command -v openssl >/dev/null 2>&1 || { echo "[FAIL] openssl is required for YWD settings backups/plugin signatures."; exit 1; }
 
 if ! id ywd-hotspot >/dev/null 2>&1; then useradd --system --home /var/lib/ywd-hotspot --create-home --shell /usr/sbin/nologin ywd-hotspot; fi
 for g in dialout i2c systemd-journal; do getent group "$g" >/dev/null 2>&1 && usermod -a -G "$g" ywd-hotspot || true; done
@@ -178,41 +179,16 @@ cat <<'EOF'
  RF ENABLE CONFIRMATION
 ============================================================
 Starting MMDVM-Host can transmit RF when network traffic arrives.
-Attach a suitable antenna and verify the configured frequency.
+Type ENABLE-RF to enable/start MMDVM-Host and DMRGateway at boot and now.
+Press Enter for safe mode (RF stays disabled/stopped).
 EOF
-read -r -p "Type ENABLE-RF to start AND enable RF at boot now: " rf
-if [[ "$rf" == "ENABLE-RF" ]]; then
-  python3 - <<'PY'
-import json,os
-from pathlib import Path
-p=Path('/etc/ywd-hotspot/config.json'); c=json.load(open(p)); c.setdefault('maintenance',{})['rf_autostart']=True; t=p.with_suffix('.tmp'); t.write_text(json.dumps(c,indent=2)+'\n'); os.chmod(t,0o640)
-try:
- import grp; os.chown(t,0,grp.getgrnam('ywd-hotspot').gr_gid)
-except Exception: pass
-os.replace(t,p)
-PY
-  systemctl enable --now ywd-mmdvmhost.service; sleep 2; systemctl enable --now ywd-dmrgateway.service
+read -r rfok
+if [[ "$rfok" == "ENABLE-RF" ]]; then
+  systemctl enable --now ywd-mmdvmhost.service ywd-dmrgateway.service
 else
-  systemctl disable --now ywd-dmrgateway.service ywd-mmdvmhost.service 2>/dev/null || true
-  echo "RF path left stopped/disabled."
+  systemctl disable --now ywd-mmdvmhost.service ywd-dmrgateway.service 2>/dev/null || true
 fi
-python3 /opt/ywd-hotspot/app/lib/generate-config.py
-/usr/local/libexec/ywd-hotspot-admin init-applied >/dev/null
 
-IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; PORT="$(python3 -c "import json;print(json.load(open('/etc/ywd-hotspot/config.json'))['web']['port'])")"
-cat <<EOF
-============================================================
- Installation complete
-============================================================
-Dashboard : http://${IP:-PI-IP}:$PORT/
-Control   : sudo ywd-hotspotctl
-Status    : ywd-hotspotctl status
-Source    : ywd-hotspotctl source
-Updates   : sudo ywd-hotspotctl update --check
-
-Web WRITE controls are locked until you set a local control password:
-  sudo ywd-hotspotctl web-password
-BrandMeister TG controls also require:
-  sudo ywd-hotspotctl bm-api-key
-EOF
-ywd-hotspotctl status || true
+echo; /usr/local/sbin/ywd-hotspotctl status || true
+echo "Done. Configure WebUI controls with: sudo ywd-hotspotctl web-password"
+echo "Then configure BrandMeister API key with: sudo ywd-hotspotctl bm-api-key"

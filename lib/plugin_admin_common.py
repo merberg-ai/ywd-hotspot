@@ -20,8 +20,11 @@ import plugin_package_manager
 import plugin_service_manager
 
 
-def payload():
-    raw = sys.stdin.buffer.read(65536)
+def payload(max_bytes=65536):
+    limit = max(1024, min(int(max_bytes), 2 * 1024 * 1024))
+    raw = sys.stdin.buffer.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError("plugin admin payload is too large")
     if not raw:
         return {}
     try:

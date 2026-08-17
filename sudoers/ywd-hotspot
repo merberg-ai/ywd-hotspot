@@ -9,6 +9,9 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin set-bm-api-key, \
  /usr/local/libexec/ywd-hotspot-admin set-web-password, \
  /usr/local/libexec/ywd-hotspot-admin setup-finish, \
+ /usr/local/libexec/ywd-hotspot-admin settings-export, \
+ /usr/local/libexec/ywd-hotspot-admin settings-preview, \
+ /usr/local/libexec/ywd-hotspot-admin settings-import, \
  /usr/local/libexec/ywd-hotspot-admin update-check, \
  /usr/local/libexec/ywd-hotspot-admin update-start, \
  /usr/local/libexec/ywd-hotspot-admin rf-start, \
@@ -25,6 +28,8 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin plugin-runtime, \
  /usr/local/libexec/ywd-hotspot-admin plugin-package-install, \
  /usr/local/libexec/ywd-hotspot-admin plugin-package-uninstall, \
- /usr/local/libexec/ywd-hotspot-admin plugin-data-remove
+ /usr/local/libexec/ywd-hotspot-admin plugin-data-remove, \
+ /usr/local/libexec/ywd-hotspot-admin plugin-package-upload, \
+ /usr/local/libexec/ywd-hotspot-admin plugin-package-remove
 
 ywd-hotspot ALL=(root) NOPASSWD: YWDHOTSPOT_ADMIN

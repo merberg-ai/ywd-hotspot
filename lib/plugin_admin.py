@@ -11,9 +11,13 @@ APP_LIB = Path("/opt/ywd-hotspot/app/lib")
 if str(APP_LIB) not in sys.path:
     sys.path.insert(0, str(APP_LIB))
 
+import plugin_catalog_overlay
+plugin_catalog_overlay.install()
+
 from plugin_admin_common import ensure_update_not_running, payload
 from plugin_admin_packages import install_package, remove_plugin_data, uninstall_package
 from plugin_admin_state import runtime_action, save_config, set_plugin, set_system
+from plugin_admin_upload import remove_package, upload_package
 
 
 def main():
@@ -23,7 +27,7 @@ def main():
         raise SystemExit("usage: plugin_admin.py ACTION")
     ensure_update_not_running()
     action = sys.argv[1]
-    data = payload()
+    data = payload(max_bytes=1800000)
     handlers = {
         "plugin-system-set": set_system,
         "plugin-set": set_plugin,
@@ -32,6 +36,8 @@ def main():
         "plugin-package-install": install_package,
         "plugin-package-uninstall": uninstall_package,
         "plugin-data-remove": remove_plugin_data,
+        "plugin-package-upload": upload_package,
+        "plugin-package-remove": remove_package,
     }
     handler = handlers.get(action)
     if handler is None:

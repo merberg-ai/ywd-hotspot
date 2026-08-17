@@ -1,0 +1,130 @@
+name: Alpha18.2 Backup and Plugin Package Audit
+on:
+  push:
+    branches: [dev-plugins-alpha18.2-work]
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static syntax
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile lib/*.py tools/ywdplugin-build.py
+          for f in web/*.js; do node --check "$f"; done
+          bash -n lib/admin_dispatch.sh lib/setup_entry.sh
+          bash -n INSTALL.sh UPDATE.sh GITHUB-UPDATE.sh
+      - name: Encrypted settings round trip and tamper rejection
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'lib')
+          import config_model, settings_backup
+          cfg = config_model.defaults()
+          cfg['station']['callsign'] = 'KJ6YWD'
+          cfg['station']['base_dmr_id'] = '3196104'
+          cfg['brandmeister']['enabled'] = False
+          cfg['brandmeister']['password'] = 'secret-hotspot-password'
+          cfg = config_model.normalize(cfg)
+          payload = {
+            'schema':1,'created_at':'2026-08-17T00:00:00Z','source':{'version':'audit','branch':'audit','commit':'abc'},
+            'config':cfg,'secrets':{'bm_api_key':'abc123456789xyz','web_auth':None},'calibration_baseline':None,
+            'plugins':{'state':{'schema':1,'enabled':False,'plugins':{}},'packages':{'schema':1,'installed':{}},'configs':{},'trust_keys':{}},'wifi':None,
+          }
+          raw = settings_backup.encrypt_payload(payload, 'correct horse battery staple')
+          restored = settings_backup.decrypt_payload(raw, 'correct horse battery staple')
+          assert restored['config']['station']['callsign'] == 'KJ6YWD'
+          assert restored['config']['brandmeister']['password'] == 'secret-hotspot-password'
+          try:
+            settings_backup.decrypt_payload(raw, 'wrong password definitely')
+          except settings_backup.SettingsBackupError:
+            pass
+          else:
+            raise SystemExit('wrong backup password was accepted')
+          env = json.loads(raw)
+          text = env['ciphertext']
+          env['ciphertext'] = ('A' if text[0] != 'A' else 'B') + text[1:]
+          tampered = (json.dumps(env,separators=(',',':'))+'\n').encode()
+          try:
+            settings_backup.decrypt_payload(tampered, 'correct horse battery staple')
+          except settings_backup.SettingsBackupError:
+            pass
+          else:
+            raise SystemExit('tampered settings backup was accepted')
+          print('settings crypto audit passed')
+          PY
+      - name: Signed and unsigned ywdplugin policy
+        run: |
+          set -euxo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/trust" "$tmp/local" "$tmp/service" "$tmp/decl"
+          openssl genpkey -algorithm Ed25519 -out "$tmp/private.pem"
+          openssl pkey -in "$tmp/private.pem" -pubout -out "$tmp/trust/audit-key.pem"
+          cat > "$tmp/service/plugin.json" <<'JSON'
+          {"api":1,"id":"audit-signed-service","name":"Audit Signed Service","version":"1.0.0","description":"CI signed service package","trust":"experimental","kind":"service","provider":"sandboxed-service","entrypoint":"service.py","capabilities":["service:lifecycle"],"rf_mode":false,"config_schema":"config.schema.json","dependencies":["python3","systemd"],"hardware":[]}
+          JSON
+          cat > "$tmp/service/config.schema.json" <<'JSON'
+          {"schema":1,"fields":[]}
+          JSON
+          printf '%s\n' 'print("audit service")' > "$tmp/service/service.py"
+          python3 tools/ywdplugin-build.py "$tmp/service" "$tmp/audit-service.ywdplugin" --sign-key "$tmp/private.pem" --key-id audit-key --publisher 'CI Audit'
+
+          cat > "$tmp/decl/plugin.json" <<'JSON'
+          {"api":1,"id":"audit-declarative","name":"Audit Declarative","version":"1.0.0","description":"CI unsigned declarative package","trust":"experimental","kind":"declarative","provider":"system-summary","capabilities":["read:system-summary"],"rf_mode":false,"service":null,"config_schema":"config.schema.json","dependencies":["python3"],"hardware":[]}
+          JSON
+          cat > "$tmp/decl/config.schema.json" <<'JSON'
+          {"schema":1,"fields":[]}
+          JSON
+          python3 tools/ywdplugin-build.py "$tmp/decl" "$tmp/audit-decl.ywdplugin"
+
+          YWD_LOCAL_PLUGIN_ROOT="$tmp/local" YWD_PLUGIN_TRUST_DIR="$tmp/trust" YWD_PLUGIN_PACKAGE_STATE="$tmp/packages.json" python3 - "$tmp/audit-service.ywdplugin" "$tmp/audit-decl.ywdplugin" "$tmp/packages.json" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0,'lib')
+          import plugin_package_archive, plugin_catalog_overlay, plugin_service_manager
+          service = Path(sys.argv[1]); decl = Path(sys.argv[2]); state = Path(sys.argv[3])
+          a = plugin_package_archive.inspect_archive(service.read_bytes(), service.name)
+          assert a['kind'] == 'service' and a['signature']['status'] == 'verified'
+          b = plugin_package_archive.inspect_archive(decl.read_bytes(), decl.name)
+          assert b['kind'] == 'declarative' and b['signature']['status'] == 'unsigned'
+          out = plugin_package_archive.install_archive(service.read_bytes(), service.name)
+          assert out['id'] == 'audit-signed-service'
+          state.write_text(json.dumps({'schema':1,'installed':{'audit-signed-service':True}}))
+          plugin_catalog_overlay.install()
+          p = plugin_service_manager.get_plugin('audit-signed-service')
+          assert p['directory'].name == 'audit-signed-service'
+          print('plugin signature/catalog audit passed')
+          PY
+
+          python3 - "$tmp/audit-service.ywdplugin" "$tmp/tampered.ywdplugin" <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+          src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+          with zipfile.ZipFile(src,'r') as zin, zipfile.ZipFile(dst,'w',zipfile.ZIP_DEFLATED) as zout:
+            for info in zin.infolist():
+              data = zin.read(info.filename)
+              if info.filename == 'service.py': data += b'\n# tampered\n'
+              zout.writestr(info.filename,data)
+          PY
+          YWD_LOCAL_PLUGIN_ROOT="$tmp/other-local" YWD_PLUGIN_TRUST_DIR="$tmp/trust" YWD_PLUGIN_PACKAGE_STATE="$tmp/other-state.json" python3 - "$tmp/tampered.ywdplugin" <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,'lib')
+          import plugin_package_archive
+          try:
+            plugin_package_archive.inspect_archive(Path(sys.argv[1]).read_bytes(), 'tampered.ywdplugin')
+          except plugin_package_archive.PackageArchiveError:
+            print('tamper rejected')
+          else:
+            raise SystemExit('tampered plugin package was accepted')
+          PY
+      - name: First-boot payload references
+        run: |
+          set -euxo pipefail
+          grep -q 'setup_restore_server.py' lib/setup_entry.sh
+          grep -q 'settings_backup.py' os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
+          grep -q 'settings-import' sudoers/ywd-hotspot
+          grep -q 'plugin-package-upload' sudoers/ywd-hotspot

@@ -143,13 +143,18 @@ plugin_target=0
 if [[ -z "$TAG" && "$BRANCH" == "dev-plugins" ]]; then
   plugin_target=1
   required+=(
-    lib/dashboard_plugins.py lib/plugin_admin.py lib/admin_dispatch.sh lib/plugin_manager.py
-    lib/plugin_service_manager.py lib/plugin_update_safety.py
+    lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_backup.py
+    lib/plugin_admin.py lib/plugin_admin_common.py lib/plugin_admin_upload.py lib/admin_dispatch.sh
+    lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_archive.py
+    lib/plugin_catalog_overlay.py lib/plugin_service_manager.py lib/plugin_service_runner.py lib/plugin_update_safety.py
+    lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh
     lib/plugin_packages/system-info/plugin.json lib/plugin_packages/system-info/config.schema.json
     lib/service_plugin_packages/service-heartbeat/plugin.json
     lib/service_plugin_packages/service-heartbeat/config.schema.json
     lib/service_plugin_packages/service-heartbeat/service.py
-    web/plugin-manager.js web/plugin-manager.css systemd/ywd-plugin@.service
+    web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js
+    web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js
+    web/backup-restore.js web/backup-restore.css systemd/ywd-plugin@.service
   )
 fi
 for f in "${required[@]}"; do
@@ -160,7 +165,7 @@ for f in UPDATE.sh UPDATE-core.sh INSTALL.sh INSTALL-core.sh GITHUB-UPDATE.sh GI
   [[ -f "$stage/$f" ]] && bash -n "$stage/$f"
 done
 if (( plugin_target )); then
-  bash -n "$stage/lib/admin_dispatch.sh"
+  bash -n "$stage/lib/admin_dispatch.sh" "$stage/lib/setup_entry.sh"
 fi
 python3 -m py_compile "$stage"/lib/*.py
 
@@ -173,10 +178,14 @@ if (( plugin_target )); then
   PYTHONPATH="$stage/lib" \
   YWD_PLUGIN_CATALOG="$stage/lib/plugin_packages" \
   YWD_SERVICE_PLUGIN_CATALOG="$stage/lib/service_plugin_packages" \
+  YWD_LOCAL_PLUGIN_ROOT="$stage/.plugin-local-does-not-exist" \
+  YWD_PLUGIN_TRUST_DIR="$stage/.plugin-trust-does-not-exist" \
   YWD_PLUGIN_STATE="$stage/.plugin-state-does-not-exist" \
   YWD_PLUGIN_CONFIG_DIR="$stage/.plugin-config-does-not-exist" \
   python3 - <<'PY'
-import plugin_manager, plugin_service_manager
+import dashboard_backup, dashboard_plugin_upload, dashboard_update
+import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
+import plugin_manager, plugin_service_manager, settings_backup, settings_admin
 snapshot = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
 assert snapshot["api"] == 1
 rows = [p for p in snapshot["plugins"] if p.get("id") == "system-info"]

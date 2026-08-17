@@ -1,14 +1,14 @@
 [Unit]
 Description=YWD-Hotspot sandboxed plugin %i
 After=basic.target
-ConditionPathExists=/opt/ywd-hotspot/app/lib/service_plugin_packages/%i/service.py
 
 [Service]
 Type=simple
 User=ywd-hotspot
 Group=ywd-hotspot
 ExecCondition=/usr/bin/python3 /opt/ywd-hotspot/app/lib/plugin_package_manager.py require-installed %i
-ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/service_plugin_packages/%i/service.py
+ExecCondition=/usr/bin/python3 /opt/ywd-hotspot/app/lib/plugin_service_runner.py --check %i
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/plugin_service_runner.py %i
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -26,6 +26,7 @@ MemoryDenyWriteExecute=true
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=-/var/lib/ywd-hotspot/plugins/%i
 UMask=0077
 
 [Install]

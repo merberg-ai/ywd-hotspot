@@ -11,4 +11,4 @@ while true; do
   sleep 3
 done
 
-exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/setup_server.py
+exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/setup_restore_server.py

@@ -1,383 +1,310 @@
 # YWD-Hotspot Plugin Framework
 
-Plugin development currently lives on the `dev-plugins` branch. The stable `dev` appliance remains the non-plugin rollback baseline.
+Plugin development lives on the `dev-plugins` branch. The normal `main` / `dev` appliance remains independent from this experimental framework until plugin functionality is deliberately promoted.
 
-Current plugin-development milestones:
+## Current checkpoints
 
-- `dev-plugins-alpha13.1-known-good` — declarative Plugin Framework v1 + fail-closed master switch
-- `dev-plugins-alpha14-known-good` — sandboxed service-plugin lifecycle, logs, reboot behavior, and master kill-switch
-- `dev-plugins-alpha15.1-known-good` — physically proven reboot + application-update survival at `77da3eeb489025f73d61c1141feb808f6f74c2c1`
-- `0.1.0-alpha16-dev` — package install/uninstall/data-removal + dependency/hardware-check test phase
+| Checkpoint | Meaning |
+|---|---|
+| `dev-plugins-alpha15.1-known-good` | reboot + application-update lifecycle proven |
+| `dev-plugins-alpha16.1-known-good` | package lifecycle/hardware/dependency UI proven |
+| `dev-plugins-alpha17.1-known-good` | passive structured MMDVM telemetry + real RSSI/BER proven |
+| `dev-plugins-alpha18.1-known-good` | normalized DMR sessions + telemetry updater fix physically proven |
+| `0.1.0-alpha18.2-dev` | encrypted migration backup + persistent signed package upload test build |
 
-Alpha16 does **not** grant plugins RF ownership and does not add third-party Internet package downloads.
+Alpha18.2 does **not** grant plugins independent RF ownership. The future MMDVM/RF-control design still requires trusted core arbitration rather than a plugin opening `/dev/serial0` or launching a competing MMDVM-Host instance.
 
-## Core plugin rules
+## Core rules
 
-- Plugin support is **globally disabled by default** when no plugin activation-state file exists.
-- The **Plugin Manager is trusted YWD-Hotspot core**, not a plugin.
-- Disabling the plugin subsystem leaves normal DMR operation untouched.
-- **Master OFF is authoritative:** active service plugins are stopped/unloaded before disabled state is committed, then every per-plugin activation flag is cleared.
-- Re-enabling the plugin subsystem does **not** silently reactivate plugins.
-- Installing a plugin does **not** enable or start it.
-- Uninstalling a plugin stops/removes service boot activation and clears activation state, but preserves config/data by default.
-- Removing plugin data is a separate destructive action.
-- Plugin configuration never modifies canonical `/etc/ywd-hotspot/config.json`.
+- Plugin Manager is trusted YWD-Hotspot core, not a plugin.
+- The plugin subsystem is globally disabled by default when no activation state exists.
+- Master **OFF** is authoritative: active service plugins are stopped and per-plugin activation is cleared.
+- Re-enabling the master switch does not silently reactivate plugins.
+- Uploading a package does not install it.
+- Installing a package does not enable or start it.
+- Uninstalling stops/disables runtime eligibility but preserves config/data.
+- Removing package source and removing plugin data are separate destructive operations.
+- Plugin configuration never directly edits canonical `/etc/ywd-hotspot/config.json`.
 - No plugin gets arbitrary sudo.
-- RF ownership remains forbidden in the current API.
+- No plugin supplies its own systemd unit.
+- Uploaded executable service code requires a trusted Ed25519 signature.
+- An uploaded package may not self-claim YWD's `first-party` trust label.
+- Current APIs do not permit plugin-owned RF mode/serial ownership.
+- Application update and channel-transition safety must quiesce both built-in and persistent uploaded service plugins.
 
-## State separation
+## Package / runtime state model
 
-Alpha16 deliberately separates four concepts:
+YWD keeps package source, registration, activation and runtime separate:
 
 ```text
-AVAILABLE  -> package source exists in the trusted application catalog
-INSTALLED  -> package is registered as eligible for use
-ENABLED    -> operator explicitly enabled the installed plugin
-ACTIVE     -> plugin is effectively running/active now
+AVAILABLE
+    package source is discoverable
+
+INSTALLED
+    trusted core has registered the package as eligible for use
+
+ENABLED
+    operator explicitly requested activation
+
+ACTIVE
+    plugin is effectively running now
 ```
 
-The files are separate as well:
+State/config/data remain separate too:
 
 ```text
 /etc/ywd-hotspot/plugin-state.json
-    master enable + per-plugin activation state
+    plugin master + per-plugin activation intent
 
 /etc/ywd-hotspot/plugin-packages.json
-    package installation/registration state
+    install/registration intent
 
 /etc/ywd-hotspot/plugins/<id>.json
     per-plugin configuration
 
-/var/lib/ywd-hotspot/plugins/<id>
-    reserved plugin-owned runtime data path when a future approved plugin needs it
+/var/lib/ywd-hotspot/plugins/<id>/
+    plugin-owned writable runtime/data path
+
+/var/lib/ywd-hotspot/plugin-packages/<id>/
+    Alpha18.2 persistent uploaded .ywdplugin source
+
+/etc/ywd-hotspot/plugin-trust.d/<key-id>.pem
+    trusted Ed25519 publisher public keys
 ```
 
-This separation keeps the reboot/update behavior proven in Alpha15.1 independent from package lifecycle.
-
-### Alpha15 -> Alpha16 migration behavior
-
-Alpha15.1 had no package-state file because both bundled reference packages were implicitly installed.
-
-When `/etc/ywd-hotspot/plugin-packages.json` is **missing**, Alpha16 treats only these pre-Alpha16 reference IDs as installed:
+The application-owned built-in package catalogs remain:
 
 ```text
-system-info
-service-heartbeat
+/opt/ywd-hotspot/app/lib/plugin_packages/
+/opt/ywd-hotspot/app/lib/service_plugin_packages/
 ```
 
-This preserves the currently proven hotspot during the first Alpha16 update.
+The persistent uploaded catalog is overlaid onto those built-in catalogs at discovery time. Application updates can therefore replace `/opt/ywd-hotspot/app` without deleting operator-uploaded package source.
 
-Future packages introduced by later updates do **not** inherit that compatibility rule; they appear as `AVAILABLE` until explicitly installed.
+## Declarative plugins
 
-If a package-state file exists but is invalid/corrupt, package registration fails closed: packages are treated as uninstalled instead of falling back to legacy defaults.
+Declarative/data-only packages contain metadata and a configuration schema interpreted by trusted core. They do not execute plugin Python or inject arbitrary browser JavaScript/CSS.
 
-## Declarative Plugin API v1
-
-First-party data-only packages live below:
+Typical built-in source:
 
 ```text
-lib/plugin_packages/
-  <plugin-id>/
-    plugin.json
-    config.schema.json
+lib/plugin_packages/<id>/
+  plugin.json
+  config.schema.json
 ```
 
-Declarative packages do **not** import/execute plugin Python and do **not** inject plugin JavaScript/CSS into the browser. Trusted core interprets validated manifests and schemas.
+The `system-info` reference plugin demonstrates the declarative provider path.
 
-The bundled `system-info` reference plugin proves discovery, configuration, package lifecycle, activation state, status rendering, and controlled tests without touching RF, systemd, networking, BrandMeister, OLED, or privileged commands.
+Alpha18.2 may accept an **unsigned uploaded declarative** `.ywdplugin` package after strict archive/hash/API validation. Its package card reports `UNSIGNED` so the provenance is not confused with a verified publisher.
 
-## Sandboxed Service Plugin API v1
+## Sandboxed service plugins
 
-Service packages live separately:
-
-```text
-lib/service_plugin_packages/
-  <plugin-id>/
-    plugin.json
-    config.schema.json
-    service.py
-```
-
-A service plugin **cannot ship its own systemd unit**. Every service plugin runs through:
+Service packages contain an approved `service.py` entrypoint and run only through the shared template:
 
 ```text
 systemd/ywd-plugin@.service
+  -> plugin_package_manager.py require-installed <id>
+  -> plugin_service_runner.py --check <id>
+  -> plugin_service_runner.py <id>
+  -> validated service.py
 ```
 
-The shared template remains restrictive:
+The shared sandbox remains restrictive:
 
-- unprivileged `ywd-hotspot` user/group
-- `NoNewPrivileges=yes`
-- no Linux capabilities
-- private device namespace
-- protected/read-only system paths
-- protected home directories
-- protected kernel tunables/modules/control groups
+- `User=ywd-hotspot`
+- `Group=ywd-hotspot`
+- `NoNewPrivileges=true`
+- empty capability bounding/ambient sets
+- `PrivateDevices=true`
+- `ProtectSystem=strict`
+- `ProtectHome=true`
+- protected kernel tunables/modules/cgroups
 - namespace/SUID restrictions
-- only local `AF_UNIX` address family
-- no RF/device ownership
+- `MemoryDenyWriteExecute=true`
+- `RestrictAddressFamilies=AF_UNIX`
+- no direct MMDVM device ownership
+- only `/var/lib/ywd-hotspot/plugins/<id>` is opened for plugin writes
 
-### Alpha16 package gate
+A service plugin cannot ship a systemd unit. The generic YWD template is the only runtime owner.
 
-The shared systemd template now has a trusted `ExecCondition` that calls:
+### Uploaded executable service policy
+
+Alpha18.2 adds a second trust requirement for WebUI-uploaded executable code:
 
 ```text
-plugin_package_manager.py require-installed <plugin-id>
+unsigned uploaded service     -> reject
+unknown signing key           -> reject
+invalid signature             -> reject
+verified trusted Ed25519 key  -> may become AVAILABLE
 ```
 
-A repository-bundled service whose package registration is `UNINSTALLED` therefore cannot start through the normal YWD plugin template simply because its source file still ships with the application.
+Passing the signature gate still does not install, enable or start the package.
 
-This lets first-party package source remain available for reinstall while runtime eligibility stays explicit.
+See **[PLUGIN-PACKAGES.md](PLUGIN-PACKAGES.md)** for the archive/signing format and publisher-key workflow.
 
-## Package install
+## `.ywdplugin` upload lifecycle
 
-Alpha16 first supports only first-party packages already shipped in the repository.
+The locked Plugin Manager now supports:
 
-`INSTALL` performs trusted core checks in this order:
+```text
+UPLOAD .YWDPLUGIN
+```
 
-1. validate plugin ID and manifest
-2. validate plugin API/trust/kind/capabilities
-3. evaluate declared dependency requirements
-4. evaluate declared hardware requirements
-5. make any stale service instance inactive/boot-disabled
-6. register the package as installed
-7. explicitly set its activation state to disabled
+A package is staged and validated before it is moved into the persistent catalog. The core checks include:
 
-Install never:
+- compressed/uncompressed limits
+- flat safe filenames only
+- no symbolic links or directories
+- exact SHA-256 file inventory
+- package format/version
+- plugin ID/API/schema
+- dependency/hardware allow lists
+- capability allow lists
+- uploaded `experimental` trust label
+- Ed25519 signature when declared
+- mandatory trusted signature for service code
+- collision with an already available ID
 
-- starts a plugin
-- enables a plugin at boot
-- downloads code
-- runs `curl | bash`
-- runs arbitrary package-manager commands
-- grants new sudo/device/RF access
+A successful upload results in an AVAILABLE, uninstalled, disabled package.
 
-## Package uninstall
+### Package actions
 
-`UNINSTALL`:
+**INSTALL** validates requirements, registers the package and explicitly leaves it disabled.
 
-1. resolves the trusted available package
-2. stops and boot-disables its service if applicable
-3. verifies no active/enabled service instance remains
-4. clears plugin activation state
-5. removes package registration
-6. preserves configuration/data
+**UNINSTALL** stops/boot-disables a service package, clears activation and registration, while preserving source/config/data.
 
-For bundled first-party packages, uninstall removes **registration/runtime eligibility**, not the source files shipped inside `/opt/ywd-hotspot/app`. That source remains the trusted available package used by a later reinstall.
+**REMOVE PACKAGE** exists only for persistent uploaded packages. It requires the plugin to be uninstalled/inactive and physically removes only:
 
-This is intentional: application updates own application files; Plugin Manager owns package eligibility.
+```text
+/var/lib/ywd-hotspot/plugin-packages/<id>/
+```
 
-## Remove data
+Built-in application packages cannot be physically removed through Plugin Manager; application updates own those files.
 
-`REMOVE DATA` is separate from uninstall and uses the custom YWD destructive confirmation dialog.
-
-Server-side checks require the plugin to be disabled and any service to be stopped/boot-disabled.
-
-Only exact core-owned paths derived from a validated plugin ID may be removed:
+**REMOVE DATA** remains separate and removes only:
 
 ```text
 /etc/ywd-hotspot/plugins/<id>.json
-/var/lib/ywd-hotspot/plugins/<id>
+/var/lib/ywd-hotspot/plugins/<id>/
 ```
 
-No plugin-controlled glob or arbitrary removal path is accepted.
+No package-controlled glob/path is accepted.
 
-## Dependency checks
+## Dependency and hardware checks
 
-Manifest dependency requirements are declarative tokens interpreted by trusted core. Plugins do not execute their own dependency probes.
+Manifest requirements are declarative tokens interpreted by trusted core. Plugins do not execute custom dependency probes or package-manager commands.
 
-Alpha16 recognizes:
+Current dependency allow list includes:
 
 ```text
 python3
 systemd
 journalctl
 mmdvm-host
+mosquitto-broker
+mosquitto-client
 ```
 
-Current reference packages declare only what they actually need:
+Current hardware probes include:
 
 ```text
-system-info:
-  python3
-
-service-heartbeat:
-  python3
-  systemd
-  journalctl
+mmdvm-serial -> /dev/serial0
+oled-i2c     -> /dev/i2c-1
 ```
 
-The Plugin Manager exposes **CHECK DEPENDENCIES** and shows pass/missing results.
+Missing requirements prevent install/enable as appropriate. The framework does not run arbitrary `apt`, `pip`, `curl | bash`, or plugin-provided dependency scripts.
 
-Installation and enable/start operations fail closed when a declared dependency is missing.
+## MMDVM telemetry capability
 
-Alpha16 does **not** automatically install missing OS packages.
-
-## Hardware/capability checks
-
-Hardware requirements are also declarative tokens resolved by trusted core.
-
-Alpha16 provides the first allow-listed probes:
+Alpha17/18 established trusted MMDVM observation infrastructure:
 
 ```text
-mmdvm-serial  -> /dev/serial0 exists
-oled-i2c      -> /dev/i2c-1 exists
+MMDVM-Host structured MQTT JSON
+  -> YWD loopback Mosquitto listener 127.0.0.1:18883
+  -> trusted ywd-mmdvm-telemetry bridge
+  -> sanitized /run/ywd-hotspot-telemetry/telemetry.json
+  -> normalized DMR session model
+  -> sandboxed mmdvm-live-telemetry plugin
 ```
 
-The current reference plugins require no special hardware, so their hardware check reports pass/N/A.
+The current reference telemetry plugin has observational capabilities only. It does not own RF, serial or Internet sockets.
 
-These probes establish the contract that later MMDVM integration plugins must use instead of simply claiming hardware support.
+Alpha18 adds normalized bounded `active`, `last` and `recent` DMR sessions so future plugins do not need to scrape journals or guess sparse start/end identity.
 
-More specific MMDVM firmware/mode/feature checks can be added to trusted core when the first real integration plugin requires them.
+See **[TELEMETRY.md](TELEMETRY.md)** and **[MMDVM-SESSIONS.md](MMDVM-SESSIONS.md)**.
 
-## Lifecycle semantics
+## Update safety
 
-For an installed service plugin:
+Before a plugin-aware application update, trusted core captures:
 
-**ENABLE** performs validated `systemctl enable --now` through the narrow root helper.
+- master activation state
+- per-plugin activation flags
+- exact service active state
+- exact service boot-enable state
+- built-in service package IDs
+- Alpha18.2 persistent uploaded service package IDs
 
-**DISABLE** performs `disable --now`, clears activation state, and preserves config.
+Then it disables/stops plugin services before replacing the application.
 
-While enabled, runtime controls remain:
+After a successful update, the target catalogs are loaded—including persistent uploaded packages when the target supports them—and only previously valid/installed/enabled packages are eligible for restoration. New packages stay disabled.
+
+On rollback, the old app is restored before the captured plugin policy is reconstructed.
+
+When leaving `dev-plugins` for a plugin-free stable branch, plugin services are made inert and the generic plugin/telemetry runtime is removed as appropriate. Persistent uploaded package files may remain on disk as inert operator data rather than being silently destroyed.
+
+## Backup / restore integration
+
+Alpha18.2 `.ywdsettings` backups can preserve:
+
+- plugin master activation intent
+- per-plugin activation intent
+- package-registration intent
+- plugin configurations
+- trusted publisher public keys
+
+The backup does not embed uploaded executable package source.
+
+On a fresh OS restore:
+
+- built-in/otherwise available packages can have registration and activation intent restored
+- missing uploaded packages are reported
+- their configs are preserved
+- no code is downloaded automatically
+- re-uploading package source remains an explicit operator action
+
+See **[BACKUP-RESTORE.md](BACKUP-RESTORE.md)**.
+
+## Publisher signing keys
+
+Alpha18.2 does not ship an automatically trusted third-party key and does not expose a WebUI button for casually adding executable-code trust.
+
+A trusted publisher public key is installed by the operator/root under:
 
 ```text
-START
-STOP RUNTIME
-RESTART
-LOGS
-TEST
+/etc/ywd-hotspot/plugin-trust.d/<key-id>.pem
 ```
 
-`STOP RUNTIME` intentionally does **not** disable boot activation.
+YWD's package builder can create signed archives using an Ed25519 private key held by the publisher/developer:
 
-Expected card state after runtime-only stop:
+```bash
+python3 tools/ywdplugin-build.py SOURCE OUTPUT.ywdplugin \
+  --sign-key PRIVATE.pem \
+  --key-id publisher-key-1 \
+  --publisher "Publisher Name"
+```
+
+Never store the private key on the hotspot or in the repository.
+
+## RF ownership remains out of scope
+
+Neither a verified signature nor the service sandbox is permission to directly control the MMDVM modem.
+
+The current plugin APIs keep:
 
 ```text
-Status   STOPPED
-Runtime  inactive
-Boot     enabled
+rf_mode = false
 ```
 
-After reboot, systemd starts it again. This behavior was physically validated in Alpha15.1.
+for all supported packages. A future RF-mode/MMDVM integration needs a separate trusted-core arbitration contract with one serial/RF owner, safe capture/restore of the normal DMR state, failure recovery and explicit operator control.
 
-## Reference service plugin: Service Heartbeat Test
-
-`service-heartbeat` remains intentionally harmless. It periodically writes a configurable line to its own journal and otherwise sleeps.
-
-It now also serves as the package-lifecycle proof target:
-
-1. uninstall while active must stop it
-2. no boot-enabled instance may remain
-3. config must survive uninstall
-4. reinstall must leave it disabled
-5. explicit enable may start it again
-6. remove-data must be separately confirmed
-7. reboot/update must not resurrect an uninstalled package
-
-It has no RF, normal networking, OLED, BrandMeister, device, or privileged-command access.
-
-## WebUI
-
-The trusted **PLUGINS** section now distinguishes:
-
-```text
-AVAILABLE
-INSTALLED
-ENABLED
-ACTIVE
-```
-
-Per package it exposes:
-
-```text
-INSTALL / UNINSTALL
-CHECK DEPENDENCIES
-CHECK HARDWARE
-REMOVE DATA (only when saved config/data exists)
-ENABLE / DISABLE
-START / STOP RUNTIME / RESTART
-LOGS
-TEST
-CONFIGURE
-SAVE
-SAVE + RESTART PLUGIN
-```
-
-Uninstall/data-removal and lifecycle-destructive actions use the themed YWD confirmation UI, not native browser `confirm()`.
-
-The UI remains strict-CSP compatible; no inline style injection is required.
-
-## Update + rollback safety
-
-Plugin-aware application updates continue to use `lib/plugin_update_safety.py`.
-
-The proven Alpha15.1 flow remains:
-
-1. capture master/per-plugin activation + exact service runtime/boot state
-2. quiesce plugin services
-3. run the proven core updater
-4. validate the target plugin catalogs
-5. restore only valid prior activation/runtime state
-
-Alpha16 package registration is stored separately under `/etc/ywd-hotspot`, so it is preserved by the existing protected config backup and is not rewritten by normal plugin runtime restoration.
-
-The new systemd package gate adds a second fail-closed check: even if stale activation data somehow requests an uninstalled service after update, the unit condition refuses to start it.
-
-Application update locking still blocks plugin state/config/package/lifecycle mutations while `/run/ywd-hotspot-update.lock` is held.
-
-## Leaving `dev-plugins`
-
-Switching to a plugin-free target still quiesces plugin services first and clears activation state. Stable `dev` does not need plugin-specific code.
-
-Package/config files under `/etc/ywd-hotspot` may remain as inert data. Returning later to `dev-plugins` never auto-enables plugins; activation must again be explicit.
-
-## Fail-closed rules
-
-1. Missing activation state -> plugin subsystem disabled.
-2. Missing package state -> only the two pre-Alpha16 reference IDs use compatibility-installed defaults.
-3. Invalid package state -> packages treated as uninstalled.
-4. Invalid manifest -> plugin inactive/error.
-5. Unknown manifest fields/requirements/capabilities -> reject.
-6. Unsupported dependency/hardware token -> reject.
-7. Install -> never auto-enable/start.
-8. Uninstall -> service must stop/disable before registration is removed.
-9. Remove data -> plugin must be disabled/stopped.
-10. Uninstalled service -> shared systemd template refuses startup through package gate.
-11. Update lock held -> reject package/state/config/lifecycle writes.
-12. RF ownership remains forbidden.
-
-## Alpha16 physical test checklist
-
-After updating a real Pi Zero from the Alpha15.1 known-good checkpoint:
-
-```text
-[ ] normal DMR / BrandMeister still works
-[ ] OLED owner unchanged
-[ ] existing system-info still shows INSTALLED
-[ ] existing service-heartbeat still shows INSTALLED
-[ ] heartbeat runtime/boot state survives the Alpha15.1 -> Alpha16 update
-[ ] CHECK DEPENDENCIES passes on both reference plugins
-[ ] CHECK HARDWARE reports no special hardware required on both references
-[ ] uninstall service-heartbeat while ACTIVE
-[ ] verify Runtime != active and Boot != enabled
-[ ] verify heartbeat config remains present
-[ ] reboot and verify uninstalled heartbeat does NOT start
-[ ] reinstall heartbeat and verify it remains DISABLED
-[ ] explicitly enable heartbeat and verify it starts
-[ ] uninstall again
-[ ] REMOVE DATA and verify config is gone
-[ ] reinstall and confirm default config is used
-[ ] run a normal WebUI application update while packages have mixed installed/uninstalled state
-[ ] verify uninstalled package does not resurrect
-[ ] systemctl --failed is clean
-```
-
-After this passes physically, freeze another known-good plugin checkpoint before beginning MMDVM Live Telemetry.
-
-## Planned next plugin
-
-The recommended first useful integration remains **MMDVM Live Telemetry**.
-
-It should build on Alpha16 package/dependency/hardware contracts and remain optional. It must not take RF ownership. The normal lightweight journal instrumentation remains functional when telemetry is not installed.
-
-Alternate RF modes / Lab Mode remain later work.
+That design should build on the existing plugin lifecycle, signing, telemetry and normalized-session foundation rather than bypass it.

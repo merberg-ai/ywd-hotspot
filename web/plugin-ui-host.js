@@ -5,6 +5,7 @@
   let syncTimer = null;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const pluginSelector = id => String(id || ''); // plugin IDs are already restricted to [a-z0-9-]
 
   async function jsonFetch(url) {
     const response = await fetch(url, {credentials:'same-origin', cache:'no-store'});
@@ -26,7 +27,7 @@
     try { session.port?.close(); } catch (_) {}
     try { session.iframe?.remove(); } catch (_) {}
     frames.delete(id);
-    const stage = document.querySelector(`[data-plugin-ui-stage="${CSS.escape(id)}"]`);
+    const stage = document.querySelector(`[data-plugin-ui-stage="${pluginSelector(id)}"]`);
     if (stage) stage.innerHTML = '<div class="plugin-ui-placeholder">Open this section to start its sandboxed browser UI.</div>';
   }
 
@@ -47,7 +48,7 @@
 
   function removeUi(id) {
     const page = document.getElementById(pageId(id));
-    const button = document.querySelector(`.tabs [data-plugin-ui-id="${CSS.escape(id)}"]`);
+    const button = document.querySelector(`.tabs [data-plugin-ui-id="${pluginSelector(id)}"]`);
     const active = !!page?.classList.contains('on');
     destroyFrame(id);
     page?.remove();
@@ -77,7 +78,7 @@
   function startFrame(id) {
     if (frames.has(id)) return;
     const plugin = plugins.get(id);
-    const stage = document.querySelector(`[data-plugin-ui-stage="${CSS.escape(id)}"]`);
+    const stage = document.querySelector(`[data-plugin-ui-stage="${pluginSelector(id)}"]`);
     if (!eligible(plugin) || !stage) return;
 
     stage.innerHTML = '';
@@ -133,7 +134,7 @@
     if (!eligible(plugins.get(id))) return;
     if (!(await leaveSettingsIfNeeded())) return;
     const page = document.getElementById(pageId(id));
-    const button = document.querySelector(`.tabs [data-plugin-ui-id="${CSS.escape(id)}"]`);
+    const button = document.querySelector(`.tabs [data-plugin-ui-id="${pluginSelector(id)}"]`);
     if (!page || !button) return;
     document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('on'));
     document.querySelectorAll('.page').forEach(x => x.classList.remove('on'));
@@ -149,7 +150,7 @@
     const aboutPage = document.getElementById('about');
     if (!nav || !aboutButton || !aboutPage?.parentElement) return;
 
-    let button = nav.querySelector(`[data-plugin-ui-id="${CSS.escape(plugin.id)}"]`);
+    let button = nav.querySelector(`[data-plugin-ui-id="${pluginSelector(plugin.id)}"]`);
     if (!button) {
       button = document.createElement('button');
       button.dataset.tab = pageId(plugin.id);

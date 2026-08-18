@@ -3,8 +3,8 @@
 
 The archive format is intentionally small and strict. Package files are flat,
 listed by SHA-256 in ywdplugin.json, and extracted by trusted core rather than
-zipfile.extractall(). Service code is accepted only when an Ed25519 signature
-verifies against an operator-trusted public key.
+zipfile.extractall(). Executable service code and browser UI code are accepted
+only when an Ed25519 signature verifies against an operator-trusted public key.
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ import plugin_catalog_overlay
 import plugin_manager
 import plugin_package_manager
 import plugin_service_manager
+import plugin_ui_manager
 
 FORMAT = "ywdplugin"
 FORMAT_VERSION = 1
@@ -67,7 +68,7 @@ def _digest(raw):
 def _existing_ids():
     plugin_catalog_overlay.install()
     ids = set()
-    for entry in list(plugin_manager.discover()) + list(plugin_service_manager.discover()):
+    for entry in list(plugin_manager.discover()) + list(plugin_service_manager.discover()) + list(plugin_ui_manager.discover()):
         ident = str(entry.get("manifest", {}).get("id") or "")
         if plugin_manager.ID_RE.fullmatch(ident):
             ids.add(ident)
@@ -129,9 +130,6 @@ def inspect_archive(blob: bytes, filename="upload.ywdplugin"):
             total += info.file_size
             if total > MAX_UNPACKED:
                 raise PackageArchiveError("plugin archive expands beyond the 2 MiB limit")
-            # Bound the decompressor itself rather than trusting only the ZIP
-            # central-directory size. This keeps a malformed compressed stream
-            # from allocating an unbounded output before our size check runs.
             try:
                 with zf.open(info, "r") as stream:
                     raw = stream.read(MAX_FILE + 1)
@@ -160,8 +158,8 @@ def inspect_archive(blob: bytes, filename="upload.ywdplugin"):
     if str(plugin_raw.get("id") or "") != ident:
         raise PackageArchiveError("package id does not match plugin.json")
     kind = str(plugin_raw.get("kind") or "")
-    if kind not in {"declarative", "service"}:
-        raise PackageArchiveError("uploaded plugin kind must be declarative or service")
+    if kind not in {"declarative", "service", "ui"}:
+        raise PackageArchiveError("uploaded plugin kind must be declarative, service, or ui")
     if str(plugin_raw.get("trust") or "") != "experimental":
         raise PackageArchiveError("uploaded plugins must declare trust as experimental")
 
@@ -214,8 +212,8 @@ def inspect_archive(blob: bytes, filename="upload.ywdplugin"):
     elif "signature.ed25519" in payloads:
         raise PackageArchiveError("signature.ed25519 is present but ywdplugin.json has no signature metadata")
 
-    if kind == "service" and signature["status"] != "verified":
-        raise PackageArchiveError("uploaded service plugins require a trusted Ed25519 signature")
+    if kind in {"service", "ui"} and signature["status"] != "verified":
+        raise PackageArchiveError(f"uploaded {kind} plugins require a trusted Ed25519 signature")
     if ident in _existing_ids():
         raise PackageArchiveError(f"plugin id is already available: {ident}")
 
@@ -247,8 +245,10 @@ def install_archive(blob: bytes, filename="upload.ywdplugin"):
         plugin_catalog_overlay.install()
         if info["kind"] == "declarative":
             manifest = plugin_manager.validate_manifest(stage / "plugin.json")
-        else:
+        elif info["kind"] == "service":
             manifest = plugin_service_manager.validate_manifest(stage / "plugin.json")
+        else:
+            manifest = plugin_ui_manager.validate_manifest(stage / "plugin.json")
         meta = {
             "schema": 1,
             "format": FORMAT,

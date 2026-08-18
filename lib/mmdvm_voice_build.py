@@ -124,6 +124,25 @@ def ensure_source(repo_url: str, commit: str) -> None:
     run(["git", "-C", SOURCE, "clean", "-fdx"])
 
 
+def patch_log_cpp() -> None:
+    """Apply the tiny MQTT-topic helper by exact pinned-source anchor.
+
+    Log.cpp ends immediately after WriteJSON() in the pinned upstream tree. A
+    hand-maintained EOF unified-diff hunk is needlessly fragile there, so this
+    one addition is anchored to the full original function body instead. The
+    rest of the MMDVM voice patch still goes through git apply --check.
+    """
+    path = SOURCE / "Log.cpp"
+    text = path.read_text(encoding="utf-8")
+    needle = '''void WriteJSON(const std::string& topLevel, nlohmann::json& json)\n{\n\tif (m_mqtt != nullptr) {\n\t\tnlohmann::json top;\n\n\t\ttop[topLevel] = json;\n\n\t\tm_mqtt->publish("json", top.dump());\n\t}\n}\n'''
+    addition = '''\nvoid WriteJSONToTopic(const std::string& topic, const std::string& topLevel, nlohmann::json& json)\n{\n\tif (m_mqtt != nullptr) {\n\t\tnlohmann::json top;\n\n\t\ttop[topLevel] = json;\n\n\t\tm_mqtt->publish(topic.c_str(), top.dump());\n\t}\n}\n'''
+    if text.count(needle) != 1:
+        raise RuntimeError("pinned Log.cpp WriteJSON anchor did not match exactly once")
+    if "void WriteJSONToTopic(" in text:
+        raise RuntimeError("pinned Log.cpp unexpectedly already contains WriteJSONToTopic")
+    path.write_text(text.replace(needle, needle + addition, 1), encoding="utf-8")
+
+
 def build_strict() -> dict:
     if os.geteuid() != 0:
         raise RuntimeError("MMDVM voice tap build must run as root")
@@ -135,13 +154,13 @@ def build_strict() -> dict:
     ident = identity()
     ensure_source(pins["MMDVM_HOST_REPO"], pins["MMDVM_HOST_COMMIT"])
 
-    # This patch is maintained against one immutable pinned upstream commit.
-    # --recount deliberately ignores stale hand-edited hunk line/count metadata
-    # and derives it from the patch body while still requiring all context lines
-    # to match the clean pinned source. That keeps validation strict without
-    # making the build fragile to harmless unified-diff bookkeeping errors.
-    run(["git", "-C", SOURCE, "apply", "--recount", "--check", PATCH])
-    run(["git", "-C", SOURCE, "apply", "--recount", PATCH])
+    # Keep git's strict context validation for the RF/network voice-path edits.
+    # Log.cpp is excluded because its pinned file ends at the edited function;
+    # that tiny helper is applied immediately afterward by an exact full-body
+    # anchor instead of a brittle EOF diff hunk.
+    run(["git", "-C", SOURCE, "apply", "--recount", "--exclude=Log.cpp", "--check", PATCH])
+    run(["git", "-C", SOURCE, "apply", "--recount", "--exclude=Log.cpp", PATCH])
+    patch_log_cpp()
     run(["make", "-j1"], cwd=SOURCE)
 
     candidate = SOURCE / "MMDVM-Host"

@@ -2,7 +2,8 @@ diff --git a/Log.h b/Log.h
 index 7392164..1c1c0c0 100644
 --- a/Log.h
 +++ b/Log.h
-@@ -39,5 +39,6 @@ extern void LogFinalise();
+@@ -39,5 +39,6 @@
+ extern void LogFinalise();
  
  extern void WriteJSON(const std::string& topLevel, nlohmann::json& json);
 +extern void WriteJSONToTopic(const std::string& topic, const std::string& topLevel, nlohmann::json& json);

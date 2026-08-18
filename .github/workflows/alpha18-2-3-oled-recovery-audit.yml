@@ -1,0 +1,43 @@
+name: Alpha18.2.3 OLED Recovery Audit
+on:
+  push:
+    branches: [dev-plugins-alpha18.2.3-oled-recovery]
+  pull_request:
+    branches: [dev-plugins]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile lib/update_admin.py lib/admin.py lib/oled.py
+          bash -n lib/oled_owner.sh
+          test "$(cat VERSION)" = '0.1.0-alpha18.2.3-dev'
+      - name: OLED recovery regression guards
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          ua=Path('lib/update_admin.py').read_text()
+          oh=Path('lib/oled_owner.sh').read_text()
+          assert 'switch_back_to_headless' not in ua
+          assert 'with_headless_transition' not in ua
+          assert 'disable", "--now", APP_OLED' not in ua
+          assert 'return core_admin.config_apply(data)' in ua
+          assert 'return core_admin.config_revert(data)' in ua
+          assert 'return core_admin.service_action(data)' in ua
+          assert 'ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/oled.py --os-owner' in oh
+          assert 'disable --now ywd-oled.service' not in oh
+          assert 'stop --no-block ywd-oled.service' in oh
+          assert 'rm -f "$LEGACY_UNIT"' in oh
+          assert 'systemctl daemon-reload' in oh
+          print('OLED recovery guards passed')
+          PY
+      - name: Alpha18.2 trust boundaries remain intact
+        run: |
+          set -euxo pipefail
+          grep -q 'scrypt' lib/settings_backup.py
+          grep -q 'uploaded service plugins require a trusted Ed25519 signature' lib/plugin_package_archive.py
+          grep -q 'PrivateDevices=true' systemd/ywd-plugin@.service

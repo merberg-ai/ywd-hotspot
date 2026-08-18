@@ -56,7 +56,9 @@ def current_snapshot():
         "installed": sum(1 for p in plugins if p.get("installed")),
         "enabled_plugins": sum(1 for p in plugins if p.get("enabled")),
         "active_plugins": sum(1 for p in plugins if p.get("health") == "active"),
-        "health": "disabled" if not enabled else ("error" if package_state_error or any(p.get("health") == "error" for p in plugins) else "good"),
+        "health": "disabled" if not enabled else (
+            "error" if package_state_error or any(p.get("health") == "error" for p in plugins) else "good"
+        ),
         "execution_model": "package lifecycle + declarative + sandboxed services + sandboxed browser UI",
         "service_api": plugin_service_manager.API_VERSION,
         "ui_api": plugin_ui_manager.API_VERSION,
@@ -95,7 +97,12 @@ def check_plugin(ident, kind="all"):
         raise ValueError("check kind must be dependencies, hardware, or all")
     plugin = available_plugin(ident)
     checks = plugin_package_manager.check_requirements(plugin)
-    result = {"ok": checks["ok"] if kind == "all" else checks[kind]["ok"], "id": plugin["id"], "name": plugin["name"], "kind": kind}
+    result = {
+        "ok": checks["ok"] if kind == "all" else checks[kind]["ok"],
+        "id": plugin["id"],
+        "name": plugin["name"],
+        "kind": kind,
+    }
     result["requirements" if kind == "all" else kind] = checks if kind == "all" else checks[kind]
     return result
 
@@ -141,8 +148,13 @@ def wrap_handler(base):
             self.send_header("Cache-Control", cache)
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
-            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()")
+            # Deliberately omit Cross-Origin-Resource-Policy: same-origin here.
+            # The iframe omits allow-same-origin and therefore has an opaque
+            # origin; CORP same-origin would block its own signed JS/CSS assets.
+            self.send_header(
+                "Permissions-Policy",
+                "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()",
+            )
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'none'; "
@@ -219,7 +231,12 @@ def wrap_handler(base):
                 ident = str((qs.get("id") or [""])[0])[:80]
                 try:
                     plugin = plugin_service_manager.get_plugin(ident)
-                    self.send_json({"ok": True, "id": ident, "service": plugin["service"], "lines": core.journal(plugin["service"], 120)})
+                    self.send_json({
+                        "ok": True,
+                        "id": ident,
+                        "service": plugin["service"],
+                        "lines": core.journal(plugin["service"], 120),
+                    })
                 except ValueError as exc:
                     self.send_json({"error": str(exc)[:800]}, 400)
                 except Exception as exc:

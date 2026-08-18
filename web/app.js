@@ -17,25 +17,6 @@
     document.head.appendChild(s);
   }
 
-  function installAlpha1825Styles() {
-    if (document.getElementById('alpha1825UiPolish')) return;
-    const style = document.createElement('style');
-    style.id = 'alpha1825UiPolish';
-    style.textContent = `
-      #checkUpdate.ywd-checking{display:inline-flex;align-items:center;gap:9px;cursor:wait}
-      #checkUpdate .ywd-check-spinner{display:none;width:14px;height:14px;flex:0 0 14px;border:2px solid rgba(98,233,255,.18);border-top-color:var(--cyan,#62e9ff);border-right-color:rgba(98,233,255,.72);border-radius:50%;box-shadow:0 0 10px rgba(98,233,255,.22)}
-      #checkUpdate.ywd-checking .ywd-check-spinner{display:inline-block;animation:ywd-check-spin .72s linear infinite}
-      #updateBadge.ywd-checking{position:relative;overflow:hidden;border-color:rgba(98,233,255,.72)!important;color:var(--cyan,#62e9ff)!important;box-shadow:0 0 0 1px rgba(98,233,255,.08),0 0 18px rgba(98,233,255,.18);animation:ywd-check-pulse 1.15s ease-in-out infinite}
-      #updateBadge.ywd-checking::after{content:"";position:absolute;inset:-60% auto -60% -45%;width:42%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.34),transparent);transform:skewX(-18deg);animation:ywd-check-scan 1.05s ease-in-out infinite;pointer-events:none}
-      #settings .webui-hint{margin:0 0 12px}
-      @keyframes ywd-check-spin{to{transform:rotate(360deg)}}
-      @keyframes ywd-check-pulse{0%,100%{filter:brightness(.92);box-shadow:0 0 0 1px rgba(98,233,255,.08),0 0 10px rgba(98,233,255,.10)}50%{filter:brightness(1.18);box-shadow:0 0 0 1px rgba(98,233,255,.18),0 0 24px rgba(98,233,255,.30)}}
-      @keyframes ywd-check-scan{0%{left:-45%;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:115%;opacity:0}}
-      @media(prefers-reduced-motion:reduce){#checkUpdate.ywd-checking .ywd-check-spinner,#updateBadge.ywd-checking,#updateBadge.ywd-checking::after{animation:none}}
-    `;
-    document.head.appendChild(style);
-  }
-
   function moveOledSettings() {
     const settings = document.getElementById('settings');
     const runtimeCard = document.getElementById('oledRuntimeSettingsCard');
@@ -76,8 +57,8 @@
     const button = document.getElementById('checkUpdate');
     const badge = document.getElementById('updateBadge');
     if (!button || !badge) return false;
-    if (button.dataset.ywdCheckingPolish === '2') return true;
-    button.dataset.ywdCheckingPolish = '2';
+    if (button.dataset.ywdCheckingPolish === '3') return true;
+    button.dataset.ywdCheckingPolish = '3';
 
     if (!button.querySelector('.ywd-check-spinner')) {
       const spin = document.createElement('span');
@@ -104,8 +85,7 @@
     return true;
   }
 
-  function applyAlpha1825Polish() {
-    installAlpha1825Styles();
+  function applyAlpha1826Polish() {
     let settingsDone = false;
     let updaterDone = false;
     let tries = 0;
@@ -120,9 +100,9 @@
   }
 
   loadStyle('/ui-polish.css?v=alpha12.2');
-  loadStyle('/update.css?v=alpha12.1');
+  loadStyle('/update.css?v=alpha18.2.6');
   loadStyle('/instrumentation.css?v=alpha12.1');
   loadStyle('/plugin-manager.css?v=alpha17');
   loadStyle('/backup-restore.css?v=alpha18.2.1');
-  load('/app-core.js', () => load('/backup-restore.js?v=alpha18.2.1', () => load('/talkgroups.js?v=alpha12.1', () => load('/ui-polish.js?v=alpha12.2', () => load('/update.js?v=alpha12.3', () => load('/update-progress.js?v=alpha16.1', () => load('/instrumentation.js?v=alpha12.1', () => load('/instrumentation-bootstrap.js?v=alpha12.1', () => load('/plugin-manager-render.js?v=alpha18.2', () => load('/plugin-package-actions.js?v=alpha18.2', () => load('/plugin-package-upload.js?v=alpha18.2', () => load('/plugin-manager.js?v=alpha18.2', () => load('/plugin-config-actions.js?v=alpha16', () => load('/plugin-telemetry.js?v=alpha18', applyAlpha1825Polish))))))))))))));
+  load('/app-core.js', () => load('/backup-restore.js?v=alpha18.2.1', () => load('/talkgroups.js?v=alpha12.1', () => load('/ui-polish.js?v=alpha12.2', () => load('/update.js?v=alpha12.3', () => load('/update-progress.js?v=alpha16.1', () => load('/instrumentation.js?v=alpha12.1', () => load('/instrumentation-bootstrap.js?v=alpha12.1', () => load('/plugin-manager-render.js?v=alpha18.2', () => load('/plugin-package-actions.js?v=alpha18.2', () => load('/plugin-package-upload.js?v=alpha18.2', () => load('/plugin-manager.js?v=alpha18.2', () => load('/plugin-config-actions.js?v=alpha16', () => load('/plugin-telemetry.js?v=alpha18', applyAlpha1826Polish))))))))))))));
 })();

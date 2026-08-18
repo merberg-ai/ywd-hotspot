@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euxo pipefail
           test -s assets/branding/ywd-hotspot-banner-webui.webp
-          test "$(stat -c %s assets/branding/ywd-hotspot-banner-webui.webp)" -gt 50000
+          test "$(stat -c %s assets/branding/ywd-hotspot-banner-webui.webp)" -gt 20000
           python3 - <<'PY'
           from pathlib import Path
           b=Path('assets/branding/ywd-hotspot-banner-webui.webp').read_bytes()

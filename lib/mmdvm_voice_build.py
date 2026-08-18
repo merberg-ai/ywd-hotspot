@@ -135,8 +135,13 @@ def build_strict() -> dict:
     ident = identity()
     ensure_source(pins["MMDVM_HOST_REPO"], pins["MMDVM_HOST_COMMIT"])
 
-    run(["git", "-C", SOURCE, "apply", "--check", PATCH])
-    run(["git", "-C", SOURCE, "apply", PATCH])
+    # This patch is maintained against one immutable pinned upstream commit.
+    # --recount deliberately ignores stale hand-edited hunk line/count metadata
+    # and derives it from the patch body while still requiring all context lines
+    # to match the clean pinned source. That keeps validation strict without
+    # making the build fragile to harmless unified-diff bookkeeping errors.
+    run(["git", "-C", SOURCE, "apply", "--recount", "--check", PATCH])
+    run(["git", "-C", SOURCE, "apply", "--recount", PATCH])
     run(["make", "-j1"], cwd=SOURCE)
 
     candidate = SOURCE / "MMDVM-Host"

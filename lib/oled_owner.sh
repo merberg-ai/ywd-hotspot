@@ -2,13 +2,12 @@
 set -euo pipefail
 
 ACTION="${1:-install}"
-# The physical OS owner must always execute the deployed live application.
-# Never persist a GitHub update staging path in a systemd drop-in.
 APP="${YWD_LIVE_APP:-/opt/ywd-hotspot/app}"
 DROPIN_DIR=/etc/systemd/system/ywd-headless-oled.service.d
 DROPIN="$DROPIN_DIR/50-ywd-unified-renderer.conf"
 CONFIG="${YWD_CONFIG:-/etc/ywd-hotspot/config.json}"
 LEGACY_UNIT=/etc/systemd/system/ywd-oled.service
+DESIRED_EXEC='ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/oled.py --os-owner'
 
 headless_exists(){ systemctl cat ywd-headless-oled.service >/dev/null 2>&1; }
 
@@ -24,20 +23,19 @@ PY
 }
 
 retire_legacy(){
-  # ywd-oled.service is never the physical owner on YWD-Hotspot OS. Never let
-  # an I2C-stuck legacy process block Settings or update completion.
-  systemctl disable ywd-oled.service >/dev/null 2>&1 || true
-  systemctl stop --no-block ywd-oled.service >/dev/null 2>&1 || true
-  sleep 0.10
-  systemctl kill --kill-who=all --signal=KILL ywd-oled.service >/dev/null 2>&1 || true
-  systemctl reset-failed ywd-oled.service >/dev/null 2>&1 || true
-
-  # On the appliance OS the legacy unit is not merely disabled: remove the live
-  # installed unit so obsolete cleanup paths fail immediately instead of ever
-  # waiting on it. Generic installs never enter this helper because they have no
-  # ywd-headless-oled.service and continue to use ywd-oled.service normally.
-  rm -f "$LEGACY_UNIT"
-  systemctl daemon-reload
+  local changed=0
+  # Only touch the legacy unit if it actually exists. Normal Settings applies on
+  # a migrated YWD-Hotspot OS should not pay for a second daemon-reload.
+  if [[ -e "$LEGACY_UNIT" || -L "$LEGACY_UNIT" ]]; then
+    systemctl disable ywd-oled.service >/dev/null 2>&1 || true
+    systemctl stop --no-block ywd-oled.service >/dev/null 2>&1 || true
+    sleep 0.10
+    systemctl kill --kill-who=all --signal=KILL ywd-oled.service >/dev/null 2>&1 || true
+    systemctl reset-failed ywd-oled.service >/dev/null 2>&1 || true
+    rm -f "$LEGACY_UNIT"
+    changed=1
+  fi
+  return "$changed"
 }
 
 stop_headless_fast(){
@@ -56,20 +54,31 @@ install_owner(){
     exit 1
   }
 
-  install -d -m 0755 "$DROPIN_DIR"
-  cat >"$DROPIN" <<EOF
-[Service]
-ExecStart=
-ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/oled.py --os-owner
-EOF
-  chmod 0644 "$DROPIN"
+  local reload_needed=0
+  local desired
+  desired=$'[Service]\nExecStart=\n'"$DESIRED_EXEC"$'\n'
 
-  # Reload the corrected live path before touching either process.
-  systemctl daemon-reload
-  retire_legacy
+  # Install/reload the owner wiring only when it actually changed. daemon-reload
+  # is comparatively expensive on a Pi Zero and must not run twice on every OLED
+  # presentation change.
+  if [[ ! -f "$DROPIN" ]] || [[ "$(cat "$DROPIN" 2>/dev/null || true)"$'\n' != "$desired" ]]; then
+    install -d -m 0755 "$DROPIN_DIR"
+    printf '%s' "$desired" >"$DROPIN"
+    chmod 0644 "$DROPIN"
+    reload_needed=1
+  fi
+
+  if [[ -e "$LEGACY_UNIT" || -L "$LEGACY_UNIT" ]]; then
+    retire_legacy || true
+    reload_needed=1
+  fi
+
+  if (( reload_needed )); then
+    systemctl daemon-reload
+  fi
 
   if [[ "$(display_enabled)" == "1" ]]; then
-    systemctl enable ywd-headless-oled.service >/dev/null
+    systemctl enable ywd-headless-oled.service >/dev/null 2>&1 || true
     stop_headless_fast
     systemctl start --no-block ywd-headless-oled.service >/dev/null
   else
@@ -93,6 +102,11 @@ restore_owner(){
 case "$ACTION" in
   install) install_owner ;;
   restore) restore_owner ;;
-  retire-legacy) retire_legacy ;;
+  retire-legacy)
+    if [[ -e "$LEGACY_UNIT" || -L "$LEGACY_UNIT" ]]; then
+      retire_legacy || true
+      systemctl daemon-reload
+    fi
+    ;;
   *) echo "usage: oled_owner.sh install|restore|retire-legacy" >&2; exit 2 ;;
 esac

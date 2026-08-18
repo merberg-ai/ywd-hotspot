@@ -169,12 +169,15 @@ def load_target_modules(lib_dir):
     import plugin_manager  # type: ignore
     import plugin_service_manager  # type: ignore
     try:
+        import plugin_ui_manager  # type: ignore
+    except ImportError:
+        plugin_ui_manager = None
+    try:
         import plugin_catalog_overlay  # type: ignore
         plugin_catalog_overlay.install()
     except ImportError:
-        # Older/stable target runtimes do not have an uploaded-package overlay.
         pass
-    return plugin_manager, plugin_service_manager
+    return plugin_manager, plugin_service_manager, plugin_ui_manager
 
 
 def write_plugin_state(master_enabled, plugin_flags):
@@ -188,7 +191,7 @@ def write_plugin_state(master_enabled, plugin_flags):
 
 def restore(snapshot_path, target_lib):
     snapshot = load_snapshot(snapshot_path)
-    plugin_manager, service_manager = load_target_modules(target_lib)
+    plugin_manager, service_manager, ui_manager = load_target_modules(target_lib)
 
     valid_declarative = {
         e['manifest']['id'] for e in plugin_manager.discover()
@@ -198,7 +201,13 @@ def restore(snapshot_path, target_lib):
         e['manifest']['id'] for e in service_manager.discover()
         if e.get('valid') and e.get('manifest', {}).get('id')
     }
-    valid_all = valid_declarative | valid_service
+    valid_ui = set()
+    if ui_manager is not None:
+        valid_ui = {
+            e['manifest']['id'] for e in ui_manager.discover()
+            if e.get('valid') and e.get('manifest', {}).get('id')
+        }
+    valid_all = valid_declarative | valid_service | valid_ui
 
     master = bool(snapshot.get('master_enabled', False))
     prior_flags = snapshot.get('plugin_enabled') if isinstance(snapshot.get('plugin_enabled'), dict) else {}
@@ -213,21 +222,14 @@ def restore(snapshot_path, target_lib):
             desired = False
         restored_flags[ident] = desired
 
-    # New packages introduced by the target update remain disabled until the user
-    # explicitly enables them in the Plugin Manager.
     for ident in valid_all:
         restored_flags.setdefault(ident, False)
     write_plugin_state(master, restored_flags)
 
-    # First make every known plugin unit inert. Then restore only validated
-    # service plugins according to the captured boot/runtime state.
     ids = set(snapshot.get('services', {})) | unit_ids_from_systemd() | valid_service
     for ident in sorted(i for i in ids if ID_RE.fullmatch(str(i))):
         unit = f'ywd-plugin@{ident}.service'
         p = run(['systemctl', 'disable', '--now', unit], timeout=25)
-        # A nonexistent inactive instance is harmless; any other lingering failure
-        # is recorded and the plugin will not be reactivated below unless its own
-        # requested restore operations succeed.
         if p.returncode != 0 and unit_state(ident)['active']:
             warnings.append(f'{ident}: could not force service inactive before restore')
             restored_flags[ident] = False
@@ -260,9 +262,6 @@ def restore(snapshot_path, target_lib):
 
 
 def stable_cleanup(snapshot_path, current_lib):
-    # The service instances were already quiesced before the non-plugin target
-    # updater ran. Repeat defensively and fail if anything somehow became active
-    # again; never claim a plugin-free target while a plugin service is running.
     quiesce(snapshot_path, current_lib)
     state = read_state_raw()
     flags = {ident: False for ident in state.get('plugins', {})}
@@ -272,10 +271,6 @@ def stable_cleanup(snapshot_path, current_lib):
             flags[str(ident)] = False
     write_plugin_state(False, flags)
 
-    # Alpha17's trusted telemetry transport is plugin infrastructure, not part of
-    # the stable appliance. Stop and remove only YWD-owned units when handing off
-    # to a plugin-free target. Mosquitto packages are intentionally retained so a
-    # pre-existing/shared package installation is never removed behind the user.
     for unit in TELEMETRY_UNITS:
         run(['systemctl', 'disable', '--now', unit], timeout=25)
     for path in TELEMETRY_UNIT_PATHS:

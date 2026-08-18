@@ -85,7 +85,7 @@
     const iframe = document.createElement('iframe');
     iframe.className = 'plugin-ui-frame';
     iframe.title = `${plugin.name} plugin`;
-    iframe.sandbox = 'allow-scripts';
+    iframe.setAttribute('sandbox', 'allow-scripts');
     iframe.referrerPolicy = 'no-referrer';
     iframe.src = `/api/plugins/ui/${encodeURIComponent(id)}/frame?v=${encodeURIComponent(plugin.version || '')}`;
     stage.appendChild(iframe);
@@ -116,13 +116,17 @@
     try {
       if (!document.getElementById('settings')?.classList.contains('on')) return true;
       if (typeof dirty === 'undefined' || !dirty) return true;
-      if (typeof window.ywdConfirm !== 'function') return false;
-      const ok = await window.ywdConfirm({
-        title:'LEAVE SETTINGS?',
-        message:'You have unsaved Settings edits. Leave Settings and discard those form edits?',
-        confirmText:'DISCARD + LEAVE',
-        tone:'warn',
-      });
+      let ok;
+      if (typeof window.ywdConfirm === 'function') {
+        ok = await window.ywdConfirm({
+          title:'LEAVE SETTINGS?',
+          message:'You have unsaved Settings edits. Leave Settings and discard those form edits?',
+          confirmText:'DISCARD + LEAVE',
+          tone:'warn',
+        });
+      } else {
+        ok = window.confirm('You have unsaved Settings edits. Leave Settings and discard those form edits?');
+      }
       if (!ok) return false;
       if (typeof configDoc !== 'undefined' && configDoc && typeof fillForm === 'function') fillForm(configDoc);
       if (typeof setDirty === 'function') setDirty(false);

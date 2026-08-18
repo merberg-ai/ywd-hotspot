@@ -5,7 +5,10 @@ Wants=NetworkManager.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/libexec/ywd-headless-oled.py
+# The canonical deployed renderer owns both boot/setup and normal runtime pages.
+# Keeping this path stable means app updates automatically use the current OLED
+# implementation without depending on an image-baked historical copy.
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/oled.py --os-owner
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

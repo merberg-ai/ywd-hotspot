@@ -19,6 +19,7 @@ UPDATE.sh
 VERSION
 assets/branding/README.md
 assets/branding/ywd-hotspot-badge-256.webp
+assets/branding/ywd-hotspot-banner-webui.webp
 assets/branding/ywd-hotspot-logo-master.png
 bin/ywd-hotspotctl
 bin/ywd-hotspotctl-core

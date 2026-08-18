@@ -82,6 +82,66 @@
 #tgFavoriteRows .row,#tgSetRows .row{align-items:center;gap:8px}
 #tgManagerState{margin-bottom:10px}
 
+/* Alpha18.2.7 hero header. The artwork stays decorative; live version/build/
+ * uptime text remains real DOM content over the banner. */
+.ywd-hero-topbar{
+  position:relative;
+  min-height:250px;
+  overflow:hidden;
+  isolation:isolate;
+  padding:0!important;
+  background:#02070b;
+  border-radius:14px 14px 0 0;
+}
+.ywd-hero-banner{
+  position:absolute;
+  inset:0;
+  z-index:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center 48%;
+  opacity:.96;
+  filter:saturate(1.03) contrast(1.03);
+}
+.ywd-hero-topbar::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+  background:linear-gradient(180deg,rgba(2,7,11,.05) 25%,rgba(2,7,11,.22) 55%,rgba(2,7,11,.88) 100%),linear-gradient(90deg,rgba(2,7,11,.48),transparent 48%,rgba(2,7,11,.10));
+}
+.ywd-hero-overlay{
+  position:relative;
+  z-index:2;
+  display:block!important;
+  align-self:flex-end;
+  margin:0 118px 14px 14px;
+  padding:9px 11px;
+  max-width:min(720px,calc(100% - 150px));
+  border:1px solid rgba(98,233,255,.24);
+  border-radius:10px;
+  background:rgba(3,12,17,.72);
+  box-shadow:0 10px 30px #0007,0 0 22px rgba(98,233,255,.08);
+  backdrop-filter:blur(8px);
+}
+.ywd-hero-overlay .header-logo{display:none!important}
+.ywd-hero-overlay .brand{font-size:19px}
+.ywd-hero-overlay .sub{font-size:12px;color:#b5d1d8}
+.ywd-hero-overlay .build-meta{font-size:10px;color:#79aeb9}
+.ywd-hero-topbar .header-actions{
+  position:absolute;
+  z-index:3;
+  top:13px;
+  right:13px;
+}
+.ywd-hero-topbar .header-actions .btn{
+  background:rgba(3,12,17,.72);
+  backdrop-filter:blur(7px);
+  box-shadow:0 8px 22px #0006;
+}
+
 @keyframes ywdSpin{to{transform:rotate(360deg)}}
 @keyframes ywdToastIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
 @keyframes ywdModalShadeIn{from{opacity:0}to{opacity:1}}
@@ -89,9 +149,26 @@
 @keyframes ywdModalIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
 @keyframes ywdModalOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(5px) scale(.99)}}
 
-@media(max-width:440px){
+@media(max-width:760px){
   .modal{padding:12px}
   .modal .dialog{max-height:calc(100dvh - 24px)}
+  .ywd-hero-topbar{min-height:190px}
+  .ywd-hero-overlay{margin:0 88px 10px 10px;max-width:calc(100% - 108px);padding:8px 9px}
+  .ywd-hero-overlay .brand{font-size:16px}
+  .ywd-hero-overlay .sub{font-size:10px}
+  .ywd-hero-overlay .build-meta{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ywd-hero-topbar .header-actions{top:9px;right:9px}
+}
+
+@media(max-width:520px){
+  .ywd-hero-topbar{min-height:165px}
+  .ywd-hero-banner{object-fit:contain;object-position:center 40%;opacity:.92}
+  .ywd-hero-topbar::after{background:linear-gradient(180deg,rgba(2,7,11,.02) 20%,rgba(2,7,11,.16) 46%,rgba(2,7,11,.94) 100%)}
+  .ywd-hero-overlay{margin:0 8px 8px;max-width:calc(100% - 16px);padding:7px 8px}
+  .ywd-hero-overlay .brand{font-size:14px}
+  .ywd-hero-overlay .sub{font-size:9px}
+  .ywd-hero-overlay .build-meta{display:none}
+  .ywd-hero-topbar .header-actions .btn{padding:7px 8px;font-size:10px}
 }
 
 @media(prefers-reduced-motion:reduce){

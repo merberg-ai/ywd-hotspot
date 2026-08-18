@@ -53,6 +53,27 @@
     return true;
   }
 
+  function installHeroHeader() {
+    const topbar = document.querySelector('.topbar');
+    const brand = topbar?.querySelector('.header-brand');
+    if (!topbar || !brand) return false;
+    if (topbar.dataset.ywdHero === '1') return true;
+    topbar.dataset.ywdHero = '1';
+    topbar.classList.add('ywd-hero-topbar');
+    brand.classList.add('ywd-hero-overlay');
+
+    const oldLogo = brand.querySelector('.header-logo');
+    if (oldLogo) oldLogo.hidden = true;
+
+    const img = document.createElement('img');
+    img.className = 'ywd-hero-banner';
+    img.src = '/ywd-hotspot-banner.webp?v=alpha18.2.7';
+    img.alt = '';
+    img.setAttribute('aria-hidden', 'true');
+    topbar.prepend(img);
+    return true;
+  }
+
   function installUpdateCheckingPolish() {
     const button = document.getElementById('checkUpdate');
     const badge = document.getElementById('updateBadge');
@@ -85,24 +106,68 @@
     return true;
   }
 
-  function applyAlpha1826Polish() {
+  function installConfirmFirstSaveApply() {
+    const button = document.getElementById('applyConfig');
+    if (!button) return false;
+    if (button.dataset.ywdConfirmFirst === '1') return true;
+    button.dataset.ywdConfirmFirst = '1';
+
+    button.onclick = async () => {
+      try {
+        const c = formConfig();
+        const pending = typeof state !== 'undefined' && !!state?.pending?.pending;
+        const changed = !configDoc || JSON.stringify(c) !== JSON.stringify(configDoc);
+        if (!changed && !pending) {
+          toast('No settings changes to apply');
+          return;
+        }
+        if (!confirm('Save and apply these settings now? Affected services may restart.')) {
+          toast('Save & Apply canceled — nothing changed');
+          return;
+        }
+
+        const s = await post('/api/config/save', {config: c});
+        configDoc = c;
+        setDirty(false);
+        const a = await post('/api/config/apply', {});
+        toast(a.changed?.length ? 'Configuration applied' : 'Configuration already applied');
+        if (a.dashboard_restart_pending) {
+          const port = a.new_port;
+          toast(`Dashboard restarting${port ? ' on port ' + port : ''}…`);
+          if (port && Number(port) !== Number(location.port || 80)) {
+            setTimeout(() => { location.href = `${location.protocol}//${location.hostname}:${port}/`; }, 4500);
+          }
+        }
+        setTimeout(() => { getStatus(); loadConfig(true); }, 800);
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+    return true;
+  }
+
+  function applyAlpha1827Polish() {
     let settingsDone = false;
     let updaterDone = false;
+    let heroDone = false;
+    let saveApplyDone = false;
     let tries = 0;
     const tick = () => {
       tries += 1;
       settingsDone = moveOledSettings() || settingsDone;
       updaterDone = installUpdateCheckingPolish() || updaterDone;
-      if ((settingsDone && updaterDone) || tries >= 100) clearInterval(timer);
+      heroDone = installHeroHeader() || heroDone;
+      saveApplyDone = installConfirmFirstSaveApply() || saveApplyDone;
+      if ((settingsDone && updaterDone && heroDone && saveApplyDone) || tries >= 100) clearInterval(timer);
     };
     const timer = setInterval(tick, 100);
     tick();
   }
 
-  loadStyle('/ui-polish.css?v=alpha12.2');
+  loadStyle('/ui-polish.css?v=alpha18.2.7');
   loadStyle('/update.css?v=alpha18.2.6');
   loadStyle('/instrumentation.css?v=alpha12.1');
   loadStyle('/plugin-manager.css?v=alpha17');
   loadStyle('/backup-restore.css?v=alpha18.2.1');
-  load('/app-core.js', () => load('/backup-restore.js?v=alpha18.2.1', () => load('/talkgroups.js?v=alpha12.1', () => load('/ui-polish.js?v=alpha12.2', () => load('/update.js?v=alpha12.3', () => load('/update-progress.js?v=alpha16.1', () => load('/instrumentation.js?v=alpha12.1', () => load('/instrumentation-bootstrap.js?v=alpha12.1', () => load('/plugin-manager-render.js?v=alpha18.2', () => load('/plugin-package-actions.js?v=alpha18.2', () => load('/plugin-package-upload.js?v=alpha18.2', () => load('/plugin-manager.js?v=alpha18.2', () => load('/plugin-config-actions.js?v=alpha16', () => load('/plugin-telemetry.js?v=alpha18', applyAlpha1826Polish))))))))))))));
+  load('/app-core.js', () => load('/backup-restore.js?v=alpha18.2.1', () => load('/talkgroups.js?v=alpha12.1', () => load('/ui-polish.js?v=alpha12.2', () => load('/update.js?v=alpha12.3', () => load('/update-progress.js?v=alpha16.1', () => load('/instrumentation.js?v=alpha12.1', () => load('/instrumentation-bootstrap.js?v=alpha12.1', () => load('/plugin-manager-render.js?v=alpha18.2', () => load('/plugin-package-actions.js?v=alpha18.2', () => load('/plugin-package-upload.js?v=alpha18.2', () => load('/plugin-manager.js?v=alpha18.2', () => load('/plugin-config-actions.js?v=alpha16', () => load('/plugin-telemetry.js?v=alpha18', applyAlpha1827Polish))))))))))))));
 })();

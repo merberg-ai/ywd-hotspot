@@ -1,0 +1,79 @@
+/* Alpha18.2.11 hero layout — Option A.
+ * Same-origin stylesheet: strict CSP remains style-src 'self'. */
+
+.ywd-hero-overlay{
+  margin:0 14px 12px 14px;
+  padding:8px 10px;
+  max-width:min(620px,calc(100% - 150px));
+  border-color:rgba(98,233,255,.22);
+  background:rgba(3,12,17,.78);
+  box-shadow:0 10px 28px #0007,0 0 18px rgba(98,233,255,.06);
+  backdrop-filter:blur(7px);
+}
+.ywd-hero-overlay .brand{
+  font-size:18px;
+  line-height:1.15;
+}
+.ywd-hero-overlay .sub{
+  margin-top:3px;
+  font-size:11px;
+  line-height:1.35;
+  color:#b9d1d7;
+}
+
+.ywd-hero-meta-row{
+  display:flex;
+  align-items:center;
+  min-height:27px;
+  padding:5px 13px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  white-space:nowrap;
+  border:1px solid var(--line);
+  border-top:0;
+  background:linear-gradient(90deg,#061118,#07151c 55%,#061118);
+  color:#6f9aa5;
+  scrollbar-width:thin;
+}
+.ywd-hero-meta-row .build-meta{
+  display:block!important;
+  margin:0;
+  color:#6f9aa5;
+  font-size:9px;
+  line-height:1.25;
+  letter-spacing:.025em;
+}
+.ywd-hero-meta-row + .strip{
+  border-top:0;
+}
+
+@media(max-width:760px){
+  .ywd-hero-overlay{
+    margin:0 10px 9px;
+    padding:7px 9px;
+    max-width:calc(100% - 20px);
+  }
+  .ywd-hero-overlay .brand{font-size:16px}
+  .ywd-hero-overlay .sub{font-size:10px}
+  .ywd-hero-meta-row{
+    min-height:25px;
+    padding:4px 10px;
+  }
+  .ywd-hero-meta-row .build-meta{font-size:8.5px}
+}
+
+@media(max-width:520px){
+  .ywd-hero-overlay{
+    margin:0 8px 8px;
+    padding:7px 8px;
+    max-width:calc(100% - 16px);
+    background:rgba(3,12,17,.82);
+  }
+  .ywd-hero-overlay .brand{font-size:15px}
+  .ywd-hero-overlay .sub{font-size:9.5px}
+  .ywd-hero-meta-row{
+    min-height:24px;
+    padding:4px 8px;
+  }
+  .ywd-hero-meta-row .build-meta{font-size:8px}
+}

@@ -57,20 +57,33 @@
     const topbar = document.querySelector('.topbar');
     const brand = topbar?.querySelector('.header-brand');
     if (!topbar || !brand) return false;
-    if (topbar.dataset.ywdHero === '1') return true;
-    topbar.dataset.ywdHero = '1';
-    topbar.classList.add('ywd-hero-topbar');
-    brand.classList.add('ywd-hero-overlay');
 
-    const oldLogo = brand.querySelector('.header-logo');
-    if (oldLogo) oldLogo.hidden = true;
+    if (topbar.dataset.ywdHero !== '1') {
+      topbar.dataset.ywdHero = '1';
+      topbar.classList.add('ywd-hero-topbar');
+      brand.classList.add('ywd-hero-overlay');
 
-    const img = document.createElement('img');
-    img.className = 'ywd-hero-banner';
-    img.src = '/ywd-hotspot-banner.webp?v=alpha18.2.10';
-    img.alt = '';
-    img.setAttribute('aria-hidden', 'true');
-    topbar.prepend(img);
+      const oldLogo = brand.querySelector('.header-logo');
+      if (oldLogo) oldLogo.hidden = true;
+
+      const img = document.createElement('img');
+      img.className = 'ywd-hero-banner';
+      img.src = '/ywd-hotspot-banner.webp?v=alpha18.2.10';
+      img.alt = '';
+      img.setAttribute('aria-hidden', 'true');
+      topbar.prepend(img);
+    }
+
+    let metaRow = topbar.parentElement?.querySelector(':scope > .ywd-hero-meta-row');
+    if (!metaRow) {
+      metaRow = document.createElement('div');
+      metaRow.className = 'ywd-hero-meta-row';
+      metaRow.setAttribute('aria-label', 'Build metadata');
+      topbar.insertAdjacentElement('afterend', metaRow);
+    }
+
+    const buildMeta = brand.querySelector('.build-meta') || document.getElementById('buildMeta');
+    if (buildMeta && buildMeta.parentElement !== metaRow) metaRow.appendChild(buildMeta);
     return true;
   }
 
@@ -146,7 +159,7 @@
     return true;
   }
 
-  function applyAlpha1828Polish() {
+  function applyAlpha18211Polish() {
     let settingsDone = false;
     let updaterDone = false;
     let heroDone = false;
@@ -165,9 +178,10 @@
   }
 
   loadStyle('/ui-polish.css?v=alpha18.2.7');
+  loadStyle('/hero-layout.css?v=alpha18.2.11');
   loadStyle('/update.css?v=alpha18.2.6');
   loadStyle('/instrumentation.css?v=alpha12.1');
   loadStyle('/plugin-manager.css?v=alpha17');
   loadStyle('/backup-restore.css?v=alpha18.2.1');
-  load('/app-core.js', () => load('/backup-restore.js?v=alpha18.2.1', () => load('/talkgroups.js?v=alpha12.1', () => load('/ui-polish.js?v=alpha12.2', () => load('/update.js?v=alpha12.3', () => load('/update-progress.js?v=alpha16.1', () => load('/instrumentation.js?v=alpha12.1', () => load('/instrumentation-bootstrap.js?v=alpha12.1', () => load('/plugin-manager-render.js?v=alpha18.2', () => load('/plugin-package-actions.js?v=alpha18.2', () => load('/plugin-package-upload.js?v=alpha18.2', () => load('/plugin-manager.js?v=alpha18.2', () => load('/plugin-config-actions.js?v=alpha16', () => load('/plugin-telemetry.js?v=alpha18', applyAlpha1828Polish))))))))))))));
+  load('/app-core.js', () => load('/backup-restore.js?v=alpha18.2.1', () => load('/talkgroups.js?v=alpha12.1', () => load('/ui-polish.js?v=alpha12.2', () => load('/update.js?v=alpha12.3', () => load('/update-progress.js?v=alpha16.1', () => load('/instrumentation.js?v=alpha12.1', () => load('/instrumentation-bootstrap.js?v=alpha12.1', () => load('/plugin-manager-render.js?v=alpha18.2', () => load('/plugin-package-actions.js?v=alpha18.2', () => load('/plugin-package-upload.js?v=alpha18.2', () => load('/plugin-manager.js?v=alpha18.2', () => load('/plugin-config-actions.js?v=alpha16', () => load('/plugin-telemetry.js?v=alpha18', applyAlpha18211Polish))))))))))))));
 })();

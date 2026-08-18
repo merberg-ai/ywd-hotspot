@@ -1,0 +1,44 @@
+name: Alpha18.2.2 OLED Ownership Audit
+on:
+  push:
+    branches: [dev-plugins-alpha18.2.2-oled]
+  pull_request:
+    branches: [dev-plugins]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: |
+          set -euxo pipefail
+          bash -n lib/oled_owner.sh UPDATE.sh INSTALL.sh
+          python3 -m py_compile lib/admin.py lib/oled.py
+          test "$(cat VERSION)" = '0.1.0-alpha18.2.2-dev'
+      - name: OLED ownership regression guards
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          helper=Path('lib/oled_owner.sh').read_text()
+          unit=Path('os/pi-gen/stage2/10-ywd-headless/files/ywd-headless-oled.service').read_text()
+          assert 'ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/oled.py --os-owner' in helper
+          assert 'ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/oled.py --os-owner' in unit
+          assert '/usr/local/libexec/ywd-headless-oled.py' not in unit
+          assert 'disable --now ywd-oled.service' not in helper
+          assert 'stop --no-block ywd-oled.service' in helper
+          assert 'systemctl kill --kill-who=all --signal=KILL ywd-oled.service' in helper
+          assert helper.index('systemctl daemon-reload') < helper.index('retire_legacy\n')
+          assert 'systemctl enable ywd-headless-oled.service' in helper
+          assert 'systemctl start --no-block ywd-headless-oled.service' in helper
+          print('OLED ownership regression guards passed')
+          PY
+      - name: Enhanced renderer and platform boundaries remain intact
+        run: |
+          set -euxo pipefail
+          grep -q 'runtime_mode' lib/oled.py
+          grep -q 'mode == "basic"' lib/oled.py
+          grep -q 'return "ywd-headless-oled.service" if unit_exists' lib/admin.py
+          grep -q 'scrypt' lib/settings_backup.py
+          grep -q 'uploaded service plugins require a trusted Ed25519 signature' lib/plugin_package_archive.py
+          grep -q 'PrivateDevices=true' systemd/ywd-plugin@.service

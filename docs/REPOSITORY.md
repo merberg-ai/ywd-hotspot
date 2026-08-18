@@ -21,7 +21,7 @@ A new long-lived core branch should be exceptional and documented here before it
 Standalone/open-source plugin development lives outside the appliance/core repository in:
 
 ```text
-merberg-ai/ywd-modem-plugins
+merberg-ai/ywd-hotspot-plugins
 ```
 
 That repository may contain plugin source, examples, plugin-specific documentation, and development helpers. It must not duplicate or fork the trusted YWD-Hotspot package verifier, lifecycle manager, sandbox, updater, or RF ownership logic. Those contracts remain canonical in this repository.

@@ -8,7 +8,10 @@ Type=oneshot
 ExecStart=/usr/local/libexec/ywd-update-runner install
 User=root
 Group=root
-TimeoutStartSec=20min
+# Keep a finite guardrail for a stuck application update, but allow generous
+# headroom on the original Pi Zero W. Experimental MMDVM compilation is never
+# performed inside this transaction.
+TimeoutStartSec=45min
 Nice=5
 
 # This unit is started explicitly by the authenticated dashboard admin helper.

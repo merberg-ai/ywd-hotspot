@@ -18,6 +18,7 @@ if str(APP_LIB) not in sys.path:
 import plugin_manager
 import plugin_package_manager
 import plugin_service_manager
+import plugin_ui_manager
 
 
 def payload(max_bytes=65536):
@@ -89,7 +90,7 @@ def run_systemctl(*args, timeout=25):
 
 
 def all_entries():
-    return list(plugin_manager.discover()) + list(plugin_service_manager.discover())
+    return list(plugin_manager.discover()) + list(plugin_service_manager.discover()) + list(plugin_ui_manager.discover())
 
 
 def available_ids():
@@ -109,7 +110,10 @@ def resolve_available_plugin(ident):
         try:
             return plugin_service_manager.get_available_plugin(ident), "service"
         except plugin_manager.PluginError:
-            raise declarative_error
+            try:
+                return plugin_ui_manager.get_available_plugin(ident), "ui"
+            except plugin_manager.PluginError:
+                raise declarative_error
 
 
 def resolve_plugin(ident):

@@ -45,6 +45,15 @@ def wrap_handler(base):
             if path == "/plugin-package-upload.js":
                 self.serve_static("plugin-package-upload.js", "application/javascript; charset=utf-8")
                 return
+            # Alpha18.2.8: these live under web/ because UPDATE-core already
+            # deploys that directory atomically. This avoids depending on the
+            # branding-copy allowlist that caused Alpha18.2.7's banner 404.
+            if path == "/ywd-hotspot-banner.webp":
+                self.serve_static("ywd-hotspot-banner.webp", "image/webp")
+                return
+            if path == "/favicon.ico":
+                self.serve_asset(core.BRANDING / "ywd-hotspot-badge-256.webp", "image/webp")
+                return
             if path == "/api/plugins":
                 try:
                     self.send_json({"ok": True, **_decorated_snapshot()})

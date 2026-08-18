@@ -29,6 +29,7 @@ def install_package(data):
     packages[ident] = True
     write_package_map(packages)
     return {
+        "ok": True,
         "id": ident, "installed": True, "already_installed": already,
         "enabled": False, "requirements": checks,
     }

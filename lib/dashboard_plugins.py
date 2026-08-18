@@ -2,6 +2,7 @@
 """Trusted WebUI routes for the YWD-Hotspot Plugin Manager."""
 from __future__ import annotations
 
+import time
 from urllib.parse import parse_qs, urlparse
 
 import dashboard_core as core
@@ -10,11 +11,48 @@ import plugin_manager
 import plugin_package_manager
 import plugin_service_manager
 
+# These were framework proof fixtures during Alpha13-16. They remain bundled for
+# updater compatibility, but are retired from the operator-facing catalog.
+RETIRED_REFERENCE_IDS = frozenset({"system-info", "service-heartbeat"})
+_RETIRE_RETRY_AT = 0.0
+
+
+def _retire_reference_packages():
+    """Best-effort one-time migration of the old proof plugins to uninstalled.
+
+    The update lock can still be held while the dashboard process is restarting,
+    so this is retried (at most once per 10 seconds) from Plugin Manager reads
+    until the old packages are actually uninstalled. Config/data are preserved by
+    the normal package lifecycle; the heartbeat service is stopped/boot-disabled.
+    """
+    global _RETIRE_RETRY_AT
+    now = time.monotonic()
+    if now < _RETIRE_RETRY_AT:
+        return
+    _RETIRE_RETRY_AT = now + 10.0
+    for ident in sorted(RETIRED_REFERENCE_IDS):
+        try:
+            installed = plugin_package_manager.is_installed(ident)
+        except Exception:
+            continue
+        if not installed:
+            continue
+        try:
+            core.admin_call("plugin-package-uninstall", {"id": ident}, 30)
+        except Exception:
+            # Fail soft during an in-progress update/older dispatcher. The next
+            # Plugin Manager refresh retries after the throttle window.
+            pass
+
 
 def current_snapshot():
+    _retire_reference_packages()
     base = plugin_manager.snapshot(core.brief_health())
     service_rows = plugin_service_manager.snapshot()
-    plugins = list(base.get("plugins", [])) + service_rows
+    plugins = [
+        p for p in list(base.get("plugins", [])) + service_rows
+        if str(p.get("id") or "") not in RETIRED_REFERENCE_IDS
+    ]
     system = dict(base.get("system", {}))
     enabled = bool(system.get("enabled", False))
     package_state_error = system.get("package_state_error")

@@ -139,3 +139,4 @@ web/ui-polish.js
 web/update-progress.js
 web/update.css
 web/update.js
+web/ywd-hotspot-banner.webp

@@ -1,8 +1,10 @@
 # YWD-Hotspot `.ywdplugin` packages
 
-Alpha18.2 adds a persistent local plugin-package format and locked WebUI upload path.
+YWD-Hotspot supports a persistent local `.ywdplugin` package format and a locked WebUI upload path.
 
-The design keeps four existing lifecycle concepts separate:
+External plugin source/examples are developed in `merberg-ai/ywd-modem-plugins`. The canonical package format, verifier, lifecycle and security rules remain defined by YWD-Hotspot core and this document.
+
+The lifecycle deliberately keeps source, installation and activation separate:
 
 ```text
 UPLOAD     -> package source becomes AVAILABLE
@@ -11,17 +13,38 @@ ENABLE     -> operator activates the installed plugin
 ACTIVE     -> plugin is effectively running now
 ```
 
-Uploading a file never installs, enables or starts it.
+Uploading never installs, enables, or starts a package.
+
+## Real-hardware validation
+
+The signed uploaded-service lifecycle was exercised successfully on the Raspberry Pi appliance running `0.1.0-alpha18.2.15-dev`:
+
+```text
+UPLOAD signed .ywdplugin
+  -> Source: UPLOADED
+  -> Signature: VERIFIED
+  -> AVAILABLE
+  -> INSTALL
+  -> ENABLE / ACTIVE
+  -> configuration save + restart
+  -> DISABLE
+  -> UNINSTALL
+  -> configuration preserved
+  -> REMOVE DATA
+  -> REMOVE PACKAGE
+```
+
+This validates the actual operator WebUI path and persistent package catalog in addition to synthetic archive/signature tests.
 
 ## Package filename and container
 
-A YWD plugin package is a normal ZIP container with the YWD-specific extension:
+A YWD plugin package is a normal ZIP container using the YWD-specific extension:
 
 ```text
 my-plugin-1.0.0.ywdplugin
 ```
 
-Package format v1 is deliberately flat. Files must be regular files at archive root; directories, nested paths and symbolic links are rejected.
+Format v1 is deliberately flat. Files must be regular files at archive root; directories, nested paths, symbolic links and duplicate entries are rejected.
 
 Typical declarative package:
 
@@ -43,7 +66,7 @@ README.md              optional
 signature.ed25519
 ```
 
-The archive is intentionally small:
+Current archive limits:
 
 - maximum compressed upload: 1 MiB
 - maximum total unpacked data: 2 MiB
@@ -54,7 +77,7 @@ The core extractor does not call `extractall()` and does not accept archive-cont
 
 ## `ywdplugin.json`
 
-The package manifest identifies the package and hashes every payload file.
+The package manifest identifies the package and SHA-256 hashes every payload file.
 
 Example unsigned declarative package:
 
@@ -71,7 +94,7 @@ Example unsigned declarative package:
 }
 ```
 
-Example signed service-package metadata adds:
+Signed service metadata adds:
 
 ```json
 "signature": {
@@ -80,11 +103,11 @@ Example signed service-package metadata adds:
 }
 ```
 
-Each `files` value is the lowercase SHA-256 digest of that exact archive payload. `ywdplugin.json` and `signature.ed25519` are package metadata and are not included in the payload hash map.
+`files` values are lowercase SHA-256 digests of the exact archive payload. `ywdplugin.json` and `signature.ed25519` are package metadata and are not included in the payload hash map.
 
-Any missing file, unlisted extra file, duplicate entry, malformed hash or hash mismatch rejects the whole upload.
+Missing files, unlisted extras, malformed hashes, duplicate entries, or hash mismatches reject the whole upload.
 
-## Uploaded-plugin trust label
+## Uploaded trust label
 
 Uploaded packages must declare:
 
@@ -92,46 +115,30 @@ Uploaded packages must declare:
 "trust": "experimental"
 ```
 
-in `plugin.json`.
-
-A WebUI-uploaded package is never allowed to self-assert YWD's core-owned `first-party` label, even when the package is correctly signed. Signature provenance and YWD first-party status are separate concepts.
-
-Bundled YWD plugins shipped inside the application remain first-party packages.
+A WebUI-uploaded package cannot self-assert YWD's core-owned `first-party` label, even when correctly signed. Signature provenance and first-party status are separate concepts.
 
 ## Signature policy
 
-Alpha18.2 supports Ed25519 package signatures.
-
-Policy:
-
 | Uploaded package | Unsigned | Trusted Ed25519 signature |
 |---|---:|---:|
-| declarative/data-only | allowed, shown as **UNSIGNED** | allowed, shown as **VERIFIED** |
+| declarative/data-only | allowed, shown **UNSIGNED** | allowed, shown **VERIFIED** |
 | sandboxed service code | **rejected** | allowed |
-| RF-mode plugin | rejected by the current plugin API | rejected unless a future core API explicitly adds RF arbitration |
+| RF-mode plugin | rejected by current API | rejected unless future trusted-core RF arbitration explicitly allows it |
 
-A package that declares a signature but has an unknown key, malformed signature or failed cryptographic verification is rejected. It never falls back to an unsigned warning.
+A package that declares a signature but has an unknown key, malformed signature, or failed verification is rejected. It never falls back to unsigned mode.
 
-### What a trusted signing key means
+### Trusted publisher keys
 
-Installing a publisher key under `/etc/ywd-hotspot/plugin-trust.d` authorizes packages signed by that key to pass the executable-service signature gate. That is a meaningful trust decision.
+Installing a public key under `/etc/ywd-hotspot/plugin-trust.d` authorizes packages signed by that identity to pass the executable-service signature gate. This is a meaningful trust decision, but it does not grant root access. Signed services still run inside the shared restricted YWD sandbox.
 
-It does **not** grant arbitrary root access. Signed service plugins still run through the shared YWD sandbox, but a trusted service publisher is allowed to supply Python code that runs as the restricted `ywd-hotspot` account and can use only capabilities allowed by the plugin manifest/core API.
-
-Only add keys from publishers you intend to trust.
-
-## Generate an Ed25519 publisher keypair
-
-On a development machine with OpenSSL 3:
+Generate a publisher keypair on a development machine with OpenSSL 3:
 
 ```bash
 openssl genpkey -algorithm Ed25519 -out ywd-plugin-private.pem
 openssl pkey -in ywd-plugin-private.pem -pubout -out ywd-plugin-public.pem
 ```
 
-The private key is the publisher signing identity.
-
-> **Never commit, upload, bundle or share the private key.** Losing control of it means losing control of that publisher identity.
+Never commit, upload, bundle, or share the private signing key.
 
 Choose a stable key ID, for example:
 
@@ -139,13 +146,7 @@ Choose a stable key ID, for example:
 kj6ywd-official-1
 ```
 
-The key ID is not cryptographic by itself; it selects the matching trusted public key on the hotspot.
-
-## Trust a publisher key on a hotspot
-
-Alpha18.2 intentionally keeps trusted-key installation as a local root/operator action. There is no WebUI button that silently expands executable-code trust.
-
-Copy the public key to the hotspot and install it as:
+Install the public half on a hotspot:
 
 ```bash
 sudo install -d -o root -g root -m 0750 /etc/ywd-hotspot/plugin-trust.d
@@ -156,19 +157,9 @@ sudo install -o root -g root -m 0644 \
 
 The filename stem must exactly match the package `key_id`.
 
-List trusted keys:
+## Build packages
 
-```bash
-sudo ls -l /etc/ywd-hotspot/plugin-trust.d/
-```
-
-Removing a key prevents future uploads using that signing identity from verifying. It does not automatically delete already uploaded package source.
-
-## Build an unsigned declarative package
-
-A source directory must contain flat regular files including a valid `plugin.json` and its referenced configuration schema.
-
-Example:
+Unsigned declarative package:
 
 ```bash
 python3 tools/ywdplugin-build.py \
@@ -177,11 +168,7 @@ python3 tools/ywdplugin-build.py \
   --publisher "KJ6YWD"
 ```
 
-The tool calculates the SHA-256 inventory and creates the ZIP container.
-
-Unsigned packages are accepted only when the plugin is declarative/data-only under the current API.
-
-## Build a signed service package
+Signed service package:
 
 ```bash
 python3 tools/ywdplugin-build.py \
@@ -192,27 +179,21 @@ python3 tools/ywdplugin-build.py \
   --key-id kj6ywd-official-1
 ```
 
-For service packages, `tools/ywdplugin-build.py` refuses to build without both `--sign-key` and `--key-id`.
+For service packages the builder refuses to proceed without both `--sign-key` and `--key-id`.
 
-The signing tool:
+The builder:
 
 1. hashes all package payload files
 2. creates canonical `ywdplugin.json`
 3. signs those exact manifest bytes using Ed25519/OpenSSL
-4. writes the 64-byte signature as base64 in `signature.ed25519`
+4. stores the 64-byte signature as base64 in `signature.ed25519`
 5. creates the final `.ywdplugin` ZIP
 
-Changing a payload file after signing causes its SHA-256 verification to fail. Changing the signed package manifest causes the Ed25519 verification to fail.
+Changing payload after signing breaks SHA-256 verification. Changing the signed manifest breaks Ed25519 verification.
 
 ## Upload through the WebUI
 
-Unlock YWD-Hotspot controls, open **PLUGINS**, then use:
-
-```text
-UPLOAD .YWDPLUGIN
-```
-
-The server validates the archive before it becomes part of the persistent local catalog.
+Unlock dashboard controls, open **PLUGINS**, and use **UPLOAD .YWDPLUGIN**.
 
 Validation includes:
 
@@ -222,30 +203,25 @@ Validation includes:
 - exact file inventory
 - SHA-256 verification
 - package-format version
-- plugin ID and plugin API validation
+- plugin ID / plugin API validation
 - `experimental` uploaded trust label
 - capability/dependency/hardware allow lists
 - Ed25519 publisher verification when declared
 - mandatory trusted signature for service code
 - duplicate/colliding plugin ID rejection
 
-A successful upload produces an **AVAILABLE** package card. It remains uninstalled and disabled.
+A successful upload creates an **AVAILABLE** package card. It remains uninstalled and disabled.
 
-The package card reports:
+Signed package cards show:
 
 ```text
 Source     UPLOADED
 Signature  VERIFIED · <key-id>
 ```
 
-or, for an allowed unsigned declarative package:
+Allowed unsigned declarative packages show `Signature  UNSIGNED`.
 
-```text
-Source     UPLOADED
-Signature  UNSIGNED
-```
-
-## Persistent package source
+## Persistent uploaded source
 
 Uploaded package source is stored outside the deployed application tree:
 
@@ -253,9 +229,9 @@ Uploaded package source is stored outside the deployed application tree:
 /var/lib/ywd-hotspot/plugin-packages/<plugin-id>/
 ```
 
-This is intentional. `/opt/ywd-hotspot/app` is replaced by normal YWD application updates; uploaded package source should survive those updates.
+This allows normal YWD application updates to replace `/opt/ywd-hotspot/app` without deleting uploaded package source.
 
-The runtime catalog overlays these persistent packages onto the built-in catalogs at discovery time. Uploaded service plugins still execute through:
+Uploaded service plugins still execute only through trusted core:
 
 ```text
 systemd/ywd-plugin@.service
@@ -263,15 +239,13 @@ systemd/ywd-plugin@.service
   -> validated installed service entrypoint
 ```
 
-They do not install their own systemd units.
+They cannot install their own service unit.
 
-## Service sandbox
+## Sandbox
 
-A signed uploaded service does **not** receive arbitrary system privileges.
+A trusted signature does not remove runtime containment. The shared template retains restrictions including:
 
-The shared YWD service template retains the existing restrictions, including:
-
-- user/group `ywd-hotspot`
+- `User/Group=ywd-hotspot`
 - `NoNewPrivileges=true`
 - no Linux capabilities
 - private device namespace
@@ -281,87 +255,41 @@ The shared YWD service template retains the existing restrictions, including:
 - `MemoryDenyWriteExecute=true`
 - `RestrictAddressFamilies=AF_UNIX`
 - no direct MMDVM serial/device ownership
-- only its exact `/var/lib/ywd-hotspot/plugins/<id>` data path is opened for writes
+- only the exact plugin data path opened for writes
 
-Package signatures establish publisher provenance. The sandbox remains the runtime containment boundary.
+## INSTALL / UNINSTALL / REMOVE DATA / REMOVE PACKAGE
 
-## INSTALL vs UNINSTALL vs REMOVE PACKAGE vs REMOVE DATA
+**INSTALL** registers an AVAILABLE package after core-owned requirement validation. It does not enable or start it.
 
-These actions are intentionally independent.
+**UNINSTALL** stops and boot-disables service runtime when applicable, clears activation/registration, preserves uploaded source, and preserves configuration/data. The plugin returns to AVAILABLE.
 
-### INSTALL
-
-Registers an AVAILABLE package as installed after core-owned dependency/hardware validation.
-
-It does not enable or start the plugin.
-
-### UNINSTALL
-
-- stops and boot-disables a service plugin when applicable
-- clears activation
-- removes package registration
-- preserves uploaded package source
-- preserves plugin configuration/data
-
-The plugin therefore returns to **AVAILABLE** and can be reinstalled later.
-
-### REMOVE PACKAGE
-
-Only uploaded packages have this action.
-
-Requirements:
-
-- package must already be uninstalled
-- service must be inactive/boot-disabled
-
-It physically removes:
-
-```text
-/var/lib/ywd-hotspot/plugin-packages/<id>/
-```
-
-Built-in YWD application packages cannot be physically removed this way; uninstall them instead. Application updates own `/opt/ywd-hotspot/app`.
-
-### REMOVE DATA
-
-This remains a separate destructive action and removes only the exact core-derived paths:
+**REMOVE DATA** removes only:
 
 ```text
 /etc/ywd-hotspot/plugins/<id>.json
 /var/lib/ywd-hotspot/plugins/<id>
 ```
 
-Removing package source does not silently erase user configuration/data, and removing data does not silently remove package source.
-
-## Application update behavior
-
-The plugin update-safety helper includes persistent uploaded service packages when it captures and quiesces service state.
-
-Before application replacement:
+**REMOVE PACKAGE** is available only for uploaded packages and requires the plugin to be uninstalled and inert. It removes only:
 
 ```text
-capture built-in + uploaded plugin intent/service state
-  -> disable/stop plugin services
-  -> replace/validate core application
-  -> load target built-in + persistent catalogs
-  -> restore only packages that still validate and were previously enabled
+/var/lib/ywd-hotspot/plugin-packages/<id>/
 ```
 
-New packages never auto-enable merely because an application update discovers them.
+Removing source never silently removes user configuration/data; removing data never silently removes package source.
 
-When switching to a non-plugin `main`/`dev` runtime, plugin services are made inert. Persistent uploaded package files may remain on disk as inert operator data so they are not silently destroyed by a channel change.
+## Application-update behavior
+
+Before application replacement, trusted core captures plugin intent/runtime state and quiesces built-in plus persistent uploaded services. After target validation, only previously enabled packages that still validate are eligible for restoration. Newly discovered packages remain disabled.
+
+When switching to plugin-free `main`/`dev`, service plugins are made inert. Persistent uploaded package files may remain as inert operator data rather than being silently destroyed.
 
 ## Backup / restore relationship
 
-`.ywdsettings` Alpha18.2 backups preserve:
+Protected `.ywdsettings` backups preserve package-registration intent, plugin activation intent, per-plugin configuration, and trusted publisher **public** keys.
 
-- plugin package registration intent
-- plugin master/per-plugin activation intent
-- per-plugin configuration
-- trusted publisher public keys
+They do **not** embed uploaded executable `.ywdplugin` package code or signing private keys.
 
-They do **not** embed uploaded `.ywdplugin` package code.
+After restoring a fresh system, missing uploaded packages are reported and must be explicitly re-uploaded. YWD does not fetch executable code automatically from backup metadata or the Internet.
 
-After restoring to a fresh OS, missing uploaded packages are reported. Re-upload the required `.ywdplugin` package; YWD does not fetch executable code automatically from a backup or from the Internet.
-
-See **[BACKUP-RESTORE.md](BACKUP-RESTORE.md)**.
+See **[BACKUP-RESTORE.md](BACKUP-RESTORE.md)** and **[PLUGINS.md](PLUGINS.md)**.

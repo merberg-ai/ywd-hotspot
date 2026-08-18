@@ -34,6 +34,7 @@ docs/INSTALL.md
 docs/MMDVM-SESSIONS.md
 docs/OS-DEVELOPMENT.md
 docs/PLUGIN-PACKAGES.md
+docs/PLUGIN-UI.md
 docs/PLUGINS.md
 docs/REPOSITORY.md
 docs/TALKGROUPS.md
@@ -82,6 +83,7 @@ lib/plugin_package_archive.py
 lib/plugin_package_manager.py
 lib/plugin_service_manager.py
 lib/plugin_service_runner.py
+lib/plugin_ui_manager.py
 lib/plugin_update_safety.py
 lib/settings_admin.py
 lib/settings_backup.py
@@ -136,6 +138,9 @@ web/plugin-manager.js
 web/plugin-package-actions.js
 web/plugin-package-upload.js
 web/plugin-telemetry.js
+web/plugin-ui-host.js
+web/plugin-ui-runtime.js
+web/plugin-ui.css
 web/ssh-key-export.js
 web/style.css
 web/talkgroups.js

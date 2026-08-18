@@ -14,6 +14,7 @@
 | 🧱 Build a complete YWD-Hotspot OS image | **[OS Development](OS-DEVELOPMENT.md)** |
 | 🔐 Export/restore a fresh appliance from `.ywdsettings` | **[Backup / Restore](BACKUP-RESTORE.md)** |
 | 🧩 Understand the experimental plugin framework | **[Plugins](PLUGINS.md)** |
+| 🖥️ Build a signed plugin-owned dashboard section | **[Plugin UI v1](PLUGIN-UI.md)** |
 | 📦 Build/upload/sign a `.ywdplugin` package | **[Plugin Packages](PLUGIN-PACKAGES.md)** |
 | 📡 Understand the MMDVM live telemetry bus/plugin | **[MMDVM Telemetry](TELEMETRY.md)** |
 | 📞 Understand normalized MMDVM DMR call sessions | **[MMDVM Sessions](MMDVM-SESSIONS.md)** |
@@ -48,6 +49,7 @@ A few project rules show up everywhere because they are intentional design const
 - the plugin subsystem is globally disableable and must leave core DMR operation intact when disabled.
 - uploading a `.ywdplugin` never installs/enables/starts it.
 - uploaded executable service plugins require a trusted Ed25519 signature and still run through the shared restrictive sandbox.
+- uploaded browser UI plugins also require a trusted Ed25519 signature and execute only inside the isolated Plugin UI frame; they receive no Pi-side daemon.
 - plugin telemetry remains observational; RF/modem ownership requires a separate explicit arbitration design.
 
 ## 🌿 Branch and checkpoint model
@@ -57,7 +59,7 @@ Long-lived branches are intentionally limited to:
 | Branch | Purpose |
 |---|---|
 | `main` | promoted/conservative line |
-| `dev` | unified application + OS-builder baseline |
+| `dev` | stable tested development integration baseline |
 | `dev-plugins` | experimental plugin/telemetry/integration line |
 
 Known-good historical builds should be preserved as immutable `checkpoint/*` tags. Superseded long-lived development lines may be retained as `archive/*` tags. Feature/audit branches are temporary and should be removed after their tested result is published.

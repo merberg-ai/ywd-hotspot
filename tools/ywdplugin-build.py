@@ -40,8 +40,8 @@ def main():
     if not isinstance(plugin, dict): die("plugin.json must contain an object")
     ident = str(plugin.get("id") or ""); kind = str(plugin.get("kind") or "")
     if not ID_RE.fullmatch(ident): die("invalid plugin id")
-    if kind not in {"declarative", "service"}: die("plugin kind must be declarative or service")
-    if kind == "service" and not args.sign_key: die("service plugins must be signed")
+    if kind not in {"declarative", "service", "ui"}: die("plugin kind must be declarative, service, or ui")
+    if kind in {"service", "ui"} and not args.sign_key: die(f"{kind} plugins must be signed")
     if bool(args.sign_key) != bool(args.key_id): die("--sign-key and --key-id must be supplied together")
     if args.key_id and not KEY_RE.fullmatch(args.key_id): die("invalid key id")
 

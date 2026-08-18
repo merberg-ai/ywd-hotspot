@@ -10,14 +10,14 @@ The lifecycle deliberately keeps source, installation and activation separate:
 UPLOAD     -> package source becomes AVAILABLE
 INSTALL    -> package becomes eligible for use
 ENABLE     -> operator activates the installed plugin
-ACTIVE     -> plugin is effectively running now
+ACTIVE     -> plugin is effectively active now
 ```
 
 Uploading never installs, enables, or starts a package.
 
 ## Real-hardware validation
 
-The signed uploaded-service lifecycle was exercised successfully on the Raspberry Pi appliance running `0.1.0-alpha18.2.15-dev`:
+The signed uploaded-service lifecycle was exercised successfully on the Raspberry Pi appliance running `0.1.0-alpha18.2.15-dev`, and the Alpha18.2.16 stable development baseline was subsequently physically tested successfully.
 
 ```text
 UPLOAD signed .ywdplugin
@@ -34,7 +34,7 @@ UPLOAD signed .ywdplugin
   -> REMOVE PACKAGE
 ```
 
-This validates the actual operator WebUI path and persistent package catalog in addition to synthetic archive/signature tests.
+Plugin UI v1 is new experimental Alpha19 work and is not considered hardware/browser proven until its separate UI smoke-test lifecycle passes.
 
 ## Package filename and container
 
@@ -66,12 +66,26 @@ README.md              optional
 signature.ed25519
 ```
 
+Typical Plugin UI v1 package:
+
+```text
+ywdplugin.json
+plugin.json
+config.schema.json
+ui.js
+ui.css
+README.md              optional
+signature.ed25519
+```
+
 Current archive limits:
 
 - maximum compressed upload: 1 MiB
 - maximum total unpacked data: 2 MiB
 - maximum entries: 32
 - maximum individual file: 512 KiB
+
+Plugin UI v1 additionally limits its declared script to 256 KiB and stylesheet to 128 KiB. The package-wide limits still apply.
 
 The core extractor does not call `extractall()` and does not accept archive-controlled destination paths.
 
@@ -94,7 +108,7 @@ Example unsigned declarative package:
 }
 ```
 
-Signed service metadata adds:
+Signed service/UI metadata adds:
 
 ```json
 "signature": {
@@ -123,13 +137,16 @@ A WebUI-uploaded package cannot self-assert YWD's core-owned `first-party` label
 |---|---:|---:|
 | declarative/data-only | allowed, shown **UNSIGNED** | allowed, shown **VERIFIED** |
 | sandboxed service code | **rejected** | allowed |
+| sandboxed browser UI code | **rejected** | allowed |
 | RF-mode plugin | rejected by current API | rejected unless future trusted-core RF arbitration explicitly allows it |
 
 A package that declares a signature but has an unknown key, malformed signature, or failed verification is rejected. It never falls back to unsigned mode.
 
+A valid signature establishes publisher provenance; it does not grant arbitrary privilege. Service plugins still run in the shared restricted Pi sandbox. UI plugins receive no Pi-side process and their browser code runs only inside the isolated Plugin UI frame described in **[PLUGIN-UI.md](PLUGIN-UI.md)**.
+
 ### Trusted publisher keys
 
-Installing a public key under `/etc/ywd-hotspot/plugin-trust.d` authorizes packages signed by that identity to pass the executable-service signature gate. This is a meaningful trust decision, but it does not grant root access. Signed services still run inside the shared restricted YWD sandbox.
+Installing a public key under `/etc/ywd-hotspot/plugin-trust.d` authorizes packages signed by that identity to pass the executable-code signature gate.
 
 Generate a publisher keypair on a development machine with OpenSSL 3:
 
@@ -168,18 +185,20 @@ python3 tools/ywdplugin-build.py \
   --publisher "KJ6YWD"
 ```
 
-Signed service package:
+Signed service or UI package:
 
 ```bash
 python3 tools/ywdplugin-build.py \
-  ./my-service-plugin \
-  ./my-service-plugin-1.0.0.ywdplugin \
+  ./my-plugin \
+  ./my-plugin-1.0.0.ywdplugin \
   --publisher "KJ6YWD" \
-  --sign-key ./ywd-plugin-private.pem \
+  --sign-key /secure/path/ywd-plugin-private.pem \
   --key-id kj6ywd-official-1
 ```
 
-For service packages the builder refuses to proceed without both `--sign-key` and `--key-id`.
+For `service` and `ui` packages the builder refuses to proceed without both `--sign-key` and `--key-id`.
+
+The companion `ywd-hotspot-plugins` repository also provides `PLUGIN-DEV.sh`, an interactive/command-mode wrapper that validates source and invokes this canonical builder. It does not implement a second package format.
 
 The builder:
 
@@ -207,8 +226,8 @@ Validation includes:
 - `experimental` uploaded trust label
 - capability/dependency/hardware allow lists
 - Ed25519 publisher verification when declared
-- mandatory trusted signature for service code
-- duplicate/colliding plugin ID rejection
+- mandatory trusted signature for service and UI executable code
+- duplicate/colliding plugin ID rejection across declarative/service/UI models
 
 A successful upload creates an **AVAILABLE** package card. It remains uninstalled and disabled.
 
@@ -231,7 +250,7 @@ Uploaded package source is stored outside the deployed application tree:
 
 This allows normal YWD application updates to replace `/opt/ywd-hotspot/app` without deleting uploaded package source.
 
-Uploaded service plugins still execute only through trusted core:
+Uploaded service plugins execute only through trusted core:
 
 ```text
 systemd/ywd-plugin@.service
@@ -241,9 +260,13 @@ systemd/ywd-plugin@.service
 
 They cannot install their own service unit.
 
-## Sandbox
+Uploaded UI plugins have no systemd unit or Pi-side entrypoint. Trusted core serves only their declared UI assets while the package is installed and effectively enabled.
 
-A trusted signature does not remove runtime containment. The shared template retains restrictions including:
+## Runtime containment
+
+A trusted signature does not remove containment.
+
+Service plugins retain restrictions including:
 
 - `User/Group=ywd-hotspot`
 - `NoNewPrivileges=true`
@@ -257,9 +280,13 @@ A trusted signature does not remove runtime containment. The shared template ret
 - no direct MMDVM serial/device ownership
 - only the exact plugin data path opened for writes
 
+UI plugins instead execute on the browser device inside a sandboxed iframe with a restrictive CSP/Permissions Policy and a narrow trusted MessageChannel bridge. They are never injected into the trusted dashboard DOM.
+
 ## INSTALL / UNINSTALL / REMOVE DATA / REMOVE PACKAGE
 
 **INSTALL** registers an AVAILABLE package after core-owned requirement validation. It does not enable or start it.
+
+**ENABLE** activates the installed package under the master Plugin Support switch. A UI-only plugin becomes effectively ACTIVE without creating a Pi-side process; its browser frame is created only when its dashboard section is opened.
 
 **UNINSTALL** stops and boot-disables service runtime when applicable, clears activation/registration, preserves uploaded source, and preserves configuration/data. The plugin returns to AVAILABLE.
 
@@ -280,9 +307,11 @@ Removing source never silently removes user configuration/data; removing data ne
 
 ## Application-update behavior
 
-Before application replacement, trusted core captures plugin intent/runtime state and quiesces built-in plus persistent uploaded services. After target validation, only previously enabled packages that still validate are eligible for restoration. Newly discovered packages remain disabled.
+Before application replacement, trusted core captures plugin intent/runtime state and quiesces service plugins. After target validation, only previously enabled packages that still validate are eligible for restoration. Newly discovered packages remain disabled.
 
-When switching to plugin-free `main`/`dev`, service plugins are made inert. Persistent uploaded package files may remain as inert operator data rather than being silently destroyed.
+UI plugins participate in the same activation-intent validation but have no service process to quiesce or restart.
+
+When switching to a plugin-free target, service plugins are made inert and plugin activation is cleared. Persistent uploaded package files may remain as inert operator data rather than being silently destroyed.
 
 ## Backup / restore relationship
 
@@ -292,4 +321,4 @@ They do **not** embed uploaded executable `.ywdplugin` package code or signing p
 
 After restoring a fresh system, missing uploaded packages are reported and must be explicitly re-uploaded. YWD does not fetch executable code automatically from backup metadata or the Internet.
 
-See **[BACKUP-RESTORE.md](BACKUP-RESTORE.md)** and **[PLUGINS.md](PLUGINS.md)**.
+See **[BACKUP-RESTORE.md](BACKUP-RESTORE.md)**, **[PLUGINS.md](PLUGINS.md)** and **[PLUGIN-UI.md](PLUGIN-UI.md)**.

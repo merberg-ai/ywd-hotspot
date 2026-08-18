@@ -6,7 +6,7 @@ This document defines how YWD-Hotspot keeps Git history useful without letting t
 
 ## Long-lived branches
 
-Only three branches are intended to be permanent:
+Only three branches are intended to be permanent in the core repository:
 
 | Branch | Role |
 |---|---|
@@ -14,7 +14,19 @@ Only three branches are intended to be permanent:
 | `dev` | unified application + OS-builder baseline |
 | `dev-plugins` | experimental plugin/telemetry/integration line |
 
-A new long-lived branch should be exceptional and documented here before it is created.
+A new long-lived core branch should be exceptional and documented here before it is created.
+
+## Companion plugin repository
+
+Standalone/open-source plugin development lives outside the appliance/core repository in:
+
+```text
+merberg-ai/ywd-modem-plugins
+```
+
+That repository may contain plugin source, examples, plugin-specific documentation, and development helpers. It must not duplicate or fork the trusted YWD-Hotspot package verifier, lifecycle manager, sandbox, updater, or RF ownership logic. Those contracts remain canonical in this repository.
+
+Private signing keys must never be committed to either repository.
 
 ## Checkpoint tags
 
@@ -59,8 +71,6 @@ audit/<topic>
 hotfix/<topic>
 ```
 
-Existing historical names do not need to be rewritten just for aesthetics; the rule applies to new work.
-
 Lifecycle:
 
 1. branch from an exact verified parent
@@ -72,11 +82,9 @@ Lifecycle:
 7. remove temporary CI scaffolding
 8. delete the temporary branch
 
-Temporary branches are not release history. The commit graph and checkpoint/archive tags preserve the useful history.
+Temporary branches are not release history. The commit graph and checkpoint/archive tags preserve useful history.
 
 ## Promotion model
-
-The normal direction is:
 
 ```text
 dev-plugins experiments
@@ -86,7 +94,7 @@ dev-plugins experiments
        main
 ```
 
-Promotion is never automatic. Plugin experiments are not assumed safe for `dev`, and `dev` is not assumed ready for `main` merely because time passed.
+Promotion is never automatic.
 
 ## Repository layout policy
 
@@ -101,11 +109,11 @@ lib/        trusted application core
 os/         reproducible image builder / pi-gen stages
 sudoers/    privilege policy
 systemd/    service units
-tools/      development/package utilities
+tools/      trusted development/package utilities
 web/        static WebUI payload
 ```
 
-Do not reorganize runtime paths merely to make the repository look more fashionable. Installer/updater/builder code intentionally relies on stable paths. Any directory move must be treated as a migration with manifest, candidate-validation, updater and OS-builder coverage.
+Do not reorganize runtime paths only for aesthetics. Installer/updater/builder code relies on stable paths. Directory moves are migrations and require manifest, updater, candidate-validation and OS-builder coverage.
 
 Root install/update/migration wrappers remain at repository root because they are public operator entry points.
 
@@ -119,11 +127,11 @@ When a runtime derivative is duplicated, both copies should be generated from th
 
 Not every apparently obsolete file can be deleted immediately. A source manifest or package may remain temporarily when the updater/migration path still needs it to safely retire old installed state.
 
-In particular, retired proof plugins must remain hidden from the operator catalog and inert, but their compatibility fixtures should not be removed until old package-state migration no longer requires resolving those manifests.
+Retired proof plugins must remain hidden from the operator catalog and inert, but compatibility fixtures should not be removed until old package-state migration no longer requires resolving them.
 
 ## Cleanup checklist
 
-Periodic repository cleanup should verify:
+Periodic cleanup should verify:
 
 - only intended long-lived branches remain
 - known-good points have immutable checkpoint tags
@@ -133,8 +141,9 @@ Periodic repository cleanup should verify:
 - README/docs do not advertise an obsolete active version/branch
 - branding docs match shipped assets
 - compatibility fixtures are documented rather than mistaken for active features
-- no secrets, runtime config, backups or signing private keys are tracked
+- no secrets, runtime config, backups, SSH private keys, or signing private keys are tracked
+- temporary feature branches are deleted after publication
 
 ## Safety rule
 
-Repository cleanup is not a reason to change RF behavior. Branch/tag/docs/asset organization should be isolated from MMDVM-Host/DMRGateway pins, calibration, modem settings and normal DMR service behavior.
+Repository cleanup is not a reason to change RF behavior. Branch/tag/docs/asset organization stays isolated from MMDVM-Host/DMRGateway pins, calibration, modem settings and normal DMR service behavior.

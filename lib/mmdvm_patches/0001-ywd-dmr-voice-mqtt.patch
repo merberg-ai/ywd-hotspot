@@ -71,7 +71,7 @@ index e29035f..b32fa91 100644
  	CDMRData dmrData;
  	dmrData.setSlotNo(m_slotNo);
  	dmrData.setDataType(dataType);
-@@ -2181,7 +2182,12 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
+@@ -2181,7 +2182,11 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
  
  	dmrData.setData(data + 2U);
  
@@ -84,7 +84,7 @@ index e29035f..b32fa91 100644
  }
  
  void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType, unsigned char errors)
-@@ -2644,6 +2650,43 @@ void CDMRSlot::writeJSONText(const unsigned char* text)
+@@ -2644,6 +2649,41 @@ void CDMRSlot::writeJSONText(const unsigned char* text)
  	WriteJSON("Text", json);
  }
  

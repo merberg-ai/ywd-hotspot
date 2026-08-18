@@ -44,6 +44,16 @@
     console[bad ? 'error' : 'log'](message);
   }
 
+  function markConfigPresent(card) {
+    if (!card) return;
+    card.querySelectorAll('.plugin-package-meta > div').forEach(row => {
+      const label = row.querySelector('span')?.textContent?.trim().toLowerCase();
+      if (label !== 'config') return;
+      const value = row.querySelector('b');
+      if (value) value.textContent = 'PRESENT';
+    });
+  }
+
   function syncButtons() {
     document.querySelectorAll('#plugins .plugin-card[data-plugin-card]').forEach(card => {
       const id = card.dataset.pluginCard;
@@ -94,6 +104,7 @@
     try {
       await post('/api/plugins/config', {id, config: collectConfig(id)});
       await post('/api/plugins/runtime', {id, action: 'restart'});
+      markConfigPresent(card);
       showResult(id, 'Configuration saved and plugin service restarted.');
       notify(`${id} configuration saved and plugin restarted`);
     } catch (error) {

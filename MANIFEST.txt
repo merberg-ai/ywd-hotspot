@@ -89,6 +89,7 @@ lib/setup_admin.py
 lib/setup_entry.sh
 lib/setup_restore_server.py
 lib/setup_server.py
+lib/ssh_keys_admin.py
 lib/system_branding.sh
 lib/telemetry_runtime.py
 lib/update_admin.py
@@ -135,6 +136,7 @@ web/plugin-manager.js
 web/plugin-package-actions.js
 web/plugin-package-upload.js
 web/plugin-telemetry.js
+web/ssh-key-export.js
 web/style.css
 web/talkgroups.js
 web/ui-polish.css

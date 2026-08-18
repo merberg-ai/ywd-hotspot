@@ -1,0 +1,38 @@
+name: Alpha18.2.6 CSP OLED Audit
+on:
+  push:
+    branches: [dev-plugins-alpha18.2.6-csp-oled]
+  pull_request:
+    branches: [dev-plugins]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: |
+          set -euxo pipefail
+          bash -n lib/oled_owner.sh
+          node --check web/app.js
+          test "$(cat VERSION)" = '0.1.0-alpha18.2.6-dev'
+      - name: CSP safe updater polish
+        run: |
+          set -euxo pipefail
+          ! grep -q "createElement('style')" web/app.js
+          ! grep -q 'style.textContent' web/app.js
+          grep -q '/update.css?v=alpha18.2.6' web/app.js
+          grep -q 'ywd-check-spinner' web/update.css
+          grep -q 'ywd-check-pulse' web/update.css
+          grep -q 'ywd-check-scan' web/update.css
+          grep -q 'prefers-reduced-motion' web/update.css
+      - name: OLED disable final power off
+        run: |
+          set -euxo pipefail
+          grep -q 'power_off_panel' lib/oled_owner.sh
+          grep -q "0xAE" lib/oled_owner.sh
+          grep -A5 'else' lib/oled_owner.sh | grep -q 'power_off_panel' || grep -q '    power_off_panel' lib/oled_owner.sh
+          grep -q 'sleep 0.03' lib/oled_owner.sh
+      - name: No trust boundary churn
+        run: |
+          set -euxo pipefail
+          git diff --name-only HEAD^ | grep -Ev '^(.github/workflows/alpha18-2-6-audit.yml|VERSION|web/app.js|web/update.css|lib/oled_owner.sh)$' && exit 1 || true

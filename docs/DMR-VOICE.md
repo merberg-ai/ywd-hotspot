@@ -4,20 +4,23 @@
 
 `0.1.0-alpha19-dev` Plugin UI v1 is the physically validated foundation for this work. The reference Raspberry Pi Zero W passed the signed `ui-smoke-test` package lifecycle, sandbox/navigation test, configuration bridge test, master Plugin Support test, and normal DMR-operation check.
 
-The immutable repository checkpoint is:
+Frozen checkpoints:
 
 ```text
-checkpoint-alpha19-plugin-ui-proven
-f08d0fcb47ae9c022809bf1262a687d80fa81811
+ywd-hotspot:
+  checkpoint-alpha19-plugin-ui-proven
+  f08d0fcb47ae9c022809bf1262a687d80fa81811
+
+ywd-hotspot-plugins:
+  checkpoint-alpha19-plugin-ui-proven
+  e5376fee6be8833d4524a8c4d7d49c62bf703865
 ```
 
-Alpha20 begins the RX Monitor work without changing the ownership rule established by earlier plugin phases: MMDVM-Host remains the only process that owns the modem/RF path. Plugin code never opens `/dev/serial0`, never starts a competing MMDVM instance, and never gains TX authority.
+MMDVM-Host remains the only process that owns the modem/RF path. Plugin code never opens `/dev/serial0`, never starts a competing MMDVM instance, and never gains TX authority.
 
-## Alpha20 Phase 2A scope
+## Alpha20 Phase 2A
 
-Phase 2A adds only a passive raw DMR voice-frame observation tap. It does **not** yet expose voice frames to a browser plugin and it does **not** decode AMBE audio on the Pi.
-
-The data path is:
+Phase 2A adds only a passive raw DMR voice-frame observation tap. It does **not** yet expose voice frames to a browser plugin and does **not** decode AMBE audio on the Pi.
 
 ```text
 MMDVM modem / BrandMeister network
@@ -25,7 +28,7 @@ MMDVM modem / BrandMeister network
               ▼
         pinned MMDVM-Host
               │
-              ├── normal RF/network processing (unchanged)
+              ├── normal RF/network processing
               │
               └── accepted DMR voice-frame copy
                          │
@@ -34,7 +37,29 @@ MMDVM modem / BrandMeister network
                  loopback MQTT only
 ```
 
-The existing low-rate telemetry path remains on `ywd-mmdvm/json`; per-frame voice traffic is deliberately placed on a separate topic so `ywd-mmdvm-telemetry.service` does not parse or rewrite its snapshot for every voice frame.
+The existing low-rate telemetry remains on `ywd-mmdvm/json`. Per-frame voice traffic uses the separate `ywd-mmdvm/voice` topic so the telemetry snapshot service does not parse/rewrite state for every voice frame.
+
+## Alpha20.2 build safety model
+
+The first Alpha20 attempt proved that an original Pi Zero W can take longer than thirty minutes to compile MMDVM-Host. It also exposed an important lifecycle problem: a compiler job must never sit in the dependency chain that starts MMDVM-Host or the detached application updater.
+
+Alpha20.2 therefore uses these rules:
+
+- `ywd-mmdvmhost.service` has the same startup dependencies as the proven Alpha19 unit. It does **not** require or want the voice-build service.
+- `ywd-mmdvm-voice-build.service` is started separately and may run while normal hotspot services remain online.
+- the compile is heavily de-prioritized (`Nice=15`, idle I/O scheduling) because the Pi Zero is a single-core RF appliance first and a build machine second;
+- the voice-build service has a two-hour guardrail, but its timeout cannot prevent normal MMDVM-Host startup;
+- an interrupted build is resumed only when the source tree is provably the exact pinned upstream commit with exactly the YWD voice patch applied;
+- otherwise the helper resets to a clean pinned tree before building;
+- `/usr/local/bin/MMDVM-Host` is replaced only after the complete compile succeeds;
+- the previously working binary is retained as a fallback until the patched binary has passed a guarded activation restart;
+- activation preserves whether MMDVM-Host/DMRGateway were running and rolls the MMDVM binary back if the patched host does not restart cleanly.
+
+The compile helper is:
+
+```text
+/opt/ywd-hotspot/app/lib/mmdvm_voice_build.py
+```
 
 ## MMDVM-Host patch discipline
 
@@ -44,27 +69,23 @@ YWD continues to pin upstream MMDVM-Host commit:
 dea6e9b2c35857fe6f904c5092bebadb86cbf079
 ```
 
-Alpha20 applies one local YWD patch to a clean checkout of that exact commit. The patch is stored at:
+The YWD patch is:
 
 ```text
 lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
 ```
 
-The trusted helper `lib/mmdvm_voice_build.py` records the upstream commit, patch SHA-256, and installed binary SHA-256 under:
+The helper records the upstream commit, patch identity and installed binary identity in:
 
 ```text
 /var/lib/ywd-hotspot/mmdvm-voice-tap.json
 ```
 
-Before MMDVM-Host starts, `ywd-mmdvm-voice-build.service` runs the helper. If the recorded patch and installed binary are already current, the check is cheap and no build occurs. When the patch identity changes, the helper resets the MMDVM source tree to the pinned upstream commit, applies the YWD patch, and builds with `make -j1`.
+## Voice-frame envelope
 
-The preparation step is fail-soft for an existing appliance: if the experimental rebuild fails and an earlier MMDVM-Host binary exists, that binary is restored so normal hotspot operation can continue. The marker records `failed-fallback` rather than falsely claiming the voice tap is active.
+Only actual DMR audio frames are mirrored: `DT_VOICE_SYNC` and `DT_VOICE`. Headers/end/session events remain on the existing sanitized DMR telemetry/session path.
 
-## Voice frame envelope
-
-Only actual DMR audio frames are mirrored: `DT_VOICE_SYNC` and `DT_VOICE`. Session headers/end events remain on the existing sanitized DMR telemetry/session path.
-
-Each MQTT message is a single JSON envelope:
+Each MQTT message contains one envelope similar to:
 
 ```json
 {
@@ -86,61 +107,106 @@ Each MQTT message is a single JSON envelope:
 }
 ```
 
-`source` is `rf` or `network`. The raw frame is the existing 33-byte DMR frame represented as 66 lowercase hexadecimal characters. RF frames are copied after MMDVM-Host has performed its normal validation/FEC regeneration. Network frames are copied only after the normal slot/call-state checks accept them.
+`source` is `rf` or `network`. `frame_hex` is the existing 33-byte DMR frame represented as 66 lowercase hexadecimal characters. The Pi performs no AMBE-to-PCM conversion.
 
-The Pi performs no AMBE-to-PCM conversion in this phase.
+## Alpha20.2 physical validation
 
-## Phase 2A physical validation
+### 1. Update the YWD application first
 
-After updating to `0.1.0-alpha20-dev`, first verify that the normal hotspot still works. The first MMDVM restart may take several minutes because a Pi Zero must compile the patched pinned MMDVM-Host once.
+The application update should complete with ordinary MMDVM-Host and DMRGateway service behavior. It should **not** compile MMDVM-Host as part of the update transaction.
 
-During that first build, another SSH session can follow progress with:
+Confirm:
+
+```bash
+cat /opt/ywd-hotspot/app/VERSION
+systemctl is-active ywd-mmdvmhost.service
+systemctl is-active ywd-dmrgateway.service
+```
+
+Expected version:
+
+```text
+0.1.0-alpha20.2-dev
+```
+
+### 2. Start the experimental build separately
+
+```bash
+sudo systemctl reset-failed ywd-mmdvm-voice-build.service
+sudo systemctl start --no-block ywd-mmdvm-voice-build.service
+```
+
+Watch it without affecting the build:
 
 ```bash
 sudo journalctl -fu ywd-mmdvm-voice-build.service
 ```
 
-Then inspect the patch marker:
+If an earlier interrupted compile is reusable, the log should include:
+
+```text
+YWD voice build: exact patched source tree found; resuming existing object build.
+```
+
+Otherwise the helper deliberately prepares a fresh pinned tree.
+
+Normal hotspot services should remain online during this compile.
+
+### 3. Confirm build completion
 
 ```bash
 sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
 ```
 
-Expected key result:
+After compilation succeeds but before activation, expect roughly:
 
 ```json
+{
+  "installed": true,
+  "active": false,
+  "marker_status": "installed"
+}
+```
+
+The currently running MMDVM process is still the old proven executable at this point.
+
+### 4. Activate with the guarded restart
+
+When ready for a brief RF interruption:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py activate
+```
+
+Then:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
+systemctl is-active ywd-mmdvmhost.service
+systemctl is-active ywd-dmrgateway.service
+```
+
+Expected voice status:
+
+```json
+"installed": true,
 "active": true
 ```
 
-Confirm core services:
+### 5. Observe frames
 
 ```bash
-systemctl is-active ywd-mqtt.service
-systemctl is-active ywd-mmdvmhost.service
-systemctl is-active ywd-dmrgateway.service
-systemctl --failed --no-pager
+mosquitto_sub -h 127.0.0.1 -p 18883 -t 'ywd-mmdvm/voice' -v
 ```
 
-Subscribe to the passive voice topic from the hotspot:
+A Parrot test conveniently exercises both directions:
 
-```bash
-mosquitto_sub \
-  -h 127.0.0.1 \
-  -p 18883 \
-  -t 'ywd-mmdvm/voice' \
-  -v
-```
+- local radio TX into the hotspot should produce `"source":"rf"`;
+- the BrandMeister Parrot response should produce `"source":"network"`.
 
-With that command waiting:
+Every `frame_hex` value should contain 66 hexadecimal characters.
 
-1. Receive a BrandMeister/network-originated DMR call. Messages should appear with `"source":"network"`.
-2. Key a local radio into the hotspot. Messages should appear with `"source":"rf"`.
-3. Verify `frame_hex` is always 66 hexadecimal characters.
-4. Verify `src_id`, `dst_id`, slot, group/private state, sequence and burst `n` values track the active call.
-5. Stop the subscriber and confirm DMR operation is unchanged; there is no requirement for a subscriber to exist.
-6. Reboot once and verify the build helper reports the patch already active instead of recompiling.
-
-A compact capture of ten frames is:
+A compact ten-frame capture is:
 
 ```bash
 mosquitto_sub -h 127.0.0.1 -p 18883 -t 'ywd-mmdvm/voice' -C 10
@@ -148,17 +214,20 @@ mosquitto_sub -h 127.0.0.1 -p 18883 -t 'ywd-mmdvm/voice' -C 10
 
 ## Pass criteria before Phase 2B
 
-Phase 2A is accepted only when all of the following are true:
+Phase 2A is accepted when all of these are true:
 
-- patched-build marker reports `active: true`;
-- MMDVM-Host and DMRGateway remain healthy;
-- ordinary RF-to-network and network-to-RF DMR operation still works;
+- Alpha20.2 application update completes independently of the compiler;
+- ordinary MMDVM-Host/DMRGateway operation stays healthy during the background compile;
+- interrupted compatible object files can be resumed safely;
+- build status reaches `installed: true`;
+- guarded activation reaches `active: true`;
+- RF-to-network and network-to-RF DMR still work;
 - network voice produces `source=network` frames;
 - RF voice produces `source=rf` frames;
 - frames stop when voice traffic stops;
 - no additional LAN/WAN listener is created;
-- reboot does not trigger an unnecessary rebuild;
-- Pi CPU/temperature remain reasonable during normal operation after the one-time compile.
+- reboot does not cause an unnecessary rebuild;
+- CPU/temperature remain reasonable after the one-time compile.
 
 ## Phase 2B direction
 

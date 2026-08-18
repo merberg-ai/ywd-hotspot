@@ -2,7 +2,7 @@
 
 YWD-Hotspot supports a persistent local `.ywdplugin` package format and a locked WebUI upload path.
 
-External plugin source/examples are developed in `merberg-ai/ywd-modem-plugins`. The canonical package format, verifier, lifecycle and security rules remain defined by YWD-Hotspot core and this document.
+External plugin source/examples are developed in `merberg-ai/ywd-hotspot-plugins`. The canonical package format, verifier, lifecycle and security rules remain defined by YWD-Hotspot core and this document.
 
 The lifecycle deliberately keeps source, installation and activation separate:
 

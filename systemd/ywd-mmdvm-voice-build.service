@@ -6,4 +6,6 @@ ConditionPathExists=/opt/ywd-hotspot/app/lib/mmdvm_patches/0001-ywd-dmr-voice-mq
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py ensure
-TimeoutStartSec=30min
+# A Raspberry Pi Zero W can take well over 30 minutes to compile MMDVM-Host.
+# Keep a finite guardrail, but leave enough room for the ARMv6 one-time build.
+TimeoutStartSec=2h

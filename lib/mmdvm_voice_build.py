@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build and install the YWD passive DMR voice-frame tap for pinned MMDVM-Host.
+"""Build/install the YWD passive DMR voice-frame tap for pinned MMDVM-Host.
 
-This helper is trusted appliance infrastructure. It never runs as plugin code.
-The normal upstream MMDVM-Host binary remains the fallback: `ensure` restores an
-existing binary and returns success if the experimental tap cannot be built.
+The experimental compile is intentionally independent of MMDVM-Host startup.
+Normal hotspot services may stay running while this low-priority build proceeds.
+Interrupted builds are resumed only when the existing source tree is provably the
+same pinned commit with the exact YWD patch already applied.
 """
 from __future__ import annotations
 
@@ -24,7 +25,12 @@ PATCH = LIB / "mmdvm_patches" / "0001-ywd-dmr-voice-mqtt.patch"
 SOURCE = Path(os.environ.get("YWD_MMDVM_SOURCE", "/opt/ywd-hotspot/src/MMDVM-Host"))
 BINARY = Path(os.environ.get("YWD_MMDVM_BINARY", "/usr/local/bin/MMDVM-Host"))
 MARKER = Path(os.environ.get("YWD_MMDVM_VOICE_MARKER", "/var/lib/ywd-hotspot/mmdvm-voice-tap.json"))
-PATCH_API = 1
+FALLBACK = BINARY.with_name(".MMDVM-Host.ywd-voice-fallback")
+PATCH_API = 2
+EXPECTED_TRACKED = {"DMRSlot.cpp", "DMRSlot.h", "Log.cpp", "Log.h"}
+
+LOG_NEEDLE = '''void WriteJSON(const std::string& topLevel, nlohmann::json& json)\n{\n\tif (m_mqtt != nullptr) {\n\t\tnlohmann::json top;\n\n\t\ttop[topLevel] = json;\n\n\t\tm_mqtt->publish("json", top.dump());\n\t}\n}\n'''
+LOG_ADDITION = '''\nvoid WriteJSONToTopic(const std::string& topic, const std::string& topLevel, nlohmann::json& json)\n{\n\tif (m_mqtt != nullptr) {\n\t\tnlohmann::json top;\n\n\t\ttop[topLevel] = json;\n\n\t\tm_mqtt->publish(topic.c_str(), top.dump());\n\t}\n}\n'''
 
 
 def sha256(path: Path) -> str:
@@ -39,6 +45,17 @@ def run(argv, *, cwd: Path | None = None, check: bool = True) -> subprocess.Comp
     printable = " ".join(str(x) for x in argv)
     print(f"+ {printable}", flush=True)
     return subprocess.run([str(x) for x in argv], cwd=str(cwd) if cwd else None, check=check)
+
+
+def probe(argv, *, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [str(x) for x in argv],
+        cwd=str(cwd) if cwd else None,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
 
 
 def read_pins() -> dict[str, str]:
@@ -83,64 +100,124 @@ def identity() -> dict[str, str | int]:
     }
 
 
+def service_active(name: str) -> bool:
+    return probe(["systemctl", "is-active", "--quiet", name]).returncode == 0
+
+
+def running_binary_sha() -> str | None:
+    p = probe(["systemctl", "show", "-p", "MainPID", "--value", "ywd-mmdvmhost.service"])
+    try:
+        pid = int((p.stdout or "0").strip())
+    except Exception:
+        pid = 0
+    if pid <= 0:
+        return None
+    try:
+        return sha256(Path(f"/proc/{pid}/exe"))
+    except Exception:
+        return None
+
+
 def current_status() -> dict:
     ident = identity()
     marker = read_marker()
     binary_sha = sha256(BINARY) if BINARY.is_file() else None
-    active = bool(
+    running_sha = running_binary_sha()
+    marker_ok = bool(
         binary_sha
-        and marker.get("status") == "active"
         and marker.get("api") == ident["api"]
         and marker.get("upstream_commit") == ident["upstream_commit"]
         and marker.get("patch_sha256") == ident["patch_sha256"]
         and marker.get("binary_sha256") == binary_sha
+        and marker.get("status") in {"installed", "active"}
     )
-    return {**ident, "active": active, "binary_sha256": binary_sha, "marker": marker}
+    active = bool(marker_ok and running_sha and running_sha == binary_sha)
+    return {
+        **ident,
+        "installed": marker_ok,
+        "active": active,
+        "binary_sha256": binary_sha,
+        "running_binary_sha256": running_sha,
+        "marker": marker,
+    }
 
 
-def ensure_source(repo_url: str, commit: str) -> None:
+def patched_source_ready(commit: str) -> bool:
+    if not (SOURCE / ".git").is_dir():
+        return False
+    head = probe(["git", "-C", SOURCE, "rev-parse", "HEAD"])
+    if head.returncode != 0 or (head.stdout or "").strip() != commit:
+        return False
+
+    changed = probe(["git", "-C", SOURCE, "diff", "--name-only"])
+    if changed.returncode != 0:
+        return False
+    names = {line.strip() for line in (changed.stdout or "").splitlines() if line.strip()}
+    if names != EXPECTED_TRACKED:
+        return False
+
+    reverse = probe([
+        "git", "-C", SOURCE, "apply", "--reverse", "--recount",
+        "--exclude=Log.cpp", "--check", PATCH,
+    ])
+    if reverse.returncode != 0:
+        return False
+
+    try:
+        log_text = (SOURCE / "Log.cpp").read_text(encoding="utf-8")
+    except Exception:
+        return False
+    if LOG_ADDITION.strip() not in log_text:
+        return False
+
+    diff_check = probe(["git", "-C", SOURCE, "diff", "--check"])
+    return diff_check.returncode == 0
+
+
+def ensure_checkout(repo_url: str, commit: str) -> None:
     SOURCE.parent.mkdir(parents=True, exist_ok=True)
     if not (SOURCE / ".git").is_dir():
         if SOURCE.exists():
             shutil.rmtree(SOURCE)
         run(["git", "clone", repo_url, SOURCE])
 
-    # Restore the exact pinned upstream tree before every patched build. This
-    # makes patching idempotent and prevents a prior experimental edit from
-    # silently entering the appliance binary.
-    run(["git", "-C", SOURCE, "reset", "--hard"], check=False)
-    run(["git", "-C", SOURCE, "clean", "-fdx"], check=False)
-
-    have = subprocess.run(
-        ["git", "-C", str(SOURCE), "cat-file", "-e", f"{commit}^{{commit}}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    ).returncode == 0
-    if not have:
+    have = probe(["git", "-C", SOURCE, "cat-file", "-e", f"{commit}^{{commit}}"])
+    if have.returncode != 0:
         run(["git", "-C", SOURCE, "fetch", "origin", commit])
 
+
+def reset_to_pinned(commit: str) -> None:
+    run(["git", "-C", SOURCE, "reset", "--hard"], check=False)
+    run(["git", "-C", SOURCE, "clean", "-fdx"], check=False)
     run(["git", "-C", SOURCE, "checkout", "--detach", commit])
     run(["git", "-C", SOURCE, "reset", "--hard", commit])
     run(["git", "-C", SOURCE, "clean", "-fdx"])
 
 
 def patch_log_cpp() -> None:
-    """Apply the tiny MQTT-topic helper by exact pinned-source anchor.
-
-    Log.cpp ends immediately after WriteJSON() in the pinned upstream tree. A
-    hand-maintained EOF unified-diff hunk is needlessly fragile there, so this
-    one addition is anchored to the full original function body instead. The
-    rest of the MMDVM voice patch still goes through git apply --check.
-    """
     path = SOURCE / "Log.cpp"
     text = path.read_text(encoding="utf-8")
-    needle = '''void WriteJSON(const std::string& topLevel, nlohmann::json& json)\n{\n\tif (m_mqtt != nullptr) {\n\t\tnlohmann::json top;\n\n\t\ttop[topLevel] = json;\n\n\t\tm_mqtt->publish("json", top.dump());\n\t}\n}\n'''
-    addition = '''\nvoid WriteJSONToTopic(const std::string& topic, const std::string& topLevel, nlohmann::json& json)\n{\n\tif (m_mqtt != nullptr) {\n\t\tnlohmann::json top;\n\n\t\ttop[topLevel] = json;\n\n\t\tm_mqtt->publish(topic.c_str(), top.dump());\n\t}\n}\n'''
-    if text.count(needle) != 1:
+    if text.count(LOG_NEEDLE) != 1:
         raise RuntimeError("pinned Log.cpp WriteJSON anchor did not match exactly once")
     if "void WriteJSONToTopic(" in text:
         raise RuntimeError("pinned Log.cpp unexpectedly already contains WriteJSONToTopic")
-    path.write_text(text.replace(needle, needle + addition, 1), encoding="utf-8")
+    path.write_text(text.replace(LOG_NEEDLE, LOG_NEEDLE + LOG_ADDITION, 1), encoding="utf-8")
+
+
+def prepare_source(repo_url: str, commit: str) -> bool:
+    ensure_checkout(repo_url, commit)
+    if patched_source_ready(commit):
+        print("YWD voice build: exact patched source tree found; resuming existing object build.", flush=True)
+        return True
+
+    print("YWD voice build: preparing a clean pinned source tree.", flush=True)
+    reset_to_pinned(commit)
+    run(["git", "-C", SOURCE, "apply", "--recount", "--exclude=Log.cpp", "--check", PATCH])
+    run(["git", "-C", SOURCE, "apply", "--recount", "--exclude=Log.cpp", PATCH])
+    patch_log_cpp()
+    if not patched_source_ready(commit):
+        raise RuntimeError("patched source verification failed after preparation")
+    return False
 
 
 def build_strict() -> dict:
@@ -152,32 +229,25 @@ def build_strict() -> dict:
 
     pins = read_pins()
     ident = identity()
-    ensure_source(pins["MMDVM_HOST_REPO"], pins["MMDVM_HOST_COMMIT"])
-
-    # Keep git's strict context validation for the RF/network voice-path edits.
-    # Log.cpp is excluded because its pinned file ends at the edited function;
-    # that tiny helper is applied immediately afterward by an exact full-body
-    # anchor instead of a brittle EOF diff hunk.
-    run(["git", "-C", SOURCE, "apply", "--recount", "--exclude=Log.cpp", "--check", PATCH])
-    run(["git", "-C", SOURCE, "apply", "--recount", "--exclude=Log.cpp", PATCH])
-    patch_log_cpp()
+    resumed = prepare_source(pins["MMDVM_HOST_REPO"], pins["MMDVM_HOST_COMMIT"])
     run(["make", "-j1"], cwd=SOURCE)
 
     candidate = SOURCE / "MMDVM-Host"
     if not candidate.is_file() or candidate.stat().st_size < 100_000:
         raise RuntimeError("patched MMDVM-Host build did not produce a plausible binary")
 
-    BINARY.parent.mkdir(parents=True, exist_ok=True)
     staged = BINARY.with_name(".MMDVM-Host.ywd-voice-new")
+    BINARY.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(candidate, staged)
     os.chmod(staged, 0o755)
     os.replace(staged, BINARY)
 
     doc = {
         **ident,
-        "status": "active",
+        "status": "installed",
         "binary_sha256": sha256(BINARY),
         "built_at": int(time.time()),
+        "resumed": resumed,
         "source": str(SOURCE),
         "topic": "ywd-mmdvm/voice",
     }
@@ -187,62 +257,126 @@ def build_strict() -> dict:
 
 def ensure() -> int:
     state = current_status()
-    if state["active"]:
-        print("YWD MMDVM DMR voice tap already active.", flush=True)
+    if state["installed"]:
+        if state["active"]:
+            print("YWD MMDVM DMR voice tap is installed and active.", flush=True)
+        else:
+            print("YWD MMDVM DMR voice tap is installed; run 'activate' for a guarded service restart.", flush=True)
         return 0
 
-    backup = None
     if BINARY.is_file():
-        backup = BINARY.with_name(".MMDVM-Host.ywd-voice-fallback")
-        shutil.copy2(BINARY, backup)
-        os.chmod(backup, 0o755)
+        shutil.copy2(BINARY, FALLBACK)
+        os.chmod(FALLBACK, 0o755)
 
-    print("YWD MMDVM DMR voice tap needs build; preparing pinned source...", flush=True)
+    print("YWD MMDVM DMR voice tap needs build; normal hotspot services may remain online.", flush=True)
     try:
         doc = build_strict()
         print(
-            f"YWD MMDVM DMR voice tap installed: {doc['upstream_commit'][:12]} "
-            f"patch={doc['patch_sha256'][:12]}",
+            f"YWD MMDVM DMR voice tap built/installed: {doc['upstream_commit'][:12]} "
+            f"patch={doc['patch_sha256'][:12]} resumed={doc['resumed']}",
             flush=True,
         )
-        if backup and backup.exists():
-            backup.unlink()
+        print("Activation is pending; use mmdvm_voice_build.py activate when ready.", flush=True)
         return 0
     except Exception as exc:
         print(f"WARNING: DMR voice tap build failed: {exc}", file=sys.stderr, flush=True)
-        if backup and backup.exists():
+        # Until the final compile succeeds, the live binary path is untouched.
+        # If a previous attempt had already replaced it, restore the saved copy.
+        if FALLBACK.exists():
             try:
-                os.replace(backup, BINARY)
-                print("Restored previous MMDVM-Host binary; normal hotspot operation may continue.", file=sys.stderr, flush=True)
+                if not BINARY.exists() or read_marker().get("status") in {"installed", "active"}:
+                    os.replace(FALLBACK, BINARY)
                 write_marker({
                     **identity(),
                     "status": "failed-fallback",
-                    "binary_sha256": sha256(BINARY),
+                    "binary_sha256": sha256(BINARY) if BINARY.exists() else None,
                     "failed_at": int(time.time()),
                     "error": str(exc)[:500],
                 })
+                print("Known-good MMDVM-Host binary retained/restored.", file=sys.stderr, flush=True)
                 return 0
             except Exception as restore_exc:
-                print(f"ERROR: could not restore previous MMDVM-Host binary: {restore_exc}", file=sys.stderr, flush=True)
+                print(f"ERROR: could not preserve fallback MMDVM-Host binary: {restore_exc}", file=sys.stderr, flush=True)
         return 1
+
+
+def activate() -> int:
+    state = current_status()
+    if not state["installed"]:
+        print("Voice tap binary is not installed yet; run 'ensure' first.", file=sys.stderr)
+        return 1
+    if state["active"]:
+        print("YWD MMDVM DMR voice tap is already active.")
+        if FALLBACK.exists():
+            FALLBACK.unlink()
+        return 0
+
+    mmdvm_was_active = service_active("ywd-mmdvmhost.service")
+    gateway_was_active = service_active("ywd-dmrgateway.service")
+    if not mmdvm_was_active:
+        print("Patched binary is installed, but MMDVM-Host is intentionally stopped; activation will occur on its next start.")
+        return 0
+
+    print("Activating patched MMDVM-Host with guarded RF service restart...", flush=True)
+    if gateway_was_active:
+        run(["systemctl", "stop", "ywd-dmrgateway.service"], check=False)
+    run(["systemctl", "restart", "ywd-mmdvmhost.service"], check=False)
+    time.sleep(3)
+
+    if not service_active("ywd-mmdvmhost.service") or not current_status()["active"]:
+        print("Patched MMDVM-Host did not come up cleanly; restoring fallback.", file=sys.stderr, flush=True)
+        if FALLBACK.exists():
+            os.replace(FALLBACK, BINARY)
+            run(["systemctl", "restart", "ywd-mmdvmhost.service"], check=False)
+            time.sleep(3)
+        if gateway_was_active:
+            run(["systemctl", "start", "ywd-dmrgateway.service"], check=False)
+        write_marker({
+            **identity(),
+            "status": "failed-activation",
+            "binary_sha256": sha256(BINARY) if BINARY.exists() else None,
+            "failed_at": int(time.time()),
+        })
+        return 1
+
+    if gateway_was_active:
+        run(["systemctl", "start", "ywd-dmrgateway.service"], check=False)
+        time.sleep(2)
+        if not service_active("ywd-dmrgateway.service"):
+            print("WARNING: DMRGateway did not return active after voice-tap activation.", file=sys.stderr)
+            return 1
+
+    marker = read_marker()
+    marker.update({"status": "active", "activated_at": int(time.time()), "binary_sha256": sha256(BINARY)})
+    write_marker(marker)
+    if FALLBACK.exists():
+        FALLBACK.unlink()
+    print("YWD MMDVM DMR voice tap activation succeeded.", flush=True)
+    return 0
 
 
 def show_status() -> int:
     state = current_status()
     marker = state.pop("marker")
-    print(json.dumps({**state, "marker_status": marker.get("status"), "topic": marker.get("topic")}, indent=2, sort_keys=True))
-    return 0 if state["active"] else 1
+    print(json.dumps({
+        **state,
+        "marker_status": marker.get("status"),
+        "topic": marker.get("topic"),
+        "resumed": marker.get("resumed"),
+    }, indent=2, sort_keys=True))
+    return 0 if state["installed"] else 1
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build/verify the YWD passive MMDVM DMR voice tap")
-    parser.add_argument("command", nargs="?", choices=("ensure", "build", "status"), default="ensure")
+    parser.add_argument("command", nargs="?", choices=("ensure", "build", "activate", "status"), default="ensure")
     args = parser.parse_args()
     if args.command == "status":
         return show_status()
+    if args.command == "activate":
+        return activate()
     if args.command == "build":
-        build_strict()
-        return 0
+        return ensure()
     return ensure()
 
 

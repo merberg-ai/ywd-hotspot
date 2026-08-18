@@ -18,6 +18,7 @@
 | 📦 Build/upload/sign a `.ywdplugin` package | **[Plugin Packages](PLUGIN-PACKAGES.md)** |
 | 📡 Understand the MMDVM live telemetry bus/plugin | **[MMDVM Telemetry](TELEMETRY.md)** |
 | 📞 Understand normalized MMDVM DMR call sessions | **[MMDVM Sessions](MMDVM-SESSIONS.md)** |
+| 🎧 Follow the experimental RX Monitor / passive voice-frame bridge | **[Passive DMR Voice](DMR-VOICE.md)** |
 | 🔁 Move an older archive install to GitHub | **[Installation](INSTALL.md#-existing-install--github-management)** |
 | 🔄 Check/apply updates or switch channels | **[Upgrading](UPGRADING.md)** |
 | 🛠️ Recover from an update/migration problem | **[Upgrading](UPGRADING.md#-recovery-and-rollback)** |
@@ -50,7 +51,7 @@ A few project rules show up everywhere because they are intentional design const
 - uploading a `.ywdplugin` never installs/enables/starts it.
 - uploaded executable service plugins require a trusted Ed25519 signature and still run through the shared restrictive sandbox.
 - uploaded browser UI plugins also require a trusted Ed25519 signature and execute only inside the isolated Plugin UI frame; they receive no Pi-side daemon.
-- plugin telemetry remains observational; RF/modem ownership requires a separate explicit arbitration design.
+- plugin telemetry and the Alpha20 passive voice tap remain observational; RF/modem ownership stays with trusted MMDVM-Host core.
 
 ## 🌿 Branch and checkpoint model
 

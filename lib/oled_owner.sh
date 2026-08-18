@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP="${2:-/opt/ywd-hotspot/app}"
 ACTION="${1:-install}"
+# The physical OS owner must always execute the deployed live application.
+# Never persist a GitHub update staging path in a systemd drop-in.
+APP="${YWD_LIVE_APP:-/opt/ywd-hotspot/app}"
 DROPIN_DIR=/etc/systemd/system/ywd-headless-oled.service.d
 DROPIN="$DROPIN_DIR/50-ywd-unified-renderer.conf"
 CONFIG="${YWD_CONFIG:-/etc/ywd-hotspot/config.json}"
@@ -22,34 +24,58 @@ except Exception:
 PY
 }
 
+retire_legacy(){
+  # ywd-oled.service is never the physical owner on YWD-Hotspot OS. Do not use
+  # `disable --now` here: an I2C-stuck Python process can make systemctl wait for
+  # the unit stop timeout and abort a WebUI Settings apply. Disable boot policy,
+  # queue a non-blocking stop, then forcibly release the legacy process/I2C fd.
+  systemctl disable ywd-oled.service >/dev/null 2>&1 || true
+  systemctl stop --no-block ywd-oled.service >/dev/null 2>&1 || true
+  sleep 0.10
+  systemctl kill --kill-who=all --signal=KILL ywd-oled.service >/dev/null 2>&1 || true
+  systemctl reset-failed ywd-oled.service >/dev/null 2>&1 || true
+}
+
+stop_headless_fast(){
+  systemctl stop --no-block ywd-headless-oled.service >/dev/null 2>&1 || true
+  sleep 0.10
+  systemctl kill --kill-who=all --signal=KILL ywd-headless-oled.service >/dev/null 2>&1 || true
+  systemctl reset-failed ywd-headless-oled.service >/dev/null 2>&1 || true
+}
+
 install_owner(){
   # Generic installs continue to use ywd-oled.service. YWD-Hotspot OS already
   # owns the physical SSD1306 with ywd-headless-oled.service; point that sole
-  # owner at the unified renderer and explicitly keep the duplicate app unit off.
+  # owner at the deployed canonical renderer and keep the duplicate app unit off.
   if ! headless_exists; then
     return 0
   fi
+  [[ -f "$APP/lib/oled.py" ]] || {
+    echo "canonical OLED renderer is missing: $APP/lib/oled.py" >&2
+    exit 1
+  }
+
   install -d -m 0755 "$DROPIN_DIR"
   cat >"$DROPIN" <<EOF
 [Service]
 ExecStart=
-ExecStart=/usr/bin/python3 ${APP}/lib/oled.py --os-owner
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/oled.py --os-owner
 EOF
   chmod 0644 "$DROPIN"
-  systemctl disable --now ywd-oled.service >/dev/null 2>&1 || true
+
+  # Reload the corrected live path BEFORE touching either process. Even if a
+  # legacy renderer is wedged, systemd now knows the authoritative ExecStart.
   systemctl daemon-reload
+  retire_legacy
 
   if [[ "$(display_enabled)" == "1" ]]; then
-    # Alpha18.2.1: START is not enough here. Persist the canonical
-    # display.enabled intent into systemd so the physical owner survives reboot.
     systemctl enable ywd-headless-oled.service >/dev/null
-    if systemctl is-active --quiet ywd-headless-oled.service; then
-      systemctl restart ywd-headless-oled.service
-    else
-      systemctl start ywd-headless-oled.service
-    fi
+    # Avoid a blocking restart if the old renderer is stuck in an I2C syscall.
+    stop_headless_fast
+    systemctl start --no-block ywd-headless-oled.service >/dev/null
   else
-    systemctl disable --now ywd-headless-oled.service >/dev/null 2>&1 || true
+    systemctl disable ywd-headless-oled.service >/dev/null 2>&1 || true
+    stop_headless_fast
   fi
 }
 
@@ -59,7 +85,8 @@ restore_owner(){
     rmdir "$DROPIN_DIR" 2>/dev/null || true
     systemctl daemon-reload
     if headless_exists; then
-      systemctl restart ywd-headless-oled.service >/dev/null 2>&1 || true
+      stop_headless_fast
+      systemctl start --no-block ywd-headless-oled.service >/dev/null 2>&1 || true
     fi
   fi
 }
@@ -67,5 +94,6 @@ restore_owner(){
 case "$ACTION" in
   install) install_owner ;;
   restore) restore_owner ;;
-  *) echo "usage: oled_owner.sh install|restore [APP]" >&2; exit 2 ;;
+  retire-legacy) retire_legacy ;;
+  *) echo "usage: oled_owner.sh install|restore|retire-legacy" >&2; exit 2 ;;
 esac

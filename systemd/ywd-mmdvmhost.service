@@ -1,6 +1,7 @@
 [Unit]
 Description=YWD Hotspot MMDVM-Host
-After=network.target ywd-mqtt.service
+Requires=ywd-mmdvm-voice-build.service
+After=network.target ywd-mqtt.service ywd-mmdvm-voice-build.service
 Wants=ywd-mqtt.service
 ConditionPathExists=/etc/ywd-hotspot/MMDVM-Host.ini
 StartLimitIntervalSec=60

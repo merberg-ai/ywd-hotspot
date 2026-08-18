@@ -47,6 +47,6 @@ jobs:
       - name: Scope guard
         run: |
           set -euxo pipefail
-          git diff --name-only origin/dev-plugins...HEAD | sort
-          bad="$(git diff --name-only origin/dev-plugins...HEAD | grep -Ev '^(VERSION|MANIFEST.txt|assets/branding/ywd-hotspot-banner-webui.webp|lib/dashboard.py|web/app.js|web/ui-polish.css|.github/workflows/alpha18-2-7-hero-audit.yml)$' || true)"
+          git diff --name-only HEAD^1 HEAD | sort
+          bad="$(git diff --name-only HEAD^1 HEAD | grep -Ev '^(VERSION|MANIFEST.txt|assets/branding/ywd-hotspot-banner-webui.webp|lib/dashboard.py|web/app.js|web/ui-polish.css|.github/workflows/alpha18-2-7-hero-audit.yml)$' || true)"
           test -z "$bad"

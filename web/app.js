@@ -67,7 +67,7 @@
 
     const img = document.createElement('img');
     img.className = 'ywd-hero-banner';
-    img.src = '/ywd-hotspot-banner.webp?v=alpha18.2.8';
+    img.src = '/ywd-hotspot-banner.webp?v=alpha18.2.9';
     img.alt = '';
     img.setAttribute('aria-hidden', 'true');
     topbar.prepend(img);

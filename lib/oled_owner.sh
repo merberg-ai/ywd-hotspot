@@ -42,7 +42,7 @@ EOF
   if [[ "$(display_enabled)" == "1" ]]; then
     # Alpha18.2.1: START is not enough here. Persist the canonical
     # display.enabled intent into systemd so the physical owner survives reboot.
-    systemctl enable ywd-headless-oled.service >/dev/null 2>&1 || true
+    systemctl enable ywd-headless-oled.service >/dev/null
     if systemctl is-active --quiet ywd-headless-oled.service; then
       systemctl restart ywd-headless-oled.service
     else

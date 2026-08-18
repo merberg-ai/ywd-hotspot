@@ -11,10 +11,20 @@ Only three branches are intended to be permanent in the core repository:
 | Branch | Role |
 |---|---|
 | `main` | conservative/promoted line |
-| `dev` | unified application + OS-builder baseline |
-| `dev-plugins` | experimental plugin/telemetry/integration line |
+| `dev` | stable development integration line and current tested fallback |
+| `dev-plugins` | experimental next-development line for plugin/UI/telemetry/integration work |
 
 A new long-lived core branch should be exceptional and documented here before it is created.
+
+## Stable development baseline
+
+`dev` is the current stable development integration line. It may contain plugin-capable YWD-Hotspot functionality that has been physically exercised and accepted as the working development baseline, even when that work has not yet been promoted to conservative `main`.
+
+`dev-plugins` starts from the same accepted baseline and is allowed to move ahead with experimental plugin-framework, rich Plugin UI, Monitor, telemetry, and related integration work. When a later `dev-plugins` state is physically validated and intentionally accepted, it may be promoted back into `dev`.
+
+`main` moves only through a separate deliberate promotion decision and is not changed merely because `dev` advanced.
+
+The Alpha18.2.16 line was physically tested successfully on the Pi and established as the stable development baseline before Plugin UI / Monitor development begins.
 
 ## Companion plugin repository
 
@@ -88,13 +98,13 @@ Temporary branches are not release history. The commit graph and checkpoint/arch
 
 ```text
 dev-plugins experiments
-        ↓ intentionally selected/stabilized work
+        ↓ physically validate + intentionally accept
        dev
-        ↓ deliberate promotion
+        ↓ separate deliberate promotion
        main
 ```
 
-Promotion is never automatic.
+Promotion is never automatic. `dev` exists specifically to provide a current, working development fallback while `dev-plugins` moves ahead with experiments.
 
 ## Repository layout policy
 

@@ -103,6 +103,8 @@ plugin.getConfig
 
 There is no generic fetch, filesystem, shell, service-control, serial, device or arbitrary YWD API bridge.
 
+**Alpha19 Phase 1 does not expose DMR voice frames or audio.** The `read:dmr-voice` capability and any voice-stream bridge are deliberately deferred until the generic sandbox/navigation/lifecycle foundation has been physically validated on the Pi Zero.
+
 Future capabilities such as passive DMR voice observation must be added as explicit trusted-core bridge contracts. A plugin must declare the matching capability and core must validate every request. Plugin code must never work around the bridge with direct modem, raw socket or privileged access.
 
 ## Performance contract

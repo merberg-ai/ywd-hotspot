@@ -2,13 +2,30 @@
 
 [← Project README](../../README.md)
 
-This directory holds the YWD-Hotspot source artwork and lightweight runtime derivative.
+This directory holds the canonical YWD-Hotspot source artwork and lightweight derivatives used by GitHub, the WebUI, and image builds.
 
 | Asset | Purpose |
 |---|---|
-| `ywd-hotspot-logo-master.png` | Original 1254×1254 RGBA source artwork |
-| `ywd-hotspot-badge-256.webp` | 256 px optimized WebP used by the README and WebUI |
+| `ywd-hotspot-logo-master.png` | original high-resolution source artwork |
+| `ywd-hotspot-badge-256.webp` | lightweight square badge used by repository/runtime UI surfaces |
+| `ywd-hotspot-banner-webui.webp` | optimized wide hero/banner derivative for the WebUI and repository front door |
 
-The multi-megabyte master PNG stays in the source repository and is **not** copied into the deployed Pi runtime. The WebUI serves only the small WebP badge to keep storage, backups, and page loads lightweight on the original Pi Zero W.
+The dashboard runtime also carries:
 
-When changing branding, preserve the master artwork as the source asset and regenerate an appropriately sized WebP derivative for runtime use rather than serving the full PNG.
+```text
+web/ywd-hotspot-banner.webp
+```
+
+That WebUI copy is intentional: `web/` is atomically deployed by normal application updates, so the hero asset can update with the browser payload without serving a multi-megabyte source image on the Pi Zero.
+
+## Rules when changing branding
+
+- preserve the master/source artwork rather than repeatedly recompressing an old derivative
+- generate small WebP derivatives appropriate to their actual display size
+- visually decode/inspect generated WebP files before committing them
+- verify the WebP RIFF declared length matches the actual file length
+- keep the source branding derivative and runtime `web/` copy synchronized when they represent the same artwork
+- bump the WebUI cache key when replacing a runtime image
+- never serve the multi-megabyte master PNG from the hotspot dashboard
+
+The original Pi Zero W remains the storage/memory/network performance budget, so small validated derivatives are preferred over oversized assets.

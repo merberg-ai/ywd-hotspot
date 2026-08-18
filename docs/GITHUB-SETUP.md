@@ -1,6 +1,6 @@
 # 🌿 GitHub / Development Notes
 
-[← Docs index](README.md) · [Project README](../README.md) · [Contributing](../CONTRIBUTING.md) · [Upgrading](UPGRADING.md)
+[← Docs index](README.md) · [Project README](../README.md) · [Repository Policy](REPOSITORY.md) · [Contributing](../CONTRIBUTING.md) · [Upgrading](UPGRADING.md)
 
 ---
 
@@ -10,17 +10,21 @@ Canonical repository:
 https://github.com/merberg-ai/ywd-hotspot
 ```
 
-## 🌳 Branch model
+## Branch model
+
+YWD-Hotspot keeps long-lived branches intentionally small:
 
 | Branch | Purpose |
 |---|---|
 | `main` | promoted/conservative project line |
-| `dev` | active development and Pi test line |
-| `dev-alpha9.2-known-good` | checkpoint of the user-tested Alpha9.2 polish build |
+| `dev` | unified application + OS-builder baseline |
+| `dev-plugins` | experimental plugin, telemetry and integration work |
 
-During alpha development, new work lands on `dev` first. A build is promoted only after it has been exercised on the actual hotspot hardware.
+Historical known-good builds belong in immutable `checkpoint/*` tags. Superseded development lines worth retaining belong in `archive/*` tags. Temporary feature/audit branches should disappear after their tested result is published.
 
-## 📥 Clone
+See **[Repository Policy](REPOSITORY.md)** for the lifecycle rules.
+
+## Clone
 
 Promoted line:
 
@@ -29,10 +33,17 @@ git clone https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
-Development line:
+Unified development line:
 
 ```bash
 git clone --branch dev https://github.com/merberg-ai/ywd-hotspot.git
+cd ywd-hotspot
+```
+
+Experimental plugin/telemetry line:
+
+```bash
+git clone --branch dev-plugins https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
@@ -44,7 +55,7 @@ sudo bash ./INSTALL.sh
 
 `.gitattributes` keeps important text/source on LF endings.
 
-## 🧱 Source vs deployed runtime
+## Source vs deployed runtime
 
 A hotspot does not run directly from a mutable Git tree:
 
@@ -61,15 +72,9 @@ Non-secret source provenance is recorded in:
 /etc/ywd-hotspot/build-info.json
 ```
 
-and displayed by:
+and shown by `ywd-hotspotctl source` plus the WebUI header/About page.
 
-```bash
-ywd-hotspotctl source
-```
-
-as well as the WebUI header/About page.
-
-## 🔐 Never commit runtime secrets
+## Never commit runtime secrets
 
 Do not commit or attach:
 
@@ -79,10 +84,11 @@ Do not commit or attach:
 - `/var/lib/ywd-hotspot/private/`
 - protected `/var/backups/ywd-hotspot/` archives
 - arbitrary unsanitized diagnostics
+- plugin signing private keys
 
 Runtime configuration belongs outside the repository under `/etc/ywd-hotspot` and `/var/lib/ywd-hotspot`.
 
-## ✅ Basic validation before pushing
+## Basic validation before pushing
 
 Shell entry points:
 
@@ -106,37 +112,63 @@ python3 -m py_compile lib/*.py
 If Node.js is available in the development environment:
 
 ```bash
-node --check web/app.js
-node --check web/app-core.js
-node --check web/talkgroups.js
-node --check web/ui-polish.js
+for js in web/*.js; do node --check "$js"; done
 ```
 
-Changes touching systemd, sudoers, config generation, install/update, or RF behavior still require a real Pi test before being considered known-good.
+OS-builder preflight:
 
-## 🧪 Test-build workflow
+```bash
+bash os/builder/DOCTOR.sh
+```
 
-A practical development cycle is:
+Changes touching systemd, sudoers, config generation, install/update, plugin lifecycle, OLED ownership, or RF behavior still require a real Pi test before being called known-good.
+
+## Development workflow
+
+A normal change should look like:
 
 ```text
-dev change
+choose the correct active branch
    ↓
-static validation
+create temporary feature/audit branch
    ↓
-sudo ywd-hotspotctl update --check
+make the smallest scoped change
    ↓
-sudo ywd-hotspotctl update --dry-run
+static/syntax validation
    ↓
-Pi Zero hardware test
+compare exact changed-file scope
    ↓
-checkpoint branch when confirmed
+Pi Zero hardware test when runtime behavior changed
    ↓
-promote to main only when deliberately approved
+publish to active line
+   ↓
+create checkpoint tag only after operator confirmation
+   ↓
+delete temporary branch
 ```
 
 Do not use `/opt/ywd-hotspot/repo` as a casual hacking tree. Work in a normal clone and let the managed updater keep its dirty-tree safety guard.
 
-## 🛡️ Update trust boundary
+## Checkpoints
+
+A checkpoint is an immutable tag, not another development branch. Example naming:
+
+```text
+checkpoint/dev-alpha12.2-os-integrated-known-good
+checkpoint/dev-plugins-alpha18.2.4-known-good
+```
+
+The important property is the commit, not the branch name that originally led to it. Never move an existing checkpoint tag to a different commit.
+
+Tags are useful for explicit recovery/testing too:
+
+```bash
+sudo ywd-hotspotctl update --tag <tag>
+```
+
+Only label a checkpoint known-good after the relevant hardware/runtime behavior has actually been exercised.
+
+## Update trust boundary
 
 Keep these protections unless a stronger replacement is demonstrated:
 
@@ -146,13 +178,14 @@ Keep these protections unless a stronger replacement is demonstrated:
 - required-file/syntax validation
 - protected pre-update backup
 - RF-state preservation
+- plugin quiesce/restore safety on `dev-plugins`
 - managed checkout advanced only after successful deploy
 
 Convenience is not a good reason to make update failures destructive.
 
-## 📌 Upstream RF pins
+## Upstream RF pins
 
-Do not casually combine an MMDVM-Host/DMRGateway pin move with unrelated UI/docs work. A radio-stack pin change changes the calibration baseline and should be isolated and regression-tested.
+Do not combine an MMDVM-Host/DMRGateway pin move with unrelated UI/docs/plugin work. A radio-stack pin change changes the calibration baseline and should be isolated and regression-tested.
 
 Current pins live in:
 
@@ -160,17 +193,26 @@ Current pins live in:
 pins.env
 ```
 
-## 🏷️ Tags and releases
+## Repository layout
 
-The updater supports explicit tags:
+The top-level layout is intentionally operational rather than package-manager clever:
 
-```bash
-sudo ywd-hotspotctl update --tag v0.1.0-alpha6
+```text
+assets/     source branding and lightweight derivatives
+bin/        operator CLI entry points
+docs/       project/operator/development documentation
+lab/        explicit diagnostics/experimental tools
+lib/        trusted Python/shell application core
+os/         image builder and pi-gen stages
+sudoers/    narrow privilege policy
+systemd/    service units and sandbox templates
+tools/      development/package-building tools
+web/        static WebUI payload
 ```
 
-A checkpoint branch is useful while alpha builds are moving quickly; a release/tag should only be described as known-good after actual hardware testing.
+Root `INSTALL.sh`, `UPDATE.sh`, `GITHUB-UPDATE.sh`, migration and uninstall wrappers are stable public entry points and intentionally remain at repository root.
 
-## 🧾 Repository metadata
+## Repository metadata
 
 Suggested description:
 
@@ -184,6 +226,6 @@ Suggested topics:
 ham-radio dmr mmdvm raspberry-pi raspberry-pi-zero brandmeister hotspot amateur-radio
 ```
 
-## 📄 License
+## License
 
 The repository uses the **[Unlicense](../LICENSE)** / public-domain dedication.

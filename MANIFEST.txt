@@ -32,8 +32,10 @@ docs/DISPLAY.md
 docs/GITHUB-SETUP.md
 docs/INSTALL.md
 docs/MMDVM-SESSIONS.md
+docs/OS-DEVELOPMENT.md
 docs/PLUGIN-PACKAGES.md
 docs/PLUGINS.md
+docs/REPOSITORY.md
 docs/TALKGROUPS.md
 docs/TELEMETRY.md
 docs/UPGRADING.md
@@ -121,6 +123,7 @@ web/app-core.js
 web/app.js
 web/backup-restore.css
 web/backup-restore.js
+web/hero-layout.css
 web/index.html
 web/instrumentation-bootstrap.js
 web/instrumentation.css

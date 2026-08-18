@@ -3,6 +3,7 @@
   const el = id => document.getElementById(id);
   let importFile = null;
   let importB64 = null;
+  let modalBusy = false;
 
   function notify(message, bad = false) {
     try { if (typeof toast === 'function') return toast(message, bad); } catch (_) {}
@@ -46,7 +47,47 @@
       `RF intent from backup: ${p.rf_autostart ? 'enabled at boot' : 'disabled at boot'}`,
     ].join('\n');
   }
-  function closeModal() { el('backupModal')?.classList.remove('on'); }
+  function clearInvalid() {
+    ['backupPass','backupPass2'].forEach(id => el(id)?.removeAttribute('aria-invalid'));
+  }
+  function modalFeedback(message = '', bad = false) {
+    const box = el('backupModalFeedback');
+    if (!box) return;
+    box.textContent = message;
+    box.hidden = !message;
+    box.classList.toggle('bad', !!bad);
+    box.classList.toggle('good', !!message && !bad);
+  }
+  function modalError(message, focusId = 'backupPass') {
+    modalFeedback(message, true);
+    const target = el(focusId);
+    if (target) {
+      target.setAttribute('aria-invalid','true');
+      target.focus();
+    }
+  }
+  function setProgress(active, text = '') {
+    const wrap = el('backupProgress');
+    if (!wrap) return;
+    wrap.hidden = !active;
+    wrap.setAttribute('aria-hidden', active ? 'false' : 'true');
+    const label = el('backupProgressText'); if (label) label.textContent = text;
+  }
+  function setBusy(active, label, progressText = '') {
+    modalBusy = !!active;
+    const button = el('backupGo');
+    if (button) {
+      button.disabled = !!active;
+      button.classList.toggle('ywd-working', !!active);
+      if (label) button.textContent = label;
+    }
+    ['backupClose','backupCancel'].forEach(id => { const x = el(id); if (x) x.disabled = !!active; });
+    setProgress(!!active, progressText);
+  }
+  function closeModal() {
+    if (modalBusy) return;
+    el('backupModal')?.classList.remove('on');
+  }
   function setButtons() {
     const auth = unlocked();
     ['backupExport','backupImport'].forEach(id => { const x = el(id); if (x) x.disabled = !auth; });
@@ -68,19 +109,22 @@
 
     const modal = document.createElement('div');
     modal.className = 'modal'; modal.id = 'backupModal';
-    modal.innerHTML = `<div class="dialog"><div class="dialog-head"><div><div class="kicker">YWD // MIGRATION</div><h3 id="backupModalTitle">SETTINGS BACKUP</h3></div><button class="btn ghost" id="backupClose" type="button">CLOSE</button></div><div class="backup-modal-grid"><div id="backupModalHint" class="hint"></div><div class="field"><label>BACKUP PASSPHRASE</label><input id="backupPass" type="password" autocomplete="new-password" minlength="10"></div><div class="field" id="backupPass2Row"><label>CONFIRM PASSPHRASE</label><input id="backupPass2" type="password" autocomplete="new-password" minlength="10"></div><label class="backup-check" id="backupWifiExportRow"><input id="backupWifiExport" type="checkbox"> Include current Wi-Fi profile when available</label><label class="backup-check" id="backupRfRow" hidden><input id="backupStartRf" type="checkbox"> Start RF after successful restore and enable RF at boot</label><label class="backup-check" id="backupWifiRestoreRow" hidden><input id="backupWifiRestore" type="checkbox"> Restore included Wi-Fi as a saved profile (do not switch live connection)</label><pre class="backup-preview" id="backupPreview" hidden></pre><div class="backup-actions"><button class="btn primary" id="backupGo" type="button">CONTINUE</button><button class="btn" id="backupCancel" type="button">CANCEL</button></div></div></div>`;
+    modal.innerHTML = `<div class="dialog"><div class="dialog-head"><div><div class="kicker">YWD // MIGRATION</div><h3 id="backupModalTitle">SETTINGS BACKUP</h3></div><button class="btn ghost" id="backupClose" type="button">CLOSE</button></div><div class="backup-modal-grid"><div id="backupModalHint" class="hint"></div><div id="backupModalFeedback" class="backup-modal-feedback" role="status" aria-live="polite" hidden></div><div id="backupProgress" class="backup-progress" role="status" aria-live="polite" aria-hidden="true" hidden><div class="backup-progress-track"><div class="backup-progress-bar"></div></div><div id="backupProgressText" class="hint backup-progress-text"></div></div><div class="field"><label>BACKUP PASSPHRASE</label><input id="backupPass" type="password" autocomplete="new-password" minlength="10"></div><div class="field" id="backupPass2Row"><label>CONFIRM PASSPHRASE</label><input id="backupPass2" type="password" autocomplete="new-password" minlength="10"></div><label class="backup-check" id="backupWifiExportRow"><input id="backupWifiExport" type="checkbox"> Include current Wi-Fi profile when available</label><label class="backup-check" id="backupRfRow" hidden><input id="backupStartRf" type="checkbox"> Start RF after successful restore and enable RF at boot</label><label class="backup-check" id="backupWifiRestoreRow" hidden><input id="backupWifiRestore" type="checkbox"> Restore included Wi-Fi as a saved profile (do not switch live connection)</label><pre class="backup-preview" id="backupPreview" hidden></pre><div class="backup-actions"><button class="btn primary" id="backupGo" type="button">CONTINUE</button><button class="btn" id="backupCancel" type="button">CANCEL</button></div></div></div>`;
     document.body.appendChild(modal);
 
     el('backupClose').onclick = closeModal; el('backupCancel').onclick = closeModal;
     el('backupExport').onclick = openExport;
     el('backupImport').onclick = () => el('backupFile').click();
     el('backupFile').onchange = chooseImport;
+    ['backupPass','backupPass2'].forEach(id => el(id)?.addEventListener('input', () => { clearInvalid(); if (!modalBusy) modalFeedback(); }));
     const logout = el('logoutBtn'); if (logout) new MutationObserver(setButtons).observe(logout,{attributes:true,attributeFilter:['hidden']});
     setButtons();
   }
   function resetModal() {
+    modalBusy = false;
     el('backupPass').value = ''; el('backupPass2').value = ''; el('backupPreview').hidden = true; el('backupPreview').textContent = '';
     el('backupStartRf').checked = false; el('backupWifiRestore').checked = false;
+    clearInvalid(); modalFeedback(); setBusy(false, 'CONTINUE');
   }
   function openExport() {
     resetModal();
@@ -105,21 +149,27 @@
   }
   async function doExport() {
     const pass = el('backupPass').value, confirm = el('backupPass2').value;
-    if (pass.length < 10) return notify('Use a backup passphrase of at least 10 characters', true);
-    if (pass !== confirm) return notify('Backup passphrases do not match', true);
-    const button = el('backupGo'); button.disabled = true; button.textContent = 'ENCRYPTING…';
+    clearInvalid(); modalFeedback();
+    if (pass.length < 10) return modalError('Use a backup passphrase of at least 10 characters.', 'backupPass');
+    if (pass !== confirm) {
+      el('backupPass').setAttribute('aria-invalid','true');
+      return modalError('Backup passphrases do not match.', 'backupPass2');
+    }
+    setBusy(true, 'ENCRYPTING…', 'Encrypting and packaging hotspot settings…');
     try {
       const d = await api('/api/settings/export',{passphrase:pass,include_wifi:!!el('backupWifiExport').checked});
       download(d.filename || 'ywd-hotspot-settings.ywdsettings', d.backup_b64);
-      notify('Encrypted settings backup created'); closeModal();
-    } catch (e) { notify(e.message,true); }
-    finally { button.disabled=false; button.textContent='CREATE BACKUP'; }
+      setBusy(false, 'CREATE BACKUP'); closeModal(); notify('Encrypted settings backup created');
+    } catch (e) {
+      setBusy(false, 'CREATE BACKUP'); modalError(e.message || 'Could not create settings backup.', 'backupPass');
+    }
   }
   async function previewImport() {
     const pass = el('backupPass').value;
-    if (!importB64 || !importFile) return notify('Choose a .ywdsettings file first', true);
-    if (pass.length < 10) return notify('Enter the backup passphrase', true);
-    const button = el('backupGo'); button.disabled=true; button.textContent='VERIFYING…';
+    clearInvalid(); modalFeedback();
+    if (!importB64 || !importFile) return modalError('Choose a .ywdsettings file first.');
+    if (pass.length < 10) return modalError('Enter the backup passphrase (minimum 10 characters).', 'backupPass');
+    setBusy(true, 'VERIFYING…', 'Decrypting and authenticating backup…');
     try {
       const d = await api('/api/settings/preview',{backup_b64:importB64,passphrase:pass});
       el('backupPreview').textContent = previewText(d.preview); el('backupPreview').hidden=false;
@@ -127,24 +177,31 @@
       // a fresh explicit operator choice before RF can be enabled or started.
       el('backupStartRf').checked = false;
       el('backupWifiRestore').checked = !!d.preview?.wifi_included;
-      button.textContent='RESTORE SETTINGS'; button.onclick=doImport;
-      notify('Backup decrypted and authenticated');
-    } catch (e) { notify(e.message,true); button.textContent='DECRYPT & VERIFY'; }
-    finally { button.disabled=false; }
+      setBusy(false, 'RESTORE SETTINGS');
+      const button = el('backupGo'); button.onclick=doImport;
+      modalFeedback('Backup decrypted and authenticated.', false);
+    } catch (e) {
+      setBusy(false, 'DECRYPT & VERIFY');
+      modalError(e.message || 'Backup could not be decrypted or authenticated.', 'backupPass');
+    }
   }
   async function doImport() {
     const p = el('backupPreview').textContent || 'Verified backup';
-    if (typeof window.ywdConfirm !== 'function') return notify('YWD confirmation UI is unavailable',true);
+    if (typeof window.ywdConfirm !== 'function') return modalError('YWD confirmation UI is unavailable.');
     const ok = await window.ywdConfirm({title:'RESTORE HOTSPOT SETTINGS',message:`Restore this verified backup?\n\n${p}\n\nCurrent protected settings will be snapshotted first. RF is forced off during restore and only started if the restore checkbox is selected.`,confirmText:'RESTORE SETTINGS',cancelText:'CANCEL',tone:'danger',kicker:'YWD // MIGRATION'});
     if (!ok) return;
-    const button=el('backupGo'); button.disabled=true; button.textContent='RESTORING…';
+    clearInvalid(); modalFeedback();
+    setBusy(true, 'RESTORING…', 'Applying configuration and reconciling services…');
     try {
       const d=await api('/api/settings/import',{backup_b64:importB64,passphrase:el('backupPass').value,start_rf:!!el('backupStartRf').checked,restore_wifi:!!el('backupWifiRestore').checked,first_boot:false});
       const warns=(d.warnings||[]).length; const missing=(d.missing_plugins||[]).length;
+      setBusy(false, 'RESTORE SETTINGS'); closeModal();
       notify(`Settings restored${warns?` · ${warns} warning(s)`:''}${missing?` · ${missing} missing plugin package(s)`:''}`);
-      closeModal(); importB64=null; importFile=null;
+      importB64=null; importFile=null;
       setTimeout(()=>location.reload(),1800);
-    } catch(e){notify(e.message,true);button.disabled=false;button.textContent='RESTORE SETTINGS';}
+    } catch(e) {
+      setBusy(false, 'RESTORE SETTINGS'); modalError(e.message || 'Settings restore failed.', 'backupPass');
+    }
   }
   function init(){ ensureUi(); }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Locked dashboard routes for settings backup/restore and SSH host-key export."""
+"""Locked dashboard routes for settings backup/restore and SSH key operations."""
 from __future__ import annotations
 
 import json
@@ -58,18 +58,18 @@ def wrap_handler(base):
                 "/api/settings/preview": "settings-preview",
                 "/api/settings/import": "settings-import",
                 "/api/ssh-keys/export": "ssh-keys-export",
+                "/api/ssh-client-key/create": "ssh-client-key-create",
             }
             if path not in routes:
                 super().do_POST()
                 return
-            # This authentication check happens before the privileged helper is
-            # invoked. In particular, SSH private host keys are never available
-            # from an unauthenticated/read-only dashboard request.
+            # Sensitive SSH operations are unreachable until the existing
+            # dashboard control session has been authenticated/unlocked.
             if not self.require_control():
                 return
             try:
                 body = self._large_json()
-                timeout = 30 if path == "/api/ssh-keys/export" else 150
+                timeout = 30 if path.startswith("/api/ssh-") else 150
                 out = core.admin_call(routes[path], body, timeout)
                 self.send_json(out)
             except ValueError as exc:

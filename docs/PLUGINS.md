@@ -4,7 +4,7 @@ Plugin integration currently lives on the `dev-plugins` branch. The conservative
 
 External/community plugin source and examples live in the companion repository:
 
-- `merberg-ai/ywd-modem-plugins` — open-source YWD-Hotspot plugin development
+- `merberg-ai/ywd-hotspot-plugins` — open-source YWD-Hotspot plugin development
 
 The YWD-Hotspot repository remains the canonical source for the plugin API contract, package verifier, sandbox, lifecycle manager, updater integration, and security boundary.
 

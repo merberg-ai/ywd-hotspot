@@ -2,11 +2,11 @@
 """Validate a staged YWD-Hotspot candidate as a coherent runtime tree.
 
 This check is intentionally based on capabilities present in the candidate,
-not on the Git branch name used to fetch it.  That lets the same safety gate
+not on the Git branch name used to fetch it. That lets the same safety gate
 cover dev-plugins, promoted dev, a future plugin-capable main, and explicit
 checkpoint/tag updates.
 
-It performs only source-tree validation.  It never reads or changes live RF,
+It performs only source-tree validation. It never reads or changes live RF,
 configuration, plugin state, services, or hardware.
 """
 from __future__ import annotations
@@ -17,6 +17,8 @@ from pathlib import Path
 
 CORE_REQUIRED = (
     "VERSION",
+    "MANIFEST.txt",
+    "pins.env",
     "INSTALL.sh",
     "INSTALL-core.sh",
     "UPDATE.sh",
@@ -170,8 +172,6 @@ def validate(root: Path) -> list[str]:
     if telemetry_runtime:
         _require(root, "MMDVM telemetry runtime", TELEMETRY_REQUIRED, errors)
 
-    # RX browser voice support depends on the scoped Wasm-serving helper.  Keep
-    # it tied to the plugin runtime rather than a branch name.
     if plugin_runtime and voice_runtime and not _present(root, "lib/dashboard_plugin_wasm.py"):
         errors.append("plugin + voice runtime is missing lib/dashboard_plugin_wasm.py")
 

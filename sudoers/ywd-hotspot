@@ -32,6 +32,8 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin plugin-package-uninstall, \
  /usr/local/libexec/ywd-hotspot-admin plugin-data-remove, \
  /usr/local/libexec/ywd-hotspot-admin plugin-package-upload, \
+ /usr/local/libexec/ywd-hotspot-admin plugin-package-review, \
+ /usr/local/libexec/ywd-hotspot-admin plugin-package-apply, \
  /usr/local/libexec/ywd-hotspot-admin plugin-package-remove
 
 ywd-hotspot ALL=(root) NOPASSWD: YWDHOTSPOT_ADMIN

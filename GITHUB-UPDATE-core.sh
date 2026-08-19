@@ -126,17 +126,18 @@ trap cleanup EXIT
 
 git -C "$REPO_DIR" archive "$target_sha" | tar -x -C "$stage"
 
-# Every promoted line uses the same capability-based coherence gate.  A
-# plugin/voice/telemetry runtime is validated because the candidate contains it,
-# never merely because the branch happens to be named dev-plugins.
-[[ -f "$stage/lib/candidate_validate.py" ]] || { echo "[FAIL] Candidate is missing lib/candidate_validate.py"; exit 1; }
-python3 "$stage/lib/candidate_validate.py" "$stage"
+# Every promoted line uses the same capability-based coherence gate. Prefer the
+# candidate's validator, but retain the currently installed validator for an
+# explicit rollback/tag target created before this helper existed.
+validator="$stage/lib/candidate_validate.py"
+[[ -f "$validator" ]] || validator="$SELF/lib/candidate_validate.py"
+[[ -f "$validator" ]] || { echo "[FAIL] No candidate capability validator is available"; exit 1; }
+python3 "$validator" "$stage"
 
 required=(
   VERSION INSTALL.sh INSTALL-core.sh UPDATE.sh UPDATE-core.sh UNINSTALL.sh
   GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh
   bin/ywd-hotspotctl bin/ywd-hotspotctl-core bin/ywd-ui.sh lab/mmdvm-diag.sh
-  lib/candidate_validate.py
   lib/dashboard.py lib/dashboard_core.py lib/dashboard_update.py lib/admin.py lib/update_admin.py lib/update_runner.py
   lib/build_info.py lib/generate-config.py lib/migrate.py lib/config_model.py lib/oled.py lib/oled_owner.sh
   web/index.html web/app.js web/app-core.js web/talkgroups.js web/ui-polish.js web/ui-polish.css web/style.css

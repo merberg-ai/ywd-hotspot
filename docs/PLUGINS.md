@@ -1,198 +1,173 @@
-# YWD-Hotspot Plugin Framework
+# 🧩 YWD-Hotspot Plugin Framework
 
-Plugin integration currently lives on the `dev-plugins` branch. The physically tested Alpha18.2.16 plugin-capable baseline is parked on `dev` as the stable development fallback while new framework work continues on `dev-plugins`. `main` remains conservative/promoted.
+[← Docs index](README.md) · [Plugin Packages](PLUGIN-PACKAGES.md) · [Plugin UI](PLUGIN-UI.md) · [Architecture](ARCHITECTURE.md)
 
-External/community plugin source and examples live in the companion repository:
+YWD-Hotspot core is authoritative for plugin API contracts, package verification, lifecycle state, service sandboxing, browser isolation, updater integration, and RF ownership rules. Standalone plugin source/examples live in the companion repository:
 
-- `merberg-ai/ywd-hotspot-plugins` — open-source YWD-Hotspot plugin development
+```text
+merberg-ai/ywd-hotspot-plugins
+```
 
-The YWD-Hotspot repository remains the canonical source for the plugin API contract, package verifier, service sandbox, Plugin UI isolation, lifecycle manager, updater integration, and security boundary.
+The framework is now part of the integrated development baseline rather than a branch-only proof feature.
 
-## Current validation status
-
-| Checkpoint / build | Meaning |
-|---|---|
-| `checkpoint/dev-plugins-alpha15.1-known-good` | reboot + application-update lifecycle proven |
-| `checkpoint/dev-plugins-alpha16.1-known-good` | package lifecycle, dependency and hardware UI proven |
-| `checkpoint/dev-plugins-alpha17.1-known-good` | passive structured MMDVM telemetry + real RSSI/BER proven |
-| `checkpoint/dev-plugins-alpha18.1-known-good` | normalized DMR sessions + telemetry updater fix physically proven |
-| `checkpoint/dev-plugins-alpha18.2.4-known-good` | encrypted backup / plugin framework baseline preserved |
-| `0.1.0-alpha18.2.15-dev` | real uploaded signed service package exercised end-to-end on the Pi |
-| `checkpoint/dev-alpha18.2.16-known-good` | current stable development baseline physically tested; plugin lifecycle/UI polish working as expected |
-
-Alpha19 introduces **Plugin UI v1** on the experimental `dev-plugins` line. It is intentionally not a known-good checkpoint until its signed UI smoke-test lifecycle is physically validated.
-
-## Core rules
+## Core safety rules
 
 - Plugin Manager is trusted YWD-Hotspot core, not a plugin.
-- The plugin subsystem is globally disabled by default when activation state is absent.
-- Master **OFF** is authoritative: active plugin services stop and per-plugin activation is cleared.
-- Re-enabling the master switch never silently reactivates plugins.
-- Uploading a package does not install it.
-- Installing a package does not enable or start it.
-- Uninstalling stops/disables runtime eligibility and preserves config/data.
-- Removing package source and removing plugin data are separate destructive actions.
-- Plugin configuration never directly edits canonical `/etc/ywd-hotspot/config.json`.
-- No plugin gets arbitrary sudo.
-- No plugin supplies its own systemd unit.
-- Uploaded service code and browser UI code require a trusted Ed25519 signature.
-- Plugin browser code is never injected into the trusted dashboard DOM.
+- Plugin support can be globally disabled.
+- Uploading/verifying a package does not enable it.
+- Installation and activation are separate operator decisions.
+- Service/UI executable code requires a trusted Ed25519 signature.
 - Uploaded packages cannot self-claim YWD's `first-party` trust label.
-- Current plugin APIs do not permit independent RF/serial ownership.
+- No plugin receives arbitrary sudo.
+- No plugin supplies its own systemd unit.
+- No plugin independently owns `/dev/serial0` or starts a competing MMDVM instance.
+- Current plugin APIs do not grant RF TX authority.
+- Plugin config/data is separate from canonical hotspot configuration.
 - Application updates quiesce service plugins and restore only previously valid operator intent.
+- Package updates are explicit transactions with rollback rather than blind directory overwrite.
 
 ## State model
 
-Package source, registration, activation, and effective activity are intentionally separate:
+Source, registration, activation, and effective runtime are intentionally separate:
 
 ```text
 AVAILABLE
     package source is discoverable
 
 INSTALLED
-    trusted core registered the package for use
+    trusted core registered it for use
 
 ENABLED
-    operator explicitly requested activation
+    operator requested activation
 
 ACTIVE
-    plugin is effectively active now
+    it is effectively active now
 ```
 
-For a service plugin, ACTIVE normally means its shared sandbox unit is running. For a UI-only plugin, ACTIVE means it is valid/installed/effectively enabled; no Pi-side process exists and its iframe is created only while the operator opens its dashboard section.
-
-Persistent state is also separated:
+Persistent state is separated too:
 
 ```text
 /etc/ywd-hotspot/plugin-state.json
-    plugin master + per-plugin activation intent
+    master + per-plugin activation intent
 
 /etc/ywd-hotspot/plugin-packages.json
-    install / registration intent
+    installation/registration intent
 
 /etc/ywd-hotspot/plugins/<id>.json
     per-plugin configuration
 
 /var/lib/ywd-hotspot/plugins/<id>/
-    plugin-owned writable runtime/data path
+    plugin-owned data/runtime path
 
 /var/lib/ywd-hotspot/plugin-packages/<id>/
-    persistent uploaded .ywdplugin source
+    persistent uploaded package source
 
 /etc/ywd-hotspot/plugin-trust.d/<key-id>.pem
-    trusted Ed25519 publisher public keys
+    trusted publisher PUBLIC keys
 ```
 
-Built-in catalogs remain application-owned. Persistent uploaded packages are overlaid during discovery so application updates can replace `/opt/ywd-hotspot/app` without deleting operator-uploaded source.
+Private signing keys never belong in hotspot state.
 
-## Declarative plugins
+## Plugin kinds
 
-Declarative/data-only packages contain metadata and a configuration schema interpreted by trusted core. They execute no plugin Python or browser JavaScript.
+### Declarative
 
-An unsigned uploaded declarative package may be accepted after strict archive/hash/API validation. The Plugin Manager displays `UNSIGNED` so provenance is never confused with a verified publisher.
+Data/config package interpreted by trusted core. No plugin Python or browser JavaScript executes.
 
-## Sandboxed service plugins
+### Sandboxed service
 
-Service plugins contain an approved `service.py` entrypoint and run only through the shared YWD unit:
+Signed Python entrypoint executed only through the shared hardened unit:
 
 ```text
 systemd/ywd-plugin@.service
-  -> installed-package validation
-  -> plugin_service_runner.py --check <id>
-  -> plugin_service_runner.py <id>
-  -> validated service.py
+  → trusted installed-package validation
+  → plugin_service_runner.py
+  → validated service.py
 ```
 
-The shared sandbox includes:
+The sandbox includes a restricted user/group, `NoNewPrivileges`, no Linux capabilities, private devices, strict filesystem protection, restricted address families, and only the plugin's own data path opened for writes.
 
-- `User=ywd-hotspot`
-- `Group=ywd-hotspot`
-- `NoNewPrivileges=true`
-- no Linux capabilities
-- `PrivateDevices=true`
-- `ProtectSystem=strict`
-- protected home/kernel/control-group state
-- namespace/SUID restrictions
-- `MemoryDenyWriteExecute=true`
-- `RestrictAddressFamilies=AF_UNIX`
-- no direct MMDVM device ownership
-- only the exact plugin data directory is opened for writes
+A service plugin cannot install its own unit.
 
-A service plugin cannot install or provide its own systemd unit.
+### Browser UI
 
-## Plugin UI v1
+Signed browser-side JS/CSS with no Pi-side daemon. It is served only while installed/effectively enabled and runs in a sandboxed iframe without trusted-dashboard DOM access.
 
-Alpha19 adds a distinct signed `kind: "ui"` execution model for rich browser-side plugin interfaces.
+The trusted host exposes only declared capability methods through a MessageChannel bridge.
 
-A UI plugin:
-
-- has no Pi-side daemon or service entrypoint;
-- declares `provider: "browser-ui"` and `ui:section`;
-- supplies flat signed `ui.js` and `ui.css` assets;
-- receives a dedicated dashboard navigation section only while installed and effectively enabled;
-- executes in `sandbox="allow-scripts"` without `allow-same-origin`;
-- receives a restrictive frame CSP and Permissions Policy;
-- cannot access the trusted dashboard DOM/session/settings or arbitrary YWD APIs;
-- communicates only through a narrow trusted `MessageChannel` bridge.
-
-Plugin UI v1 generic bridge operations are deliberately limited to:
+Generic UI operations are intentionally narrow. Feature-specific operations require explicit capabilities such as:
 
 ```text
-plugin.ping
-plugin.getState
-plugin.getConfig
+read:dmr-voice
 ```
 
-Future feature-specific bridges such as passive DMR voice observation require explicit core capability contracts. They are not implicitly granted by `ui:section`.
+## Package lifecycle
 
-See **[PLUGIN-UI.md](PLUGIN-UI.md)** for the complete isolation/lifecycle contract.
-
-## Uploaded executable-code policy
+New plugin:
 
 ```text
-unsigned uploaded declarative       -> allowed, visibly UNSIGNED
-unsigned uploaded service/UI code   -> reject
-unknown signing key                 -> reject
-invalid signature                   -> reject
-verified trusted Ed25519 key        -> may become AVAILABLE
+UPLOAD
+  ↓ verify + review
+INSTALL
+  ↓
+ENABLE
+  ↓
+ACTIVE
 ```
 
-Passing signature verification still does not install, enable, or activate a package.
+Uninstall preserves package source and plugin config/data unless the operator separately chooses destructive removal actions.
 
-See **[PLUGIN-PACKAGES.md](PLUGIN-PACKAGES.md)** for archive/signing details.
+## In-place plugin updates
 
-## Package actions
+Uploading a package with the same uploaded plugin ID does not require the old disable/uninstall/remove cycle anymore.
 
-**INSTALL** validates requirements and registers an AVAILABLE package. It remains disabled.
-
-**ENABLE** explicitly activates an installed valid plugin. Service plugins may start through the shared sandbox unit; UI-only plugins become eligible for their dashboard section without creating a Pi process.
-
-**STOP RUNTIME** applies to service plugins and stops only the current service runtime; boot enable state is retained.
-
-**DISABLE** stops a service where applicable and clears activation intent. UI sections are removed immediately when their plugin is no longer effectively enabled.
-
-**UNINSTALL** stops/boot-disables service runtime where applicable, clears activation/registration, and preserves package source, configuration, and data.
-
-**REMOVE DATA** removes only:
+The review step classifies the candidate as appropriate:
 
 ```text
-/etc/ywd-hotspot/plugins/<id>.json
-/var/lib/ywd-hotspot/plugins/<id>/
+UPDATE
+REINSTALL
+DOWNGRADE
+REPLACE VERSION
 ```
 
-**REMOVE PACKAGE** exists only for uploaded packages. The package must first be uninstalled and inert. It removes only:
+The review is non-mutating. For a confirmed replacement, trusted core:
+
+1. re-verifies archive hashes/signature;
+2. checks ID/kind/provenance/capability compatibility;
+3. records installed/enabled/service state;
+4. preserves plugin configuration and data;
+5. quiesces runtime where applicable;
+6. atomically swaps package source;
+7. revalidates the new package/config;
+8. restores prior valid activation/runtime intent;
+9. rolls back the old package/state on failure.
+
+An ordinary same-plugin update cannot silently turn a UI package into a service package or bypass signature requirements.
+
+## Plugin UI and capability isolation
+
+UI code is never injected into the trusted dashboard DOM. Core creates an iframe with a restrictive CSP and Permissions Policy. The iframe gets no arbitrary same-origin network access and no direct authenticated dashboard API access.
+
+RX Monitor demonstrates the intended rich-plugin direction: trusted core owns passive frame observation and grants only `read:dmr-voice`; AMBE/FEC/audio work stays on the browser device.
+
+## Passive telemetry
+
+MMDVM structured telemetry is trusted core infrastructure:
 
 ```text
-/var/lib/ywd-hotspot/plugin-packages/<id>/
+MMDVM-Host
+  → loopback YWD Mosquitto
+  → trusted telemetry bridge
+  → local sanitized telemetry/session state
 ```
 
-No package-controlled glob or arbitrary path is accepted.
+The old MMDVM Live Telemetry plugin has been retired. Core telemetry remains because dashboard instrumentation/session normalization use it independently of any plugin.
 
-## Dependency and hardware checks
+## Requirement checks
 
-Manifest requirements are declarative tokens interpreted by trusted core. Plugins do not execute custom package-manager or hardware-probe commands.
+Dependency/hardware requirements are declarative tokens interpreted by trusted core. Packages cannot provide custom `apt`, `pip`, `curl | bash`, or hardware-probe commands.
 
-Current dependency tokens include:
+Examples include:
 
 ```text
 python3
@@ -203,69 +178,41 @@ mosquitto-broker
 mosquitto-client
 ```
 
-Current hardware probes include:
+and hardware tokens such as:
 
 ```text
-mmdvm-serial -> /dev/serial0
-oled-i2c     -> /dev/i2c-1
+mmdvm-serial
+oled-i2c
 ```
 
-Missing requirements prevent installation/activation as appropriate. YWD does not run plugin-provided `apt`, `pip`, `curl | bash`, or arbitrary dependency scripts.
+## Application-update behavior
 
-## MMDVM telemetry capability
+Before a plugin-capable YWD application update, trusted core captures plugin state and exact service boot/runtime intent, then makes service plugins inert for replacement. After the new runtime validates, only prior packages that still validate are eligible for restoration.
 
-The trusted observation path is:
-
-```text
-MMDVM-Host structured MQTT JSON
-  -> loopback YWD Mosquitto 127.0.0.1:18883
-  -> trusted telemetry bridge
-  -> /run/ywd-hotspot-telemetry/telemetry.json
-  -> normalized DMR sessions
-  -> sandboxed observational plugins
-```
-
-Telemetry plugins do not own RF, serial, or broad network sockets. Normalized `active`, `last`, and bounded `recent` session state avoids plugin-side journal scraping and stale identity guessing.
-
-See **[TELEMETRY.md](TELEMETRY.md)** and **[MMDVM-SESSIONS.md](MMDVM-SESSIONS.md)**.
-
-## Update safety
-
-Before a plugin-aware application update, trusted core captures master state, per-plugin activation, exact service runtime/boot state, and package identities. Service plugins are quiesced before application replacement.
-
-After a successful update, only packages that still validate and were previously enabled are eligible for restoration. UI activation intent participates in the same validation but has no Pi-side process to stop or restore. Newly discovered packages remain disabled.
-
-When leaving plugin-capable development for a plugin-free target, service plugins are made inert and plugin activation is cleared. Persistent uploaded package source may remain as inert operator data rather than being silently destroyed.
+Candidate validation is based on the plugin/voice/telemetry capabilities present in the candidate tree, not on whether the target branch happens to be named `dev-plugins`.
 
 ## Backup / restore
 
-Protected `.ywdsettings` backups can preserve plugin activation intent, package-registration intent, plugin configuration, and trusted publisher public keys.
+Protected `.ywdsettings` backups can preserve activation intent, registration intent, plugin configuration, and trusted publisher **public** keys.
 
-Uploaded executable package source is **not** embedded in `.ywdsettings`. On a fresh restore, missing packages are reported and must be explicitly re-uploaded. YWD never silently downloads executable plugin code from the Internet.
+Uploaded executable package code is not silently embedded/fetched as part of restore. Missing packages must be explicitly supplied again.
 
 See **[BACKUP-RESTORE.md](BACKUP-RESTORE.md)**.
 
 ## Publisher signing keys
 
-Trusted publisher public keys live under:
+Trusted public keys live under:
 
 ```text
 /etc/ywd-hotspot/plugin-trust.d/<key-id>.pem
 ```
 
-Build a signed service/UI package with:
+The companion plugin repository provides `PLUGIN-DEV.sh`, which calls the canonical core package builder. Private keys remain outside both Git repositories and outside the hotspot.
 
-```bash
-python3 tools/ywdplugin-build.py SOURCE OUTPUT.ywdplugin \
-  --sign-key PRIVATE.pem \
-  --key-id publisher-key-1 \
-  --publisher "Publisher Name"
-```
+## Built-in proof fixtures
 
-The companion plugin repository provides `PLUGIN-DEV.sh` as an interactive wrapper around the same canonical builder. Never store a signing private key on the hotspot or commit it to either repository.
+`system-info` and `service-heartbeat` were used to prove declarative/service lifecycle behavior. They remain in the source tree temporarily while pre-main cleanup moves validation away from hard-coded proof IDs. They are not architectural dependencies and are candidates for retirement after the current hardening build is physically validated.
 
 ## RF ownership remains out of scope
 
-A verified signature is not permission to control the modem directly. Current supported packages keep `rf_mode = false`.
-
-Future RF-mode work requires a trusted-core arbitration contract with one serial/RF owner, explicit operator control, safe capture/restore of normal DMR state, and failure recovery. It must build on the existing lifecycle/signing/telemetry foundation rather than bypass it.
+A valid plugin signature is not permission to control the modem. Any future RF-mode plugin work would require a separate trusted-core arbitration design with one RF owner, explicit operator intent, state capture/restore, and failure recovery.

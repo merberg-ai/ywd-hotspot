@@ -91,6 +91,20 @@ function tgRouteText(key) {
   const r = tgRouteFromKey(key);
   return r ? `${tgSlotLabel(r.slot)} ${r.talkgroup}` : String(key);
 }
+async function tgConfirm({title, message, confirmText='CONFIRM', tone='warn'}) {
+  if (typeof window.ywdConfirm !== 'function') {
+    toast('YWD confirmation UI is unavailable. Reload the dashboard and try again.', true);
+    return false;
+  }
+  return window.ywdConfirm({
+    title,
+    message,
+    confirmText,
+    cancelText:'CANCEL',
+    tone,
+    kicker:'YWD // TALKGROUPS'
+  });
+}
 
 function ensureControlSlotTools() {
   const input = $('tgInput');
@@ -112,7 +126,12 @@ function ensureControlSlotTools() {
   };
   $('dropQso').onclick = async () => {
     const slots = tgAllowedSlots();
-    if (!confirm(`Drop the active QSO on ${tgIsDuplex() ? 'TS1 and TS2' : 'this simplex hotspot'}?`)) return;
+    if (!await tgConfirm({
+      title:'DROP ACTIVE QSO',
+      message:`Drop the active QSO on ${tgIsDuplex() ? 'TS1 and TS2' : 'this simplex hotspot'}?`,
+      confirmText:'DROP QSO',
+      tone:'danger'
+    })) return;
     try {
       for (const slot of slots) await post('/api/bm/drop-qso', {slot});
       toast(`Drop QSO sent${tgIsDuplex() ? ' to TS1 + TS2' : ''}`);
@@ -121,7 +140,12 @@ function ensureControlSlotTools() {
   };
   $('dropDyn').onclick = async () => {
     const slots = tgAllowedSlots();
-    if (!confirm(`Drop every dynamic/auto-static TG on ${tgIsDuplex() ? 'TS1 and TS2' : 'this hotspot'}?`)) return;
+    if (!await tgConfirm({
+      title:'DROP DYNAMIC TALKGROUPS',
+      message:`Drop every dynamic/auto-static TG on ${tgIsDuplex() ? 'TS1 and TS2' : 'this hotspot'}?`,
+      confirmText:'DROP DYNAMIC',
+      tone:'danger'
+    })) return;
     try {
       for (const slot of slots) await post('/api/bm/drop-dynamic', {slot});
       toast(`Dynamic talkgroups dropped${tgIsDuplex() ? ' on TS1 + TS2' : ''}`);
@@ -191,7 +215,12 @@ function ensureTalkgroupManager() {
   $('tgRefreshDirectory').onclick = () => tgSearch(true);
   $('tgRefreshState').onclick = () => { getStatus(); toast('Refreshing BrandMeister state'); };
   $('tgDropDynamic').onclick = async () => {
-    if (!confirm(`Drop every dynamic talkgroup on ${tgIsDuplex() ? 'TS1 and TS2' : 'this hotspot'}?`)) return;
+    if (!await tgConfirm({
+      title:'DROP DYNAMIC TALKGROUPS',
+      message:`Drop every dynamic talkgroup on ${tgIsDuplex() ? 'TS1 and TS2' : 'this hotspot'}?`,
+      confirmText:'DROP DYNAMIC',
+      tone:'danger'
+    })) return;
     try {
       for (const slot of tgAllowedSlots()) await post('/api/bm/drop-dynamic', {slot});
       toast('Dynamic talkgroups dropped');
@@ -285,9 +314,15 @@ function tgRenderControlStatics(d) {
   const pill = x => `<span class="pill"><b>${tgSlotLabel(Number(x.slot ?? 0))}</b> · ${Number(x.talkgroup)}${x.name ? ' · '+esc(x.name) : ''}${unlocked && key ? ` <button data-ywd-del-tg="${Number(x.talkgroup)}" data-ywd-del-slot="${Number(x.slot ?? 0)}">×</button>` : ''}</span>`;
   if ($('staticTgsMini')) $('staticTgsMini').innerHTML = stat.length ? stat.map(pill).join('') : '<span class="hint">none</span>';
   if ($('staticTgs')) $('staticTgs').innerHTML = stat.length ? stat.map(pill).join('') : '<span class="hint">none</span>';
-  $$('[data-ywd-del-tg]').forEach(b => b.onclick = () => {
+  $$('[data-ywd-del-tg]').forEach(b => b.onclick = async () => {
     const tg = Number(b.dataset.ywdDelTg), slot = Number(b.dataset.ywdDelSlot);
-    if (confirm(`Remove static ${tgSlotLabel(slot)} TG ${tg}?`)) action('/api/bm/static/remove', {talkgroup:tg, slot}, `Static ${tgSlotLabel(slot)} TG ${tg} removed`);
+    if (!await tgConfirm({
+      title:'REMOVE STATIC TALKGROUP',
+      message:`Remove static ${tgSlotLabel(slot)} TG ${tg} from BrandMeister?\n\nOnly this exact timeslot route will be removed.`,
+      confirmText:'REMOVE TG',
+      tone:'danger'
+    })) return;
+    action('/api/bm/static/remove', {talkgroup:tg, slot}, `Static ${tgSlotLabel(slot)} TG ${tg} removed`);
   });
 }
 
@@ -344,9 +379,19 @@ function tgRenderSets() {
   const rows = tgSets();
   $('tgSetRows').innerHTML = rows.length ? rows.map((x,i) => `<div class="row"><span><b>${esc(x.name)}</b><br><small>${esc(x.routes.sort(tgRouteSort).map(tgRouteText).join(', ') || 'empty set')}</small></span><span class="tg-row-actions"><button class="btn tiny" data-set-load="${i}">LOAD PLAN</button><button class="btn tiny" data-set-del="${i}">DELETE</button></span></div>`).join('') : '<div class="hint">Save a planned static set for quick reuse.</div>';
   $$('[data-set-load]').forEach(b => b.onclick = () => { const s=tgSets()[Number(b.dataset.setLoad)]; if(!s)return; tgPlan=new Set(s.routes); tgPlanDirty=true; tgRender(state); toast(`Loaded set: ${s.name}`); });
-  $$('[data-set-del]').forEach(b => b.onclick = () => { const i=Number(b.dataset.setDel), rows=tgSets(), s=rows[i]; if(!s||!confirm(`Delete saved set "${s.name}"?`))return; rows.splice(i,1); tgSaveJson(TG_SETS_KEY,rows); tgRender(state); });
+  $$('[data-set-del]').forEach(b => b.onclick = async () => {
+    const i=Number(b.dataset.setDel), rows=tgSets(), s=rows[i];
+    if (!s) return;
+    if (!await tgConfirm({
+      title:'DELETE SAVED TG SET',
+      message:`Delete saved set "${s.name}"?\n\nThis only removes the browser-saved preset. BrandMeister routes are not changed.`,
+      confirmText:'DELETE SET',
+      tone:'danger'
+    })) return;
+    rows.splice(i,1); tgSaveJson(TG_SETS_KEY,rows); tgRender(state);
+  });
 }
-function tgSaveSet() {
+async function tgSaveSet() {
   const name = $('tgSetName').value.trim().slice(0,40);
   if (!name) return toast('Enter a name for the saved set', true);
   const rows = tgSets();
@@ -354,7 +399,12 @@ function tgSaveSet() {
   const existing = rows.findIndex(x => x.name.toLowerCase() === name.toLowerCase());
   const item = {name, routes};
   if (existing >= 0) {
-    if (!confirm(`Replace saved set "${rows[existing].name}"?`)) return;
+    if (!await tgConfirm({
+      title:'REPLACE SAVED TG SET',
+      message:`Replace saved set "${rows[existing].name}" with the current plan?`,
+      confirmText:'REPLACE SET',
+      tone:'warn'
+    })) return;
     rows[existing] = item;
   } else rows.push(item);
   rows.sort((a,b)=>a.name.localeCompare(b.name));
@@ -367,7 +417,12 @@ async function tgApplyPlan() {
   const lines = [];
   if (diff.add.length) lines.push(`ADD: ${diff.add.map(tgRouteText).join(', ')}`);
   if (diff.remove.length) lines.push(`REMOVE: ${diff.remove.map(tgRouteText).join(', ')}`);
-  if (!confirm(`Apply this BrandMeister static talkgroup plan?\n\n${lines.join('\n')}\n\n${tgIsDuplex() ? 'Duplex routes are applied to their explicit timeslots.' : 'Simplex routes use slot 0.'}`)) return;
+  if (!await tgConfirm({
+    title:'APPLY STATIC TG PLAN',
+    message:`Apply this BrandMeister static talkgroup plan?\n\n${lines.join('\n')}\n\n${tgIsDuplex() ? 'Duplex routes are applied to their explicit timeslots.' : 'Simplex routes use slot 0.'}`,
+    confirmText:'APPLY PLAN',
+    tone:'warn'
+  })) return;
   $('tgApplyPlan').disabled = true;
   try {
     for (const key of diff.add) {

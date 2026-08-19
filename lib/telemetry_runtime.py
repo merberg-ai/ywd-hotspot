@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 POLICY = Path("/usr/sbin/policy-rc.d")
+VOICE_UNIT = Path("/etc/systemd/system/ywd-mmdvm-voice.service")
 
 
 def run(args, check=True, quiet=False):
@@ -79,6 +80,20 @@ def ensure_runtime():
     if not active("ywd-mmdvm-telemetry.service"):
         raise RuntimeError("YWD MMDVM telemetry bridge is not active after reconciliation")
 
+    # The high-rate DMR voice ring is a separate trusted bridge so ordinary
+    # low-rate telemetry snapshots never rewrite once per voice frame. It is
+    # strictly fail-soft: absence/failure must not turn an app update into an RF
+    # outage. The plugin surface will report bridge-unavailable instead.
+    if VOICE_UNIT.exists():
+        voice_was_active = active("ywd-mmdvm-voice.service")
+        run(["systemctl", "enable", "ywd-mmdvm-voice.service"], check=False)
+        if voice_was_active:
+            run(["systemctl", "restart", "ywd-mmdvm-voice.service"], check=False)
+        else:
+            run(["systemctl", "start", "ywd-mmdvm-voice.service"], check=False)
+        if not active("ywd-mmdvm-voice.service"):
+            print("[WARN] Trusted DMR voice bridge did not start. Core hotspot operation is unaffected.")
+
     # MMDVM-Host opens MQTT only during startup. If RF is already running,
     # perform one controlled restart now that the broker is available. If the
     # restart command itself fails, explicitly attempt to recover MMDVM-Host
@@ -104,6 +119,8 @@ def ensure_runtime():
             print(f"[WARN] Initial MMDVM-Host restart failed but the service recovered: {restart_error}")
 
     print("YWD MMDVM telemetry runtime ready on loopback MQTT 127.0.0.1:18883")
+    if VOICE_UNIT.exists() and active("ywd-mmdvm-voice.service"):
+        print("YWD trusted DMR voice ring bridge is active.")
     if packages_changed:
         print("Mosquitto broker/client package set was completed for the telemetry bus.")
 

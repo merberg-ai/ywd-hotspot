@@ -5,6 +5,9 @@
   let lastProgress = 0;
   let armedBuild = null;
   let reloadScheduled = false;
+  let locked = false;
+  let lockedOverflow = '';
+  let lockObserver = null;
 
   const el = id => document.getElementById(id);
   const safeText = v => String(v ?? '');
@@ -56,6 +59,7 @@
     const modal = document.createElement('div');
     modal.className = 'modal update-progress-modal';
     modal.id = 'updateProgressModal';
+    modal.tabIndex = -1;
     modal.innerHTML = `
       <div class="dialog update-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="updateProgressTitle">
         <div class="card-title title-row">
@@ -82,8 +86,57 @@
         </div>
       </div>`;
     document.body.appendChild(modal);
-    el('closeUpdateProgress').addEventListener('click', () => modal.classList.remove('on'));
+    el('closeUpdateProgress').addEventListener('click', () => {
+      modal.classList.remove('on');
+      unlockDashboard();
+    });
     el('reloadUpdateProgress').addEventListener('click', () => location.reload());
+  }
+
+  function inertBackgroundNode(node) {
+    const modal = el('updateProgressModal');
+    if (!node || node === modal || node.nodeType !== 1 || node.dataset?.ywdUpdateInert === '1') return;
+    if (!node.inert) {
+      node.inert = true;
+      node.dataset.ywdUpdateInert = '1';
+    }
+  }
+
+  function lockDashboard() {
+    ensureModal();
+    const modal = el('updateProgressModal');
+    if (!locked) {
+      locked = true;
+      lockedOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      Array.from(document.body.children).forEach(inertBackgroundNode);
+      lockObserver = new MutationObserver(records => {
+        records.forEach(record => Array.from(record.addedNodes || []).forEach(inertBackgroundNode));
+      });
+      lockObserver.observe(document.body, {childList:true});
+    }
+    modal.inert = false;
+    modal.removeAttribute('aria-hidden');
+    modal.setAttribute('aria-busy', 'true');
+    setTimeout(() => {
+      try { modal.focus({preventScroll:true}); } catch (_) { modal.focus(); }
+    }, 0);
+  }
+
+  function unlockDashboard() {
+    if (!locked) return;
+    locked = false;
+    lockObserver?.disconnect();
+    lockObserver = null;
+    Array.from(document.body.children).forEach(node => {
+      if (node?.dataset?.ywdUpdateInert === '1') {
+        node.inert = false;
+        delete node.dataset.ywdUpdateInert;
+      }
+    });
+    document.body.style.overflow = lockedOverflow;
+    lockedOverflow = '';
+    el('updateProgressModal')?.removeAttribute('aria-busy');
   }
 
   function statusTime(u) {
@@ -100,7 +153,8 @@
       if (t) armedAt = t;
       return true;
     }
-    return statusTime(u) >= armedAt - 1500;
+    const t = statusTime(u);
+    return !t || t >= armedAt - 1500;
   }
 
   function setProgress(value) {
@@ -125,6 +179,7 @@
     const modal = el('updateProgressModal');
     modal.classList.add('on');
     modal.classList.remove('failed','complete','reconnecting');
+    lockDashboard();
 
     const stateName = safeText(u.state || 'running');
     const phase = safeText(u.phase || 'working');
@@ -144,6 +199,7 @@
 
     if (stateName === 'complete') {
       modal.classList.add('complete');
+      modal.removeAttribute('aria-busy');
       badge.textContent = u.phase === 'up-to-date' ? 'UP TO DATE' : 'COMPLETE';
       badge.className = 'badge good';
       spinner.hidden = true;
@@ -157,6 +213,7 @@
     }
     if (stateName === 'failed') {
       modal.classList.add('failed');
+      modal.removeAttribute('aria-busy');
       badge.textContent = 'FAILED';
       badge.className = 'badge bad';
       spinner.hidden = true;
@@ -167,6 +224,7 @@
       return;
     }
 
+    modal.setAttribute('aria-busy', 'true');
     badge.textContent = `${Math.round(lastProgress)}%`;
     badge.className = 'badge warn';
   }
@@ -175,11 +233,33 @@
     ensureModal();
     const modal = el('updateProgressModal');
     if (!modal.classList.contains('on')) return;
+    lockDashboard();
     modal.classList.add('reconnecting');
     el('updateProgressState').textContent = 'RECONNECTING';
     el('updateProgressState').className = 'badge warn';
     el('updateProgressPhase').textContent = 'DASHBOARD RESTARTING';
     el('updateProgressMessage').textContent = 'The updater is still running outside the dashboard. Reconnecting to live update status…';
+  }
+
+  function showImmediateStart() {
+    render({
+      state:'running',
+      phase:'starting',
+      progress:0,
+      message:'Starting the detached updater. Dashboard controls are locked until the update reaches a terminal state.'
+    });
+  }
+
+  function reflectUpdateCardTerminal() {
+    const modal = el('updateProgressModal');
+    const cardBadge = el('updateBadge');
+    if (!modal?.classList.contains('on') || modal.classList.contains('complete') || modal.classList.contains('failed') || !cardBadge) return;
+    const text = safeText(cardBadge.textContent).trim().toUpperCase();
+    if (text === 'FAILED') {
+      render({state:'failed', error:safeText(el('updateMessage')?.textContent || 'Update failed before live progress became available.')});
+    } else if (text === 'UP TO DATE' || text === 'COMPLETE') {
+      render({state:'complete', phase:text === 'UP TO DATE' ? 'up-to-date' : 'complete', message:safeText(el('updateMessage')?.textContent || 'Update complete.')});
+    }
   }
 
   async function poll() {
@@ -209,14 +289,8 @@
     reloadScheduled = false;
     armedAt = Date.now();
     lastProgress = 0;
+    showImmediateStart();
     startPolling();
-    setTimeout(() => {
-      const modal = el('updateProgressModal');
-      if (armedAt && (!modal || !modal.classList.contains('on'))) {
-        armedAt = 0;
-        stopPolling();
-      }
-    }, 15000);
   }
 
   function init() {
@@ -224,6 +298,8 @@
     document.addEventListener('click', e => {
       if (e.target && e.target.id === 'confirmUpdate') armForNewUpdate();
     }, true);
+    const cardBadge = el('updateBadge');
+    if (cardBadge) new MutationObserver(reflectUpdateCardTerminal).observe(cardBadge, {childList:true, characterData:true, subtree:true});
     startPolling();
     setTimeout(() => {
       const modal = el('updateProgressModal');

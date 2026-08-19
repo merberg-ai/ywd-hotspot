@@ -41,7 +41,13 @@ def render(c):
     s, r, b = c["station"], c["radio"], c["brandmeister"]
     hid = int(s["hotspot_id"])
     callsign = clean(s["callsign"])
-    freq = int(r["frequency_hz"])
+    simplex_freq = int(r["frequency_hz"])
+    duplex = str(r.get("mode", "simplex")) == "duplex"
+    rx_freq = int(r.get("rx_frequency_hz", simplex_freq)) if duplex else simplex_freq
+    tx_freq = int(r.get("tx_frequency_hz", simplex_freq)) if duplex else simplex_freq
+    duplex_flag = 1 if duplex else 0
+    slot1 = 1 if duplex else 0
+    slot2 = 1
     cc = int(r["color_code"])
     master = clean(b["master"])
     name = "BM_" + re.sub(r"[^A-Za-z0-9_-]+", "_", master.split(".")[0])
@@ -55,7 +61,7 @@ def render(c):
 Callsign={callsign}
 Id={hid}
 Timeout={int(r.get('timeout_s',180))}
-Duplex=0
+Duplex={duplex_flag}
 RFModeHang=10
 NetModeHang=3
 Daemon=0
@@ -85,8 +91,8 @@ Time=24
 Protocol=uart
 UARTPort={clean(r.get('uart','/dev/serial0'))}
 UARTSpeed={int(r.get('uart_speed',115200))}
-RXFrequency={freq}
-TXFrequency={freq}
+RXFrequency={rx_freq}
+TXFrequency={tx_freq}
 TXInvert={int(r.get('tx_invert',1))}
 RXInvert={int(r.get('rx_invert',0))}
 PTTInvert=0
@@ -146,8 +152,8 @@ LocalPort=62032
 GatewayAddress=127.0.0.1
 GatewayPort=62031
 Jitter={int(r.get('jitter_ms',360))}
-Slot1=0
-Slot2=1
+Slot1={slot1}
+Slot2={slot2}
 Debug=0
 
 [System Fusion Network]
@@ -172,6 +178,8 @@ Enable=0
 Enable=0
 """
 
+    pass_tg = "PassAllTG=1\nPassAllTG=2" if duplex else "PassAllTG=2"
+    pass_pc = "PassAllPC=1\nPassAllPC=2" if duplex else "PassAllPC=2"
     dmrgw = f"""[General]
 Id={hid}
 Timeout=10
@@ -193,13 +201,13 @@ Enabled=0
 
 [Info]
 Callsign={callsign}
-TXFrequency={freq}
-RXFrequency={freq}
+TXFrequency={tx_freq}
+RXFrequency={rx_freq}
 Power=1
 ColorCode={cc}
-Duplex=0
-Slot1=0
-Slot2=1
+Duplex={duplex_flag}
+Slot1={slot1}
+Slot2={slot2}
 Latitude={lat}
 Longitude={lon}
 Height={int(s.get('height',0))}
@@ -216,8 +224,8 @@ Name={name}
 Id={hid}
 Address={master}
 Port={int(b.get('port',62031))}
-PassAllTG=2
-PassAllPC=2
+{pass_tg}
+{pass_pc}
 Password="{pw}"
 Location={location_data}
 Debug=0

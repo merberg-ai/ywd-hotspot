@@ -215,6 +215,9 @@ class H(core.H):
         if path == "/ui-polish.css":
             self.serve_static("ui-polish.css", "text/css; charset=utf-8")
             return
+        if path == "/hero-layout.css":
+            self.serve_static("hero-layout.css", "text/css; charset=utf-8")
+            return
         if path == "/ywd-hotspot-banner.webp":
             self.serve_asset(core.BRANDING / "ywd-hotspot-banner-webui.webp", "image/webp")
             return

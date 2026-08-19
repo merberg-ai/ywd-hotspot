@@ -26,7 +26,6 @@ for f in \
   lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
   lib/plugin_packages/system-info/plugin.json lib/plugin_packages/system-info/config.schema.json \
   lib/service_plugin_packages/service-heartbeat/plugin.json lib/service_plugin_packages/service-heartbeat/config.schema.json lib/service_plugin_packages/service-heartbeat/service.py \
-  lib/service_plugin_packages/mmdvm-live-telemetry/plugin.json lib/service_plugin_packages/mmdvm-live-telemetry/config.schema.json lib/service_plugin_packages/mmdvm-live-telemetry/service.py \
   web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js web/plugin-telemetry.js \
   web/backup-restore.js web/backup-restore.css \
   systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service \
@@ -40,7 +39,7 @@ python3 -m py_compile \
   "$SELF/lib/plugin_admin_common.py" "$SELF/lib/plugin_admin_state.py" "$SELF/lib/plugin_admin_packages.py" "$SELF/lib/plugin_admin_upload.py" "$SELF/lib/plugin_admin.py" \
   "$SELF/lib/dashboard_plugins.py" "$SELF/lib/dashboard_plugin_upload.py" "$SELF/lib/dashboard_backup.py" "$SELF/lib/settings_backup.py" "$SELF/lib/settings_admin.py" "$SELF/lib/setup_restore_server.py" \
   "$SELF/lib/mmdvm_telemetry.py" "$SELF/lib/mmdvm_telemetry_bridge.py" "$SELF/lib/telemetry_runtime.py" \
-  "$SELF/lib/service_plugin_packages/service-heartbeat/service.py" "$SELF/lib/service_plugin_packages/mmdvm-live-telemetry/service.py"
+  "$SELF/lib/service_plugin_packages/service-heartbeat/service.py"
 [[ -f "$SELF/lib/system_branding.sh" ]] && bash -n "$SELF/lib/system_branding.sh"
 bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh"
 
@@ -63,9 +62,8 @@ assert base["system"]["enabled"] is False
 assert any(p.get("id") == "system-info" and p.get("valid") and p.get("installed") for p in base["plugins"])
 services = plugin_service_manager.snapshot()
 assert any(p.get("id") == "service-heartbeat" and p.get("valid") and p.get("installed") for p in services)
-telemetry = [p for p in services if p.get("id") == "mmdvm-live-telemetry"]
-assert len(telemetry) == 1 and telemetry[0].get("valid") and not telemetry[0].get("installed"), telemetry
-assert telemetry[0].get("provider") == "mmdvm-telemetry", telemetry
+assert not any(p.get("id") == "mmdvm-live-telemetry" for p in services), services
+assert all(not p.get("rf_mode") for p in services)
 PY
 
 CORE="$SELF/INSTALL-core.sh"
@@ -100,8 +98,8 @@ if [[ -f "$SELF/lib/oled_owner.sh" ]]; then
   sudo bash "$SELF/lib/oled_owner.sh" install "$SELF"
 fi
 
-# Telemetry is passive infrastructure. Failure here never turns a successful
-# DMR install into an RF outage; the new plugin will simply report missing deps.
+# Telemetry is passive core infrastructure. Failure here never turns a successful
+# DMR install into an RF outage; dashboard diagnostics can report the bridge state.
 if ! sudo python3 /opt/ywd-hotspot/app/lib/telemetry_runtime.py ensure; then
   echo "[WARN] Passive MMDVM telemetry runtime was not activated. Core hotspot operation is unaffected."
 fi

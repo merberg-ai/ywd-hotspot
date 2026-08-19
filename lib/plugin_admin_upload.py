@@ -6,11 +6,12 @@ import base64
 
 import plugin_catalog_overlay
 import plugin_package_archive
+import plugin_package_update
 import plugin_service_manager
 from plugin_admin_common import resolve_available_plugin, stop_plugin_service
 
 
-def upload_package(data):
+def _decode_upload(data):
     filename = str(data.get("filename") or "upload.ywdplugin")[:180]
     raw_b64 = data.get("archive_b64")
     if not isinstance(raw_b64, str) or len(raw_b64) > 1500000:
@@ -19,7 +20,25 @@ def upload_package(data):
         blob = base64.b64decode(raw_b64, validate=True)
     except Exception:
         raise ValueError("plugin archive payload is not valid base64")
+    return filename, blob
+
+
+def upload_package(data):
+    """Legacy upload path: persist a brand-new package as available/uninstalled."""
+    filename, blob = _decode_upload(data)
     return plugin_package_archive.install_archive(blob, filename)
+
+
+def review_package(data):
+    """Verify and classify a package without modifying installed package state."""
+    filename, blob = _decode_upload(data)
+    return plugin_package_update.review_archive(blob, filename)
+
+
+def apply_package(data):
+    """Install/update/reinstall/downgrade an uploaded package transactionally."""
+    filename, blob = _decode_upload(data)
+    return plugin_package_update.apply_archive(blob, filename)
 
 
 def remove_package(data):

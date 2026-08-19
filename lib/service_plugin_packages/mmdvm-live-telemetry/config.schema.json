@@ -1,7 +1,0 @@
-{
-  "schema": 1,
-  "fields": [
-    {"key":"log_interval_s","type":"integer","label":"Journal summary interval (seconds)","default":15,"min":5,"max":300,"help":"How often the sandboxed plugin service writes a compact telemetry summary to its journal."},
-    {"key":"stale_after_s","type":"integer","label":"Bridge stale threshold (seconds)","default":8,"min":3,"max":60,"help":"How old the trusted bridge heartbeat may be before the UI reports telemetry as stale."}
-  ]
-}

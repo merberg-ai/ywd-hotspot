@@ -17,7 +17,7 @@ plugin_catalog_overlay.install()
 from plugin_admin_common import ensure_update_not_running, payload
 from plugin_admin_packages import install_package, remove_plugin_data, uninstall_package
 from plugin_admin_state import runtime_action, save_config, set_plugin, set_system
-from plugin_admin_upload import remove_package, upload_package
+from plugin_admin_upload import apply_package, remove_package, review_package, upload_package
 
 
 def main():
@@ -37,6 +37,8 @@ def main():
         "plugin-package-uninstall": uninstall_package,
         "plugin-data-remove": remove_plugin_data,
         "plugin-package-upload": upload_package,
+        "plugin-package-review": review_package,
+        "plugin-package-apply": apply_package,
         "plugin-package-remove": remove_package,
     }
     handler = handlers.get(action)

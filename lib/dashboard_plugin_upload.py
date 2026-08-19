@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Locked WebUI routes for persistent .ywdplugin upload/removal."""
+"""Locked WebUI routes for persistent .ywdplugin upload/review/apply/removal."""
 from __future__ import annotations
 
 import json
@@ -40,14 +40,30 @@ def wrap_handler(base):
                 raise ValueError("JSON body must be an object")
             return obj
 
+        def _serve_plugin_package_ui(self):
+            """Serve legacy upload UI plus the transactional package overlay."""
+            base_path = core.WEB / "plugin-package-upload.js"
+            update_path = core.WEB / "plugin-package-update.js"
+            try:
+                body = base_path.read_bytes()
+                if update_path.is_file():
+                    body += b"\n\n" + update_path.read_bytes()
+            except Exception:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/plugin-package-upload.js":
-                self.serve_static("plugin-package-upload.js", "application/javascript; charset=utf-8")
+                self._serve_plugin_package_ui()
                 return
-            # Alpha18.2.8: these live under web/ because UPDATE-core already
-            # deploys that directory atomically. This avoids depending on the
-            # branding-copy allowlist that caused Alpha18.2.7's banner 404.
             if path == "/ywd-hotspot-banner.webp":
                 self.serve_static("ywd-hotspot-banner.webp", "image/webp")
                 return
@@ -64,15 +80,24 @@ def wrap_handler(base):
 
         def do_POST(self):
             path = urlparse(self.path).path
-            if path not in {"/api/plugins/upload", "/api/plugins/package-remove"}:
+            actions = {
+                "/api/plugins/upload": "plugin-package-upload",
+                "/api/plugins/package-review": "plugin-package-review",
+                "/api/plugins/package-apply": "plugin-package-apply",
+                "/api/plugins/package-remove": "plugin-package-remove",
+            }
+            action = actions.get(path)
+            if action is None:
                 super().do_POST()
                 return
             if not self.require_control():
                 return
             try:
-                body = self._large_json() if path == "/api/plugins/upload" else self.body_json()
-                action = "plugin-package-upload" if path == "/api/plugins/upload" else "plugin-package-remove"
-                out = core.admin_call(action, body, 90)
+                body = self._large_json() if action in {
+                    "plugin-package-upload", "plugin-package-review", "plugin-package-apply"
+                } else self.body_json()
+                timeout = 120 if action == "plugin-package-apply" else 90
+                out = core.admin_call(action, body, timeout)
                 self.send_json({**out, "plugins_state": _decorated_snapshot()})
             except ValueError as exc:
                 self.send_json({"error": str(exc)[:800]}, 400)

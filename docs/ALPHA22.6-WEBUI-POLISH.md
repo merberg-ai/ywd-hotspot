@@ -2,6 +2,12 @@
 
 Alpha22.6 is a presentation/package-management polish build on top of the physically proven Alpha22.5 RF and DMR voice runtime. It does not change MMDVM-Host, DMRGateway, the MMDVM voice tap, the Alpha22.5 voice bridge/writer, duplex configuration, or BrandMeister routing behavior.
 
+## Alpha22.6.1 updater hotfix
+
+The first Alpha22.6 candidate correctly removed the retired `mmdvm-live-telemetry` package, but `UPDATE.sh`, `INSTALL.sh`, and `MANIFEST.txt` still treated that package as required source. WebUI update validation therefore stopped safely before touching the live application with `Update source missing .../mmdvm-live-telemetry/plugin.json`.
+
+Alpha22.6.1 removes those stale package requirements, explicitly validates that the retired package is absent from the service-plugin catalog, and leaves the core `ywd-mmdvm-telemetry.service` infrastructure unchanged. The failure happened before plugin quiesce/application replacement, so the prior live RF/runtime was not modified by the failed attempt.
+
 ## Confirmation UI
 
 - `DROP QSO` now uses the YWD in-app confirmation dialog instead of a browser-native `confirm()` dialog.

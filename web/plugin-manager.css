@@ -59,9 +59,21 @@
 .plugin-install-name strong{color:var(--text);font-size:15px}.plugin-install-name span{color:var(--muted);font-size:9px}
 .plugin-install-details p{color:var(--muted);font-size:10px;line-height:1.55;margin:10px 0}
 .plugin-install-review-actions{justify-content:flex-end;margin-top:14px}
+.plugin-version-flow{display:flex;align-items:center;gap:9px;margin:10px 0 2px;font-size:11px;color:var(--muted)}
+.plugin-version-flow b{color:var(--cyan)}
+.plugin-version-flow .candidate{color:var(--good);font-weight:700}
+.plugin-update-caps{margin:12px 0;border:1px solid var(--line);border-radius:10px;background:#041219;padding:12px}
+.plugin-update-section-title{color:var(--cyan);font-size:10px;letter-spacing:.08em;font-weight:700;margin-bottom:8px}
+.plugin-update-cap-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.plugin-update-cap-columns>div>span{font-size:9px;color:var(--muted)}
+.plugin-update-delta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid #17333d}
+.plugin-cap-added{border-color:#2b7f54;color:var(--good)}
+.plugin-cap-removed{border-color:#7d3340;color:var(--bad)}
+.plugin-update-warnings{display:grid;gap:7px;margin:10px 0}
+.plugin-update-warnings .notice{margin:0}
 .ywd-working{position:relative}
 .ywd-working:before{content:"";display:inline-block;width:10px;height:10px;margin-right:7px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-1px;animation:ywdPluginSpin .7s linear infinite}
 @keyframes ywdPluginSpin{to{transform:rotate(360deg)}}
 @keyframes ywdPluginPulse{50%{opacity:.45}}
-@media(max-width:760px){.plugin-grid{grid-template-columns:1fr}.plugin-hero{grid-template-columns:1fr}.plugin-hero .buttonrow{margin-top:0}.plugin-meta{grid-template-columns:1fr}.plugin-telemetry-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.plugin-install-name{flex-direction:column}}
+@media(max-width:760px){.plugin-grid{grid-template-columns:1fr}.plugin-hero{grid-template-columns:1fr}.plugin-hero .buttonrow{margin-top:0}.plugin-meta{grid-template-columns:1fr}.plugin-telemetry-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.plugin-install-name{flex-direction:column}.plugin-update-cap-columns{grid-template-columns:1fr}}
 @media(max-width:440px){.plugin-config-grid{grid-template-columns:1fr}.plugin-title{flex-direction:column}.plugin-card .buttonrow .btn{flex:1 1 100%}.plugin-telemetry-metrics{grid-template-columns:1fr}.plugin-install-review-actions .btn{flex:1 1 100%}}

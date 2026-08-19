@@ -1,100 +1,104 @@
-# Passive DMR voice-frame bridge
+# 🎧 Passive DMR Voice / RX Monitor Core Path
 
-## Proven starting point
+[← Docs index](README.md) · [Architecture](ARCHITECTURE.md) · [Plugins](PLUGINS.md) · [Plugin UI](PLUGIN-UI.md)
 
-`0.1.0-alpha19-dev` Plugin UI v1 is the physically validated foundation for this work. The reference Raspberry Pi Zero W passed the signed `ui-smoke-test` package lifecycle, sandbox/navigation test, configuration bridge test, master Plugin Support test, and normal DMR-operation check.
+YWD-Hotspot's passive DMR voice path exists to let an isolated browser plugin observe received DMR voice without ever becoming the modem owner.
 
-Frozen checkpoints:
+## Safety invariant
 
-```text
-ywd-hotspot:
-  checkpoint-alpha19-plugin-ui-proven
-  f08d0fcb47ae9c022809bf1262a687d80fa81811
+**MMDVM-Host remains the only process that owns the MMDVM serial/RF path.**
 
-ywd-hotspot-plugins:
-  checkpoint-alpha19-plugin-ui-proven
-  e5376fee6be8833d4524a8c4d7d49c62bf703865
-```
+RX Monitor/plugin code never:
 
-MMDVM-Host remains the only process that owns the modem/RF path. Plugin code never opens `/dev/serial0`, never starts a competing MMDVM instance, and never gains TX authority.
+- opens `/dev/serial0`;
+- starts a competing MMDVM process;
+- obtains RF TX authority;
+- receives arbitrary MQTT/network access;
+- writes canonical radio configuration.
 
-## Alpha20 Phase 2A
-
-Phase 2A adds only a passive raw DMR voice-frame observation tap. It does **not** yet expose voice frames to a browser plugin and does **not** decode AMBE audio on the Pi.
+## Current path
 
 ```text
-MMDVM modem / BrandMeister network
-              │
-              ▼
-        pinned MMDVM-Host
-              │
-              ├── normal RF/network processing
-              │
-              └── accepted DMR voice-frame copy
-                         │
-                         ▼
-                 ywd-mmdvm/voice
-                 loopback MQTT only
+MMDVM modem / BrandMeister
+          │
+          ▼
+      MMDVM-Host
+          │ normal DMR processing continues unchanged
+          ├──────────────────────────────────────────────► DMRGateway / RF
+          │
+          └─ accepted voice-frame copy
+                    │
+                    ▼
+             ywd-mmdvm/voice
+             loopback MQTT only
+                    │
+                    ▼
+          trusted voice bridge
+          bounded state / cursor transport
+                    │
+                    ▼
+          read:dmr-voice capability
+                    │
+                    ▼
+          sandboxed RX Monitor iframe
+                    │
+                    ├─ DMR A/B/C deinterleave
+                    ├─ Golay/FEC correction
+                    ├─ AMBE+2 descrambling
+                    ├─ 49-bit vocoder recovery
+                    └─ browser-side AMBE→PCM playback
 ```
 
-The existing low-rate telemetry remains on `ywd-mmdvm/json`. Per-frame voice traffic uses the separate `ywd-mmdvm/voice` topic so the telemetry snapshot service does not parse/rewrite state for every voice frame.
+The Pi performs no AMBE speech synthesis. Expensive decode/playout work happens on the browser device.
 
-## Alpha20.2 build safety model
+## Upstream pin and patch
 
-The first Alpha20 attempt proved that an original Pi Zero W can take longer than thirty minutes to compile MMDVM-Host. It also exposed an important lifecycle problem: a compiler job must never sit in the dependency chain that starts MMDVM-Host or the detached application updater.
-
-Alpha20.2 therefore uses these rules:
-
-- `ywd-mmdvmhost.service` has the same startup dependencies as the proven Alpha19 unit. It does **not** require or want the voice-build service.
-- `ywd-mmdvm-voice-build.service` is started separately and may run while normal hotspot services remain online.
-- the compile is heavily de-prioritized (`Nice=15`, idle I/O scheduling) because the Pi Zero is a single-core RF appliance first and a build machine second;
-- the voice-build service has a two-hour guardrail, but its timeout cannot prevent normal MMDVM-Host startup;
-- an interrupted build is resumed only when the source tree is provably the exact pinned upstream commit with exactly the YWD voice patch applied;
-- otherwise the helper resets to a clean pinned tree before building;
-- `/usr/local/bin/MMDVM-Host` is replaced only after the complete compile succeeds;
-- the previously working binary is retained as a fallback until the patched binary has passed a guarded activation restart;
-- activation preserves whether MMDVM-Host/DMRGateway were running and rolls the MMDVM binary back if the patched host does not restart cleanly.
-
-The compile helper is:
-
-```text
-/opt/ywd-hotspot/app/lib/mmdvm_voice_build.py
-```
-
-## MMDVM-Host patch discipline
-
-YWD continues to pin upstream MMDVM-Host commit:
+Pinned MMDVM-Host commit:
 
 ```text
 dea6e9b2c35857fe6f904c5092bebadb86cbf079
 ```
 
-The YWD patch is:
+YWD patch:
 
 ```text
 lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
 ```
 
-The helper records the upstream commit, patch identity and installed binary identity in:
+The patch mirrors accepted `DT_VOICE_SYNC` / `DT_VOICE` frames to the loopback observation topic while normal MMDVM processing continues.
+
+## Build/activation model
+
+Preparing the patched MMDVM binary is deliberately **not** part of ordinary RF startup or normal application-update critical path.
 
 ```text
-/var/lib/ywd-hotspot/mmdvm-voice-tap.json
+ywd-mmdvm-voice-build.service
+  → low-priority background preparation
+  → exact pinned source + exact patch verification
+  → make -j1 / resumable compatible object build
+  → guarded binary install/activation
+  → fallback to previously working binary on failed activation
 ```
+
+The original Pi Zero can take a long time to compile MMDVM-Host, so compiler work must never block normal hotspot startup or the detached application updater.
+
+Status helper:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
+```
+
+Normal application updates do not recompile MMDVM-Host.
 
 ## Voice-frame envelope
 
-Only actual DMR audio frames are mirrored: `DT_VOICE_SYNC` and `DT_VOICE`. Headers/end/session events remain on the existing sanitized DMR telemetry/session path.
-
-Each MQTT message contains one envelope similar to:
+The passive copy carries metadata plus the existing 33-byte DMR voice burst, for example:
 
 ```json
 {
   "DMRVoice": {
-    "timestamp": "...",
     "source": "rf",
     "slot": 2,
-    "frame_kind": "voice",
-    "data_type": 1,
     "src_id": 3196104,
     "dst_id": 9,
     "group": "yes",
@@ -102,133 +106,93 @@ Each MQTT message contains one envelope similar to:
     "n": 4,
     "ber": 0,
     "rssi": 57,
-    "frame_hex": "...66 hexadecimal characters..."
+    "frame_hex": "...66 lowercase hex characters..."
   }
 }
 ```
 
-`source` is `rf` or `network`. `frame_hex` is the existing 33-byte DMR frame represented as 66 lowercase hexadecimal characters. The Pi performs no AMBE-to-PCM conversion.
+`source` is `rf` or `network`. Headers/end/session events stay on the separate telemetry/session path.
 
-## Alpha20.2 physical validation
+## Trusted bridge
 
-### 1. Update the YWD application first
+`lib/mmdvm_voice_bridge.py` consumes the loopback topic into bounded runtime state. It never owns the modem.
 
-The application update should complete with ordinary MMDVM-Host and DMRGateway service behavior. It should **not** compile MMDVM-Host as part of the update transaction.
+A key Pi Zero optimization is that ingestion and whole-ring JSON snapshot writing are separated: the foreground process drains/parses incoming voice data, while a lower-priority writer process coalesces `voice.json` snapshots. This removed the large shared delivery stalls seen in earlier live-audio tests.
 
-Confirm:
-
-```bash
-cat /opt/ywd-hotspot/app/VERSION
-systemctl is-active ywd-mmdvmhost.service
-systemctl is-active ywd-dmrgateway.service
-```
-
-Expected version:
+Runtime snapshot:
 
 ```text
-0.1.0-alpha20.2-dev
+/run/ywd-hotspot-voice/voice.json
 ```
 
-### 2. Start the experimental build separately
+Core exposes only a bounded capability-gated view through the Plugin UI bridge.
 
-```bash
-sudo systemctl reset-failed ywd-mmdvm-voice-build.service
-sudo systemctl start --no-block ywd-mmdvm-voice-build.service
-```
+## Browser recovery path
 
-Watch it without affecting the build:
+RX Monitor recovers three AMBE+2 codewords per DMR voice burst.
 
-```bash
-sudo journalctl -fu ywd-mmdvm-voice-build.service
-```
+Browser work includes:
 
-If an earlier interrupted compile is reusable, the log should include:
+1. DMR A/B/C bit deinterleave;
+2. Golay correction of protected words;
+3. C1 descrambling seeded from corrected C0 data;
+4. recovery of the 49-bit AMBE+2 2450 vocoder frame;
+5. bounded capture/continuity diagnostics;
+6. browser-side vocoder decode and Web Audio playback.
+
+A clean continuous DMR call produces roughly:
 
 ```text
-YWD voice build: exact patched source tree found; resuming existing object build.
+~16.67 DMR bursts/sec
+3 AMBE frames/burst
+≈50 AMBE frames/sec
+1 AMBE frame = 20 ms
 ```
 
-Otherwise the helper deliberately prepares a fresh pinned tree.
+So 500 recovered AMBE frames represent approximately 10 seconds of nominal voice.
 
-Normal hotspot services should remain online during this compile.
+## Live-audio player
 
-### 3. Confirm build completion
+The proven player architecture keeps vocoder state at 20 ms frame cadence but coalesces decoded PCM into 100 ms chunks before Web Audio scheduling.
 
-```bash
-sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
-```
+Key behavior:
 
-After compilation succeeds but before activation, expect roughly:
+- adaptive 100 ms plugin polling while audio is running;
+- 5 AMBE frames / 100 ms PCM chunks;
+- configurable jitter target, with the useful tested region around 140–170 ms;
+- maintained playout reservoir rather than startup-only buffering;
+- tiny playback-rate correction to prevent long-term browser/audio-clock drift;
+- AUTO call locking so simultaneous duplex timeslots do not thrash the decoder;
+- bridge timestamps used for call/handoff decisions rather than JavaScript callback delay alone;
+- non-destructive call handoff so scheduled old-call audio is not abruptly discarded.
 
-```json
-{
-  "installed": true,
-  "active": false,
-  "marker_status": "installed"
-}
-```
+The browser's AudioContext may run at 44.1/48 kHz; the recovered voice PCM remains 8 kHz speech data and is resampled by the browser audio stack.
 
-The currently running MMDVM process is still the old proven executable at this point.
+## Physical validation status
 
-### 4. Activate with the guarded restart
+Physically exercised on the reference Pi Zero + duplex MMDVM setup:
 
-When ready for a brief RF interruption:
+- duplex TS1 and TS2 normal DMR operation while the passive observer is present;
+- network-path voice-frame recovery;
+- RF-path voice-frame recovery;
+- 49-bit AMBE+2 recovery with zero gaps/unrecoverable frames on clean captures;
+- offline AMBE→PCM intelligibility proof;
+- browser decoder playback from captured frames;
+- live browser audio from busy network talkgroups;
+- stable AUTO operation on busy Worldwide traffic;
+- live RF-side browser audio heard successfully;
+- normal RF/DMRGateway ownership unchanged.
 
-```bash
-sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py activate
-```
+The passive RX path is therefore functionally proven. Remaining work before a public RX Monitor release is primarily packaging/source canonicalization and the separate mbelib/Wasm distribution/licensing decision—not RF-path architecture.
 
-Then:
+## Capture diagnostics
 
-```bash
-sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
-systemctl is-active ywd-mmdvmhost.service
-systemctl is-active ywd-dmrgateway.service
-```
+RX Monitor can export a bounded JSON ring of recovered AMBE frames with route/timestamp/FEC metadata. Because the ring is shared by observed traffic, a long network return can replace earlier RF frames before export; capture source filtering/polish is a diagnostics concern rather than an RF correctness issue.
 
-Expected voice status:
+## Licensing / distribution boundary
 
-```json
-"installed": true,
-"active": true
-```
+Development has used an mbelib-based browser decoder built locally from a pinned upstream source. The repository intentionally does **not** treat a generated decoder artifact as automatically safe to publish merely because local development works.
 
-### 5. Observe frames
+Before promoting RX Monitor from a local signed development candidate to a canonical public package, review the upstream licensing/patent notice and decide what source/binary distribution model the project will support.
 
-```bash
-mosquitto_sub -h 127.0.0.1 -p 18883 -t 'ywd-mmdvm/voice' -v
-```
-
-A Parrot test conveniently exercises both directions:
-
-- local radio TX into the hotspot should produce `"source":"rf"`;
-- the BrandMeister Parrot response should produce `"source":"network"`.
-
-Every `frame_hex` value should contain 66 hexadecimal characters.
-
-A compact ten-frame capture is:
-
-```bash
-mosquitto_sub -h 127.0.0.1 -p 18883 -t 'ywd-mmdvm/voice' -C 10
-```
-
-## Pass criteria before Phase 2B
-
-Phase 2A is accepted when all of these are true:
-
-- Alpha20.2 application update completes independently of the compiler;
-- ordinary MMDVM-Host/DMRGateway operation stays healthy during the background compile;
-- interrupted compatible object files can be resumed safely;
-- build status reaches `installed: true`;
-- guarded activation reaches `active: true`;
-- RF-to-network and network-to-RF DMR still work;
-- network voice produces `source=network` frames;
-- RF voice produces `source=rf` frames;
-- frames stop when voice traffic stops;
-- no additional LAN/WAN listener is created;
-- reboot does not cause an unnecessary rebuild;
-- CPU/temperature remain reasonable after the one-time compile.
-
-## Phase 2B direction
-
-After Phase 2A is physically proven, trusted YWD core will consume `ywd-mmdvm/voice` into a bounded cursor/ring transport and add the explicit `read:dmr-voice` Plugin UI capability. The sandboxed RX Monitor will receive only that capability through the existing MessageChannel bridge. Browser-side AMBE/audio work comes after the bounded bridge itself is proven.
+Private signing keys remain outside both repositories and never belong on the hotspot.

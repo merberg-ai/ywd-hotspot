@@ -28,6 +28,7 @@
     getState: () => request('plugin.getState'),
     getConfig: () => request('plugin.getConfig'),
     ping: () => request('plugin.ping'),
+    readDmrVoice: options => request('plugin.readDmrVoice', options || {}),
   });
 
   window.addEventListener('message', event => {

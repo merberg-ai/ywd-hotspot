@@ -1,10 +1,10 @@
-# 📡 MMDVM Telemetry Bus
+# 📡 MMDVM Telemetry
 
-[Documentation index](README.md) · [Plugin framework](PLUGINS.md) · [Display + instrumentation](DISPLAY.md) · [Architecture](ARCHITECTURE.md)
+[Docs index](README.md) · [Architecture](ARCHITECTURE.md) · [Display](DISPLAY.md) · [MMDVM Sessions](MMDVM-SESSIONS.md)
 
-The Alpha17 `dev-plugins` line adds a passive MMDVM telemetry path for first-party plugins. Its first consumer is the **MMDVM Live Telemetry** package. Alpha17.1 adds the proven MMDVM_HS RSSI normalization needed for real receive-signal values on supported ADF7021 hotspot firmware.
+YWD-Hotspot keeps a passive structured MMDVM telemetry path as **trusted core infrastructure**. The old `mmdvm-live-telemetry` proof plugin has been retired; the telemetry bridge itself remains because dashboard instrumentation, normalized session state, diagnostics, and future capability-gated consumers use it independently of that plugin.
 
-This layer is intentionally separate from RF ownership. A telemetry plugin may observe validated MMDVM state, but it does not own the modem serial port, change RF mode, transmit, or receive arbitrary network access.
+This path never owns the modem or RF configuration.
 
 ## Data path
 
@@ -18,21 +18,21 @@ YWD loopback Mosquitto
    ▼
 ywd-mmdvm-telemetry.service
 trusted YWD bridge
-   │ sanitized schema-1 snapshot
+   │ sanitized bounded snapshot/session input
    ▼
 /run/ywd-hotspot-telemetry/telemetry.json
-   │ read-only observation
-   ├──────────────► trusted WebUI endpoint
    │
-   └──────────────► sandboxed MMDVM Live Telemetry plugin
-                    (no IP sockets / no RF device access)
+   ├─ dashboard instrumentation
+   ├─ normalized DMR sessions
+   ├─ diagnostics
+   └─ explicit future capability consumers
 ```
 
-The broker and bridge are trusted appliance infrastructure. The plugin remains under the existing shared `ywd-plugin@.service` sandbox.
+No telemetry consumer receives modem serial ownership or RF TX authority merely because it can read this state.
 
 ## MMDVM-Host configuration
 
-YWD-Hotspot generates an explicit local MQTT target in `MMDVM-Host.ini`:
+YWD-Hotspot generates a local MQTT target:
 
 ```ini
 [MQTT]
@@ -43,44 +43,17 @@ Keepalive=60
 Name=ywd-mmdvm
 ```
 
-Alpha17.1 also generates the MMDVM_HS RSSI mapping path in the modem section:
-
-```ini
-[Modem]
-RSSIMappingFile=/etc/ywd-hotspot/mmdvm-hs-rssi.dat
-```
-
-The pinned MMDVM-Host publishes structured JSON to the `json` topic beneath its configured name, so the YWD bridge subscribes to:
+The structured JSON topic is:
 
 ```text
 ywd-mmdvm/json
 ```
 
-The existing `MQTTLevel=0` log setting remains unchanged; telemetry uses MMDVM-Host's structured JSON publisher rather than turning on verbose MQTT logging.
+The passive DMR voice tap uses a separate topic so per-frame voice data does not pass through the low-rate telemetry snapshot path.
 
-## MMDVM_HS RSSI normalization
+## Loopback broker boundary
 
-Supported MMDVM_HS ADF7021 firmware with `SEND_RSSI_DATA` reports the **positive magnitude** of received dBm in the extra RSSI bytes appended to RF frames. For example, a firmware value of `62` represents approximately `-62 dBm`.
-
-YWD therefore generates this normalization file:
-
-```text
-# YWD-Hotspot MMDVM_HS RSSI mapping
-0 0
-255 -255
-```
-
-MMDVM-Host linearly interpolates that mapping, so `57 → -57 dBm`, `62 → -62 dBm`, and so on. This is not a guessed RF calibration curve and it does not manufacture RSSI when firmware does not supply RSSI bytes. A firmware build without `SEND_RSSI_DATA` will continue to report RSSI as unavailable.
-
-The generated map lives at `/etc/ywd-hotspot/mmdvm-hs-rssi.dat`, is regenerated with the upstream INI files, and is readable by the unprivileged `ywd-hotspot` MMDVM-Host service account.
-
-Physical validation on the reference hotspot produced raw/report pairs such as `62/-62 dBm` and `57/-57 dBm`, with an RF call summary of `-66/-47/-57 dBm` (minimum/maximum/average). This confirmed the normalization contract without changing modem firmware or RF calibration.
-
-## Broker boundary
-
-YWD does **not** use the normal public MQTT port for this feature.
-
-The bundled broker configuration is:
+The YWD listener is intentionally local-only:
 
 ```text
 listener 18883 127.0.0.1
@@ -88,160 +61,85 @@ allow_anonymous true
 persistence false
 ```
 
-The listener is bound only to IPv4 loopback and the systemd unit also applies localhost-only network policy. There is no LAN/WAN telemetry listener.
+There is no YWD LAN/WAN telemetry listener. `ywd-mqtt.service` owns this dedicated loopback broker instance/configuration.
 
-If Mosquitto is already installed by the operator, YWD does not take ownership of or disable that existing broker. If YWD has to install the broker package itself, the distro default service is disabled and the dedicated `ywd-mqtt.service` owns only the YWD loopback listener.
-
-Removing YWD-Hotspot removes the YWD-owned broker/bridge units but deliberately leaves the Mosquitto OS packages installed. Package removal is never used as a cleanup shortcut for potentially shared software.
+If the OS already has Mosquitto for another purpose, YWD does not use package removal as a cleanup shortcut for shared software.
 
 ## Trusted bridge
 
-`ywd-mmdvm-telemetry.service` runs as the unprivileged `ywd-hotspot` account. It is allowed loopback IP access only because it is trusted core, not plugin code.
+`ywd-mmdvm-telemetry.service` runs as the restricted `ywd-hotspot` account with only the network access needed to reach loopback.
 
-The bridge accepts only known structured envelopes needed by this phase:
+The bridge accepts known structured MMDVM message families rather than copying arbitrary MQTT payloads into browser/plugin-visible state.
 
-- `MMDVM`
-- `RSSI`
-- `BER`
-- `Text`
-- `DMR`
-
-Unknown message families are ignored instead of being copied blindly into plugin-visible state.
-
-The bridge writes one bounded runtime snapshot under:
+Runtime snapshot:
 
 ```text
 /run/ywd-hotspot-telemetry/telemetry.json
 ```
 
-This is a dedicated tmpfs runtime directory. It is intentionally separate from `/run/ywd-hotspot`, which remains owned by the existing live activity collector.
+The file lives under tmpfs runtime state, is recreated at boot, and contains no plugin configuration or reusable credentials.
 
-The snapshot is recreated at boot and contains no plugin configuration or credentials.
+## RSSI normalization
 
-## DMR telemetry exposed in Alpha17
-
-The first bridge schema exposes enough information to prove the framework:
-
-- current MMDVM mode
-- latest structured RSSI sample
-- latest structured BER sample
-- DMR source ID / resolved source info when MMDVM-Host provides it
-- destination ID
-- group/private indicator
-- time slot
-- RF vs network source
-- DMR start / late-entry / end / lost / timeout-style state
-- completed-call duration, BER, loss, and RSSI summary when supplied upstream
-- bridge heartbeat, message count, parser error count, and last-payload age
-
-RSSI is an RF-receive measurement. A network-originated transmission does not magically gain a local RF RSSI value; UI consumers should treat the RSSI/BER samples as measurements with their own age/source semantics rather than synthetic signal data.
-
-## MMDVM Live Telemetry plugin
-
-The Alpha17 package is shipped as:
+Supported MMDVM_HS ADF7021 firmware may report the positive magnitude of received dBm in its RSSI bytes. YWD generates the matching normalization map:
 
 ```text
-mmdvm-live-telemetry
+0 0
+255 -255
 ```
 
-After an Alpha17 application update it must appear as **AVAILABLE**, not automatically installed. This is deliberate: Alpha17 exercises the Alpha16 package lifecycle with a real new package.
+and configures MMDVM-Host to use it through:
 
-Expected progression:
+```ini
+[Modem]
+RSSIMappingFile=/etc/ywd-hotspot/mmdvm-hs-rssi.dat
+```
+
+This converts values such as `62` to approximately `-62 dBm`. It does not invent RSSI when firmware does not provide RSSI data and is not a replacement for a board-specific calibrated RF measurement system.
+
+## DMR/session information
+
+Trusted telemetry/session normalization can expose bounded state such as:
+
+- current MMDVM mode;
+- latest RSSI and BER samples with age/source semantics;
+- DMR source/destination IDs;
+- group/private status;
+- timeslot;
+- RF vs network direction;
+- call/session start/end/lost/timeout state;
+- completed duration/BER/loss/RSSI summaries when supplied upstream;
+- bridge heartbeat/message/error counters.
+
+RSSI is an RF receive measurement. Network-originated audio does not magically acquire a new local RF RSSI sample, so consumers must respect sample age and direction.
+
+See **[MMDVM-SESSIONS.md](MMDVM-SESSIONS.md)** for normalized call/session semantics.
+
+## Dashboard relationship
+
+The dashboard does **not** depend on an MMDVM telemetry plugin. It reads trusted core status/telemetry/session state directly.
+
+This is why removing the old `mmdvm-live-telemetry` plugin did not remove or disable:
 
 ```text
-AVAILABLE
-   ↓ INSTALL
-INSTALLED + DISABLED
-   ↓ ENABLE
-ACTIVE
+ywd-mqtt.service
+ywd-mmdvm-telemetry.service
 ```
 
-Its declared requirements are:
+The old plugin-specific presentation/polling code is a separate cleanup candidate after the current pre-main hardening build is physically validated.
 
-```text
-python3
-systemd
-journalctl
-mmdvm-host
-mosquitto-broker
-mosquitto-client
-mmdvm-serial hardware
-```
+## Update / boot behavior
 
-The package declares `rf_mode=false` and the capability `read:mmdvm-telemetry`. Its service still has only `AF_UNIX` available through the shared plugin template.
+Telemetry runtime is provisioned as passive side infrastructure. Failure to activate it should be reported diagnostically but must not be treated as permission to break otherwise healthy DMR operation.
 
-## WebUI behavior
+Normal application updates preserve RF enabled/active policy while reinstalling trusted runtime units. Candidate validation now treats telemetry as a capability set: if telemetry markers are present in a candidate, the broker config, bridge/session/runtime helpers, and systemd units must be present coherently regardless of branch name.
 
-When the package is installed and enabled, Plugin Manager shows a **LIVE MMDVM TELEMETRY** panel with:
-
-- bridge state
-- MMDVM mode
-- RSSI
-- BER
-- active DMR source/destination/slot/source
-- payload age
-- received message count
-
-The browser polls the lightweight sanitized telemetry endpoint once per second only while the Plugins page is visible. The polling path does not invoke `systemctl` and does not parse the MMDVM journal.
-
-## Update and boot behavior
-
-The local broker and trusted bridge are appliance infrastructure and are enabled at boot once Alpha17 successfully provisions their dependencies.
-
-MMDVM-Host is ordered after the local broker. During the first Alpha17 update, MMDVM-Host may already have started before Mosquitto is installed; the telemetry runtime therefore performs one controlled MMDVM restart after the broker is available so the MQTT connection is opened immediately.
-
-If RF was active, DMRGateway is stopped around that restart and restored afterward. Gateway restoration is attempted even if the MMDVM restart fails.
-
-Telemetry dependency setup is fail-soft: failure to install/start the passive telemetry transport does not intentionally roll back an otherwise successful core application update. The Plugin Manager dependency/bridge state then exposes what is missing for repair.
-
-When leaving `dev-plugins` for plugin-free `dev` or `main`, the current plugin-aware transition helper stops/removes the YWD telemetry units together with the plugin runtime. The Mosquitto package remains installed/inert.
-
-## Physical Alpha17 test checklist
-
-After updating a known-good Alpha16.1 hotspot:
-
-1. Verify normal DMR, BrandMeister, dashboard, and OLED operation first.
-2. Confirm these are active:
-
-   ```bash
-   systemctl is-active ywd-mqtt.service
-   systemctl is-active ywd-mmdvm-telemetry.service
-   ```
-
-3. Confirm the broker is loopback-only:
-
-   ```bash
-   sudo ss -ltnp | grep 18883
-   ```
-
-   Expected listener: `127.0.0.1:18883` only.
-
-4. Inspect the sanitized bridge snapshot:
-
-   ```bash
-   sudo python3 -m json.tool /run/ywd-hotspot-telemetry/telemetry.json
-   ```
-
-5. In Plugin Manager, verify **MMDVM Live Telemetry** starts as **AVAILABLE**.
-6. Run **CHECK DEPENDENCIES** and **CHECK HARDWARE**.
-7. **INSTALL** it. It must remain disabled/inactive.
-8. **ENABLE** it. The service and live telemetry panel should become active.
-9. Key the local radio into the hotspot and verify live DMR source/destination plus RSSI/BER updates.
-10. Receive a network-originated DMR call and verify source/destination activity without treating stale RF RSSI as a new network measurement.
-11. Test **TEST**, **LOGS**, STOP/START/RESTART runtime controls, disable/enable, and plugin uninstall/reinstall.
-12. Reboot and verify an enabled telemetry plugin returns automatically while the core hotspot remains healthy.
-
-Useful diagnostic block:
+## Basic diagnostics
 
 ```bash
-echo '===== TELEMETRY CORE ====='
+echo '===== TELEMETRY SERVICES ====='
 systemctl is-active ywd-mqtt.service
 systemctl is-active ywd-mmdvm-telemetry.service
-
-echo
-echo '===== TELEMETRY PLUGIN ====='
-systemctl is-active 'ywd-plugin@mmdvm-live-telemetry.service' || true
-systemctl is-enabled 'ywd-plugin@mmdvm-live-telemetry.service' || true
 
 echo
 echo '===== LOOPBACK LISTENER ====='
@@ -267,19 +165,10 @@ echo '===== FAILURES ====='
 systemctl --failed --no-pager
 ```
 
-## Why this exists before an RF-control plugin
+Expected listener scope is `127.0.0.1:18883`, not a public/LAN address.
 
-The telemetry bus deliberately proves several hard problems first:
+## Relationship to plugins
 
-- structured MMDVM data ingestion
-- explicit capability declaration
-- safe privileged/core-to-plugin boundary
-- package dependency + hardware checks
-- service lifecycle
-- reboot/update behavior
-- low-overhead live WebUI data
-- fail-closed plugin activation
+Telemetry established a reusable observation boundary, but current plugins still require explicit declared capabilities and do not receive raw modem/network ownership. A future telemetry-oriented plugin can consume a narrow core capability rather than opening its own MQTT or modem connection.
 
-A future MMDVM control or RF-mode plugin can build on this observation layer instead of inventing a second telemetry path or asking every plugin for raw modem/network access.
-
-That future phase still requires a separate ownership/arbitration design before any plugin is allowed to reconfigure or control the MMDVM RF path.
+Any future RF-control plugin remains a separate architectural problem requiring trusted-core ownership/arbitration, explicit operator intent, safe state capture/restore, and failure recovery.

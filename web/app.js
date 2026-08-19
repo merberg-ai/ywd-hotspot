@@ -243,7 +243,7 @@
       else button.removeAttribute('aria-busy');
     };
 
-    new MutationObserver(sync).observe(badge, {childList:true, characterData:true, subtree:true});
+    new MutationObserver(sync).observe(badge, {childList:true, characterData:true,subtree:true});
     button.addEventListener('click', () => {
       button.classList.add('ywd-checking');
       button.setAttribute('aria-busy', 'true');
@@ -314,7 +314,7 @@
   }
 
   loadStyle('/ui-polish.css?v=alpha18.2.7');
-  loadStyle('/hero-layout.css?v=alpha21');
+  loadStyle('/hero-layout.css?v=alpha21.1');
   loadStyle('/update.css?v=alpha18.2.6');
   loadStyle('/instrumentation.css?v=alpha12.1');
   loadStyle('/plugin-manager.css?v=alpha17');

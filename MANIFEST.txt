@@ -103,9 +103,6 @@ lib/web_auth.py
 lib/ywd-mosquitto.conf
 lib/plugin_packages/system-info/config.schema.json
 lib/plugin_packages/system-info/plugin.json
-lib/service_plugin_packages/mmdvm-live-telemetry/config.schema.json
-lib/service_plugin_packages/mmdvm-live-telemetry/plugin.json
-lib/service_plugin_packages/mmdvm-live-telemetry/service.py
 lib/service_plugin_packages/service-heartbeat/config.schema.json
 lib/service_plugin_packages/service-heartbeat/plugin.json
 lib/service_plugin_packages/service-heartbeat/service.py

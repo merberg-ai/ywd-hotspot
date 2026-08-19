@@ -9,6 +9,12 @@ if declare -F ywd_banner >/dev/null; then
   ywd_info "MMDVM-Host / DMRGateway are not recompiled by normal app updates."
 fi
 
+# The incoming candidate must prove that every runtime capability it contains is
+# internally complete before plugin services, OLED ownership, config, or RF
+# service state are touched.
+[[ -f "$SELF/lib/candidate_validate.py" ]] || { echo "[FAIL] Update source missing lib/candidate_validate.py" >&2; exit 1; }
+python3 "$SELF/lib/candidate_validate.py" "$SELF"
+
 # Nested console/update/display/plugin helpers are validated before any live
 # service/config work begins.
 if [[ -d "$SELF/lib/console" ]]; then
@@ -18,42 +24,34 @@ if [[ -d "$SELF/lib/console" ]]; then
   done
 fi
 for f in \
+  lib/candidate_validate.py \
   lib/update_runner.py lib/update_admin.py lib/oled.py lib/oled_owner.sh \
-  lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_service_manager.py \
+  lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_update.py lib/plugin_service_manager.py lib/plugin_ui_manager.py \
   lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py \
   lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin_upload.py lib/plugin_admin.py \
-  lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_backup.py lib/plugin_update_safety.py \
+  lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py lib/plugin_update_safety.py \
   lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
-  lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
-  lib/plugin_packages/system-info/plugin.json \
-  lib/plugin_packages/system-info/config.schema.json \
-  lib/service_plugin_packages/service-heartbeat/plugin.json \
-  lib/service_plugin_packages/service-heartbeat/config.schema.json \
-  lib/service_plugin_packages/service-heartbeat/service.py \
+  lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/mmdvm_session.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
+  lib/mmdvm_voice.py lib/mmdvm_voice_bridge.py lib/mmdvm_voice_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
   web/update.js web/update.css web/update-progress.js \
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css \
-  web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js web/plugin-telemetry.js \
+  web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js \
+  web/plugin-ui-host.js web/plugin-ui-runtime.js web/plugin-ui.css \
   web/backup-restore.js web/backup-restore.css \
-  systemd/ywd-update.service systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service; do
+  systemd/ywd-update.service systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service \
+  systemd/ywd-mmdvm-voice.service systemd/ywd-mmdvm-voice-build.service; do
   [[ -f "$SELF/$f" ]] || { echo "[FAIL] Update source missing $f" >&2; exit 1; }
 done
-python3 -m py_compile \
-  "$SELF/lib/update_runner.py" "$SELF/lib/update_admin.py" "$SELF/lib/dashboard_update.py" "$SELF/lib/oled.py" \
-  "$SELF/lib/plugin_manifest.py" "$SELF/lib/plugin_manager.py" "$SELF/lib/plugin_package_manager.py" "$SELF/lib/plugin_service_manager.py" \
-  "$SELF/lib/plugin_catalog_overlay.py" "$SELF/lib/plugin_package_archive.py" "$SELF/lib/plugin_service_runner.py" \
-  "$SELF/lib/plugin_admin_common.py" "$SELF/lib/plugin_admin_state.py" "$SELF/lib/plugin_admin_packages.py" "$SELF/lib/plugin_admin_upload.py" "$SELF/lib/plugin_admin.py" \
-  "$SELF/lib/dashboard_plugins.py" "$SELF/lib/dashboard_plugin_upload.py" "$SELF/lib/dashboard_backup.py" \
-  "$SELF/lib/plugin_update_safety.py" "$SELF/lib/settings_backup.py" "$SELF/lib/settings_admin.py" "$SELF/lib/setup_restore_server.py" \
-  "$SELF/lib/mmdvm_telemetry.py" "$SELF/lib/mmdvm_telemetry_bridge.py" "$SELF/lib/telemetry_runtime.py" \
-  "$SELF/lib/service_plugin_packages/service-heartbeat/service.py"
+
+mapfile -t py_sources < <(find "$SELF/lib" -type f -name '*.py' -print | sort)
+((${#py_sources[@]})) || { echo "[FAIL] No Python runtime sources found" >&2; exit 1; }
+python3 -m py_compile "${py_sources[@]}"
 bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh"
 [[ -f "$SELF/lib/system_branding.sh" ]] && bash -n "$SELF/lib/system_branding.sh"
 
-# Validate both plugin catalogs with isolated missing state/config/package paths.
-# Missing activation state remains fail-closed. Missing package state uses only
-# the explicit Alpha15 legacy-installed IDs so the Alpha16 update preserves the
-# two already-proven reference plugins but future new packages stay available,
-# not installed.
+# Validate discovered built-in catalogs without depending on old proof-package
+# identities.  This keeps the candidate gate valid after reference fixtures are
+# retired while still failing closed on any malformed package that is shipped.
 PYTHONPATH="$SELF/lib" \
 YWD_PLUGIN_CATALOG="$SELF/lib/plugin_packages" \
 YWD_SERVICE_PLUGIN_CATALOG="$SELF/lib/service_plugin_packages" \
@@ -70,13 +68,10 @@ import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
 import plugin_manager, plugin_service_manager, settings_backup
 base = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
 assert base["system"]["enabled"] is False
-system_info = [p for p in base["plugins"] if p.get("id") == "system-info"]
-assert len(system_info) == 1 and system_info[0].get("valid") and system_info[0].get("installed"), system_info
-services = plugin_service_manager.snapshot()
-heartbeat = [p for p in services if p.get("id") == "service-heartbeat"]
-assert len(heartbeat) == 1 and heartbeat[0].get("valid") and heartbeat[0].get("installed"), heartbeat
-assert not any(p.get("id") == "mmdvm-live-telemetry" for p in services), services
-assert all(not p.get("rf_mode") for p in services)
+assert all(p.get("valid") is True for p in base.get("plugins", [])), base.get("plugins", [])
+services = plugin_service_manager.discover()
+assert all(p.get("valid") is True for p in services), services
+assert all(not p.get("manifest", {}).get("rf_mode") for p in services if p.get("valid")), services
 PY
 
 CORE="$SELF/UPDATE-core.sh"

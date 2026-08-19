@@ -96,7 +96,13 @@
     const iframe = document.createElement('iframe');
     iframe.className = 'plugin-ui-frame';
     iframe.title = `${plugin.name} plugin`;
-    iframe.setAttribute('sandbox', 'allow-scripts');
+    const sandbox = ['allow-scripts'];
+    // A read:dmr-voice UI may export a bounded capture that already exists in
+    // its browser memory. allow-downloads permits only that user-requested
+    // local download; the iframe remains opaque-origin with no network, forms,
+    // popups, device access, or same-origin privilege.
+    if (Array.isArray(plugin.capabilities) && plugin.capabilities.includes('read:dmr-voice')) sandbox.push('allow-downloads');
+    iframe.setAttribute('sandbox', sandbox.join(' '));
     iframe.referrerPolicy = 'no-referrer';
     iframe.src = `/api/plugins/ui/${encodeURIComponent(id)}/frame?v=${encodeURIComponent(plugin.version || '')}`;
     stage.appendChild(iframe);

@@ -5,17 +5,19 @@ This process is first-party appliance infrastructure, not plugin code. It owns n
 RF hardware and never talks to MMDVM serial. MMDVM-Host remains the sole modem
 owner and publishes copies of accepted DMR voice frames to loopback MQTT.
 
-The subscriber pipe is consumed as non-blocking bytes rather than through a
-buffered TextIOWrapper. A selector only reports kernel-level readability; using
-readline() on a buffered text stream can leave additional MQTT lines stranded in
-the Python userspace buffer until more kernel data arrives. For live audio that
-turns a normal DMR burst stream into artificial 100-400 ms delivery gaps. The
-binary drain below consumes every complete line already available each wakeup.
+Alpha22.5 keeps MQTT ingestion and snapshot serialization in separate processes.
+The foreground reader only drains/parses MQTT and forwards compact events. A
+nice'd writer process owns the bounded JSON ring, coalesces state-file updates,
+and performs the heavier json.dump/atomic replace work. On a single-core Pi Zero
+this prevents full-ring serialization from holding the ingestion interpreter/GIL
+while voice bursts are waiting in the subscriber pipe.
 """
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import os
+import queue
 import re
 import selectors
 import signal
@@ -32,6 +34,8 @@ PORT = int(os.environ.get("YWD_MQTT_PORT", "18883"))
 TOPIC = os.environ.get("YWD_MQTT_VOICE_TOPIC", "ywd-mmdvm/voice")
 MAX_FRAMES = max(32, min(512, int(os.environ.get("YWD_MMDVM_VOICE_RING", "160"))))
 MAX_PIPE_BUFFER = 256 * 1024
+WRITE_INTERVAL_S = 0.10
+HEARTBEAT_INTERVAL_S = 1.0
 STOP = threading.Event()
 HEX_RE = re.compile(r"^[0-9a-fA-F]{66}$")
 
@@ -125,6 +129,9 @@ def initial_doc():
             "parse_errors": 0,
             "topic": TOPIC,
             "capacity": MAX_FRAMES,
+            "writer": "process",
+            "snapshot_write_ms": 0.0,
+            "snapshot_write_max_ms": 0.0,
         },
         "next_seq": 1,
         "frames": [],
@@ -181,34 +188,141 @@ def drain_subscriber(fileobj, pipe_buffer):
     return lines, False
 
 
+def writer_main(events):
+    """Own the public ring and coalesce whole-ring snapshots away from ingest."""
+    try:
+        os.nice(10)
+    except Exception:
+        pass
+
+    doc = initial_doc()
+    frames = deque(maxlen=MAX_FRAMES)
+    dirty = True
+    stopping = False
+    last_write = 0.0
+
+    while True:
+        now = time.monotonic()
+        if dirty:
+            due_in = max(0.0, WRITE_INTERVAL_S - (now - last_write)) if last_write else 0.0
+        else:
+            due_in = max(0.0, HEARTBEAT_INTERVAL_S - (now - last_write)) if last_write else 0.0
+
+        event = None
+        try:
+            event = events.get(timeout=min(0.10, due_in) if due_in > 0 else 0.0)
+        except queue.Empty:
+            pass
+        except (EOFError, OSError):
+            stopping = True
+
+        if event is not None:
+            batch = [event]
+            while len(batch) < 512:
+                try:
+                    batch.append(events.get_nowait())
+                except queue.Empty:
+                    break
+                except (EOFError, OSError):
+                    stopping = True
+                    break
+
+            for kind, payload in batch:
+                if kind == "frame":
+                    if isinstance(payload, dict):
+                        frames.append(payload)
+                        doc["next_seq"] = int(payload.get("seq") or doc["next_seq"]) + 1
+                        doc["bridge"]["messages"] += 1
+                        doc["bridge"]["status"] = "online"
+                        dirty = True
+                elif kind == "parse_error":
+                    doc["bridge"]["parse_errors"] += max(1, int(payload or 1))
+                    dirty = True
+                elif kind == "status":
+                    value = str(payload or "unknown")[:32]
+                    if doc["bridge"].get("status") != value:
+                        doc["bridge"]["status"] = value
+                        dirty = True
+                elif kind == "stop":
+                    doc["bridge"]["status"] = "stopped"
+                    dirty = True
+                    stopping = True
+
+        now = time.monotonic()
+        write_due = (dirty and (not last_write or now - last_write >= WRITE_INTERVAL_S)) or (
+            last_write and now - last_write >= HEARTBEAT_INTERVAL_S
+        )
+        if write_due or (stopping and dirty):
+            doc["bridge"]["heartbeat_at"] = time.time()
+            doc["frames"] = list(frames)
+            started = time.monotonic()
+            try:
+                atomic_write(doc)
+            except Exception as exc:
+                print(f"voice snapshot write failed: {exc}", flush=True)
+            else:
+                elapsed_ms = (time.monotonic() - started) * 1000.0
+                doc["bridge"]["snapshot_write_ms"] = round(elapsed_ms, 3)
+                doc["bridge"]["snapshot_write_max_ms"] = round(
+                    max(float(doc["bridge"].get("snapshot_write_max_ms") or 0.0), elapsed_ms), 3
+                )
+                last_write = time.monotonic()
+                dirty = False
+
+        if stopping:
+            if dirty:
+                continue
+            break
+
+
 def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    doc = initial_doc()
-    frames = deque(maxlen=MAX_FRAMES)
-    atomic_write(doc)
+
+    ctx = mp.get_context("fork")
+    events = ctx.Queue(maxsize=0)
+    writer = ctx.Process(target=writer_main, args=(events,), name="ywd-voice-writer", daemon=False)
+    writer.start()
+
     child = None
     selector = selectors.DefaultSelector()
     child_started = 0.0
     pipe_buffer = bytearray()
-    dirty = False
-    last_write = 0.0
-    print(f"YWD DMR voice bridge starting: {HOST}:{PORT} topic={TOPIC} ring={MAX_FRAMES}", flush=True)
+    next_seq = 1
+    current_status = None
+    print(
+        f"YWD DMR voice bridge starting: {HOST}:{PORT} topic={TOPIC} ring={MAX_FRAMES} writer_pid={writer.pid}",
+        flush=True,
+    )
+
+    def emit(kind, payload=None):
+        try:
+            events.put_nowait((kind, payload))
+            return True
+        except Exception as exc:
+            print(f"voice writer queue failed: {exc}", flush=True)
+            return False
+
+    def emit_status(value):
+        nonlocal current_status
+        if current_status == value:
+            return
+        current_status = value
+        emit("status", value)
+
     try:
         while not STOP.is_set():
             now = time.time()
+            if not writer.is_alive():
+                raise RuntimeError("voice snapshot writer exited unexpectedly")
+
             if child is None or child.poll() is not None:
                 if child is not None:
                     try:
                         selector.unregister(child.stdout)
                     except Exception:
                         pass
-                doc["bridge"]["status"] = "connecting"
-                doc["bridge"]["heartbeat_at"] = now
-                doc["frames"] = list(frames)
-                atomic_write(doc)
-                dirty = False
-                last_write = now
+                emit_status("connecting")
                 pipe_buffer.clear()
                 if STOP.wait(1.0):
                     break
@@ -225,33 +339,25 @@ def main():
                         break
                     continue
 
-            for key, _mask in selector.select(timeout=0.10):
+            for key, _mask in selector.select(timeout=0.05):
                 lines, overflow = drain_subscriber(key.fileobj, pipe_buffer)
                 if overflow:
-                    doc["bridge"]["parse_errors"] += 1
-                    dirty = True
+                    emit("parse_error", 1)
                     continue
                 for raw_line in lines:
-                    item = parse_line(raw_line, int(doc["next_seq"]))
+                    item = parse_line(raw_line, next_seq)
                     if item is None:
-                        doc["bridge"]["parse_errors"] += 1
+                        emit("parse_error", 1)
                     else:
-                        frames.append(item)
-                        doc["next_seq"] = item["seq"] + 1
-                        doc["bridge"]["messages"] += 1
-                        doc["bridge"]["status"] = "online"
-                    dirty = True
+                        emit("frame", item)
+                        next_seq += 1
+                        emit_status("online")
 
             now = time.time()
             if child is not None and child.poll() is None and now - child_started >= 2.0:
-                doc["bridge"]["status"] = "online"
-            doc["bridge"]["heartbeat_at"] = now
-            if (dirty and now - last_write >= 0.10) or now - last_write >= 1.0:
-                doc["frames"] = list(frames)
-                atomic_write(doc)
-                dirty = False
-                last_write = now
+                emit_status("online")
     finally:
+        STOP.set()
         if child is not None:
             try:
                 child.terminate()
@@ -261,11 +367,20 @@ def main():
                     child.kill()
                 except Exception:
                     pass
-        doc["bridge"]["status"] = "stopped"
-        doc["bridge"]["heartbeat_at"] = time.time()
-        doc["frames"] = list(frames)
         try:
-            atomic_write(doc)
+            emit("stop", None)
+            writer.join(timeout=3.0)
+        except Exception:
+            pass
+        if writer.is_alive():
+            try:
+                writer.terminate()
+                writer.join(timeout=1.0)
+            except Exception:
+                pass
+        try:
+            events.close()
+            events.join_thread()
         except Exception:
             pass
         print("YWD DMR voice bridge stopped", flush=True)

@@ -43,5 +43,25 @@
 .plugin-telemetry-metrics{grid-template-columns:repeat(3,minmax(0,1fr));margin:7px 0}
 .plugin-telemetry-call{display:grid;gap:4px;border-top:1px solid #17333d;padding-top:8px;font-size:10px;color:var(--muted)}
 .plugin-telemetry-call b{color:var(--text);font-weight:600;word-break:break-word}
-@media(max-width:760px){.plugin-grid{grid-template-columns:1fr}.plugin-hero{grid-template-columns:1fr}.plugin-hero .buttonrow{margin-top:0}.plugin-meta{grid-template-columns:1fr}.plugin-telemetry-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:440px){.plugin-config-grid{grid-template-columns:1fr}.plugin-title{flex-direction:column}.plugin-card .buttonrow .btn{flex:1 1 100%}.plugin-telemetry-metrics{grid-template-columns:1fr}}
+.plugin-upload-progress{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:center;gap:10px;margin:11px 0 8px}
+.plugin-upload-track{height:8px;border:1px solid var(--line);border-radius:999px;background:#031016;overflow:hidden;box-shadow:inset 0 0 10px #0008}
+.plugin-upload-track span{display:block;width:0;height:100%;background:linear-gradient(90deg,#1ba7c8,var(--cyan));box-shadow:0 0 12px #62e9ff88;transition:width .12s linear}
+.plugin-upload-progress>span{font-size:10px;color:var(--cyan);text-align:right}
+.plugin-install-dialog{width:min(680px,calc(100vw - 28px));max-height:min(82vh,760px);overflow:auto}
+.plugin-install-steps{display:grid;gap:6px;margin:14px 0}
+.plugin-install-steps>div{display:flex;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#061219;color:var(--muted);font-size:10px}
+.plugin-install-steps b{color:var(--muted)}
+.plugin-install-steps .good{border-color:#285d43}.plugin-install-steps .good b{color:var(--good)}
+.plugin-install-steps .bad{border-color:#6e303c}.plugin-install-steps .bad b{color:var(--bad)}
+.plugin-install-steps .working b{color:var(--cyan);animation:ywdPluginPulse 1s ease-in-out infinite}
+.plugin-install-details{margin:12px 0;border:1px solid var(--line);border-radius:10px;background:#041219;padding:12px}
+.plugin-install-name{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.plugin-install-name strong{color:var(--text);font-size:15px}.plugin-install-name span{color:var(--muted);font-size:9px}
+.plugin-install-details p{color:var(--muted);font-size:10px;line-height:1.55;margin:10px 0}
+.plugin-install-review-actions{justify-content:flex-end;margin-top:14px}
+.ywd-working{position:relative}
+.ywd-working:before{content:"";display:inline-block;width:10px;height:10px;margin-right:7px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-1px;animation:ywdPluginSpin .7s linear infinite}
+@keyframes ywdPluginSpin{to{transform:rotate(360deg)}}
+@keyframes ywdPluginPulse{50%{opacity:.45}}
+@media(max-width:760px){.plugin-grid{grid-template-columns:1fr}.plugin-hero{grid-template-columns:1fr}.plugin-hero .buttonrow{margin-top:0}.plugin-meta{grid-template-columns:1fr}.plugin-telemetry-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.plugin-install-name{flex-direction:column}}
+@media(max-width:440px){.plugin-config-grid{grid-template-columns:1fr}.plugin-title{flex-direction:column}.plugin-card .buttonrow .btn{flex:1 1 100%}.plugin-telemetry-metrics{grid-template-columns:1fr}.plugin-install-review-actions .btn{flex:1 1 100%}}

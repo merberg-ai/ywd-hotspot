@@ -56,7 +56,7 @@
     if (active) switchFallback();
   }
 
-  function bridgeResult(plugin, op) {
+  async function bridgeResult(plugin, op, args = {}) {
     if (!eligible(plugin)) throw new Error('Plugin UI is no longer enabled');
     if (op === 'plugin.ping') return {ok:true, api:1, id:plugin.id};
     if (op === 'plugin.getConfig') return plugin.config && typeof plugin.config === 'object' ? plugin.config : {};
@@ -71,6 +71,17 @@
         capabilities: Array.isArray(plugin.capabilities) ? [...plugin.capabilities] : [],
         ui: plugin.ui || null,
       };
+    }
+    if (op === 'plugin.readDmrVoice') {
+      if (!Array.isArray(plugin.capabilities) || !plugin.capabilities.includes('read:dmr-voice')) {
+        throw new Error('Plugin does not have read:dmr-voice capability');
+      }
+      const afterRaw = Number(args?.after ?? 0);
+      const limitRaw = Number(args?.limit ?? 32);
+      const after = Number.isFinite(afterRaw) ? Math.max(0, Math.floor(afterRaw)) : 0;
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(64, Math.floor(limitRaw))) : 32;
+      const data = await jsonFetch(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/dmr-voice?after=${encodeURIComponent(after)}&limit=${encodeURIComponent(limit)}`);
+      return data.voice || {schema:1, bridge:{status:'unavailable'}, cursor:after, frames:[]};
     }
     throw new Error(`Plugin UI operation is not permitted: ${op}`);
   }
@@ -97,14 +108,14 @@
       try { session.port?.close(); } catch (_) {}
       const channel = new MessageChannel();
       session.port = channel.port1;
-      channel.port1.onmessage = event => {
+      channel.port1.onmessage = async event => {
         const request = event.data || {};
         if (request.type !== 'request' || !Number.isInteger(request.id)) return;
         try {
-          const result = bridgeResult(plugins.get(id), String(request.op || ''));
+          const result = await bridgeResult(plugins.get(id), String(request.op || ''), request.args || {});
           channel.port1.postMessage({type:'response', id:request.id, ok:true, result});
         } catch (error) {
-          channel.port1.postMessage({type:'response', id:request.id, ok:false, error:String(error?.message || error)});
+          try { channel.port1.postMessage({type:'response', id:request.id, ok:false, error:String(error?.message || error)}); } catch (_) {}
         }
       };
       channel.port1.start?.();

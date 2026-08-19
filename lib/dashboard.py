@@ -193,6 +193,30 @@ def search_talkgroups(query="", ids=None, limit=40, force=False):
     }
 
 
+def _bm_mode_and_slots():
+    """Return the configured RF mode and the BrandMeister slots valid for it."""
+    mode = str(core.canonical_cfg().get("radio", {}).get("mode", "simplex")).strip().lower()
+    if mode == "duplex":
+        return "duplex", {1, 2}
+    return "simplex", {0}
+
+
+def _bm_request_slot(body):
+    mode, allowed = _bm_mode_and_slots()
+    if "slot" not in body:
+        if mode == "simplex":
+            return 0
+        raise ValueError("timeslot is required in duplex mode (use slot 1 or 2)")
+    try:
+        slot = int(body.get("slot"))
+    except Exception as exc:
+        raise ValueError("invalid timeslot") from exc
+    if slot not in allowed:
+        expected = "0" if mode == "simplex" else "1 or 2"
+        raise ValueError(f"invalid timeslot for {mode} mode; expected {expected}")
+    return slot
+
+
 class H(core.H):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -243,6 +267,50 @@ class H(core.H):
                 self.send_json({"error": str(exc)[:500]}, 502)
             return
         super().do_GET()
+
+    def do_POST(self):
+        """Make BrandMeister control operations aware of simplex vs duplex slots.
+
+        dashboard_core still carries the legacy simplex-slot-0 handlers.  Intercept
+        only the BM routes here so the rest of the proven dashboard/RF path stays
+        untouched.
+        """
+        path = urlparse(self.path).path
+        if not path.startswith("/api/bm/"):
+            super().do_POST()
+            return
+        if not self.require_bm():
+            return
+        try:
+            body = self.body_json()
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, 400)
+            return
+        try:
+            slot = _bm_request_slot(body)
+            if path == "/api/bm/drop-qso":
+                out = core.brandmeister.drop_qso(slot)
+            elif path == "/api/bm/drop-dynamic":
+                out = core.brandmeister.drop_dynamic(slot)
+            elif path == "/api/bm/static/add":
+                tg = _tg_id(body.get("talkgroup"))
+                if tg is None:
+                    raise ValueError("invalid talkgroup")
+                out = core.brandmeister.add_static(tg, slot)
+            elif path == "/api/bm/static/remove":
+                tg = _tg_id(body.get("talkgroup"))
+                if tg is None:
+                    raise ValueError("invalid talkgroup")
+                out = core.brandmeister.remove_static(tg, slot)
+            else:
+                self.send_json({"error": "not found"}, 404)
+                return
+            core.invalidate_bm()
+            self.send_json({"ok": True, "result": out, "slot": slot})
+        except ValueError as exc:
+            self.send_json({"error": str(exc)[:500]}, 400)
+        except Exception as exc:
+            self.send_json({"error": str(exc)[:500]}, 502)
 
 
 def main():

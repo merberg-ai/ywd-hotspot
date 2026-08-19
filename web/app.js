@@ -268,7 +268,18 @@
           toast('No settings changes to apply');
           return;
         }
-        if (!confirm('Save and apply these settings now? Affected services may restart.')) {
+        if (typeof window.ywdConfirm !== 'function') {
+          throw new Error('YWD confirmation UI is unavailable. Reload the dashboard and try again.');
+        }
+        const ok = await window.ywdConfirm({
+          title: 'SAVE + APPLY CONFIGURATION',
+          message: 'Save and apply these settings now?\n\nAffected services may restart.',
+          confirmText: 'SAVE + APPLY',
+          cancelText: 'CANCEL',
+          tone: 'warn',
+          kicker: 'YWD // HOTSPOT'
+        });
+        if (!ok) {
           toast('Save & Apply canceled — nothing changed');
           return;
         }

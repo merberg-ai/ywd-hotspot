@@ -4,6 +4,13 @@
 This process is first-party appliance infrastructure, not plugin code. It owns no
 RF hardware and never talks to MMDVM serial. MMDVM-Host remains the sole modem
 owner and publishes copies of accepted DMR voice frames to loopback MQTT.
+
+The subscriber pipe is consumed as non-blocking bytes rather than through a
+buffered TextIOWrapper. A selector only reports kernel-level readability; using
+readline() on a buffered text stream can leave additional MQTT lines stranded in
+the Python userspace buffer until more kernel data arrives. For live audio that
+turns a normal DMR burst stream into artificial 100-400 ms delivery gaps. The
+binary drain below consumes every complete line already available each wakeup.
 """
 from __future__ import annotations
 
@@ -24,6 +31,7 @@ HOST = os.environ.get("YWD_MQTT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("YWD_MQTT_PORT", "18883"))
 TOPIC = os.environ.get("YWD_MQTT_VOICE_TOPIC", "ywd-mmdvm/voice")
 MAX_FRAMES = max(32, min(512, int(os.environ.get("YWD_MMDVM_VOICE_RING", "160"))))
+MAX_PIPE_BUFFER = 256 * 1024
 STOP = threading.Event()
 HEX_RE = re.compile(r"^[0-9a-fA-F]{66}$")
 
@@ -129,10 +137,48 @@ def spawn_subscriber():
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
-        text=True,
-        bufsize=1,
+        text=False,
+        bufsize=0,
         close_fds=True,
     )
+
+
+def parse_line(raw_line, seq):
+    try:
+        envelope = json.loads(raw_line.decode("utf-8"))
+        raw = envelope.get("DMRVoice") if isinstance(envelope, dict) and len(envelope) == 1 else None
+        return clean_frame(raw, seq)
+    except Exception:
+        return None
+
+
+def drain_subscriber(fileobj, pipe_buffer):
+    """Drain all bytes currently available and return complete MQTT lines."""
+    fd = fileobj.fileno()
+    while True:
+        try:
+            chunk = os.read(fd, 65536)
+        except BlockingIOError:
+            break
+        except InterruptedError:
+            continue
+        if not chunk:
+            break
+        pipe_buffer.extend(chunk)
+        if len(pipe_buffer) > MAX_PIPE_BUFFER:
+            pipe_buffer.clear()
+            return [], True
+
+    lines = []
+    while True:
+        newline = pipe_buffer.find(b"\n")
+        if newline < 0:
+            break
+        line = bytes(pipe_buffer[:newline]).rstrip(b"\r")
+        del pipe_buffer[: newline + 1]
+        if line:
+            lines.append(line)
+    return lines, False
 
 
 def main():
@@ -144,6 +190,7 @@ def main():
     child = None
     selector = selectors.DefaultSelector()
     child_started = 0.0
+    pipe_buffer = bytearray()
     dirty = False
     last_write = 0.0
     print(f"YWD DMR voice bridge starting: {HOST}:{PORT} topic={TOPIC} ring={MAX_FRAMES}", flush=True)
@@ -162,12 +209,14 @@ def main():
                 atomic_write(doc)
                 dirty = False
                 last_write = now
+                pipe_buffer.clear()
                 if STOP.wait(1.0):
                     break
                 try:
                     child = spawn_subscriber()
                     child_started = time.time()
                     if child.stdout is not None:
+                        os.set_blocking(child.stdout.fileno(), False)
                         selector.register(child.stdout, selectors.EVENT_READ)
                 except Exception as exc:
                     print(f"voice subscriber start failed: {exc}", flush=True)
@@ -177,29 +226,27 @@ def main():
                     continue
 
             for key, _mask in selector.select(timeout=0.10):
-                line = key.fileobj.readline()
-                if not line:
-                    continue
-                try:
-                    envelope = json.loads(line)
-                    raw = envelope.get("DMRVoice") if isinstance(envelope, dict) and len(envelope) == 1 else None
-                    item = clean_frame(raw, int(doc["next_seq"]))
-                except Exception:
-                    item = None
-                if item is None:
+                lines, overflow = drain_subscriber(key.fileobj, pipe_buffer)
+                if overflow:
                     doc["bridge"]["parse_errors"] += 1
-                else:
-                    frames.append(item)
-                    doc["next_seq"] = item["seq"] + 1
-                    doc["bridge"]["messages"] += 1
-                    doc["bridge"]["status"] = "online"
-                dirty = True
+                    dirty = True
+                    continue
+                for raw_line in lines:
+                    item = parse_line(raw_line, int(doc["next_seq"]))
+                    if item is None:
+                        doc["bridge"]["parse_errors"] += 1
+                    else:
+                        frames.append(item)
+                        doc["next_seq"] = item["seq"] + 1
+                        doc["bridge"]["messages"] += 1
+                        doc["bridge"]["status"] = "online"
+                    dirty = True
 
             now = time.time()
             if child is not None and child.poll() is None and now - child_started >= 2.0:
                 doc["bridge"]["status"] = "online"
             doc["bridge"]["heartbeat_at"] = now
-            if dirty and now - last_write >= 0.10 or now - last_write >= 1.0:
+            if (dirty and now - last_write >= 0.10) or now - last_write >= 1.0:
                 doc["frames"] = list(frames)
                 atomic_write(doc)
                 dirty = False

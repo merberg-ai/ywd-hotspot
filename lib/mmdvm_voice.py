@@ -46,12 +46,22 @@ def public_poll(after=0, limit=32):
         age = max(0.0, time.time() - float(heartbeat))
     except Exception:
         age = None
+
+    def metric(name):
+        try:
+            return round(max(0.0, float(bridge.get(name) or 0.0)), 3)
+        except Exception:
+            return 0.0
+
     public_bridge = {
         "status": str(bridge.get("status") or "unknown")[:32],
         "heartbeat_age_s": round(age, 3) if age is not None else None,
         "messages": int(bridge.get("messages") or 0),
         "parse_errors": int(bridge.get("parse_errors") or 0),
         "capacity": int(bridge.get("capacity") or 0),
+        "writer": str(bridge.get("writer") or "inline")[:24],
+        "snapshot_write_ms": metric("snapshot_write_ms"),
+        "snapshot_write_max_ms": metric("snapshot_write_max_ms"),
     }
     return {
         "schema": 1,

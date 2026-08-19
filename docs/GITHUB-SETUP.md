@@ -163,9 +163,9 @@ A radio-stack pin change alters the calibration/stability baseline and should be
 ```text
 assets/     branding source/derivatives
 bin/        operator CLI
-/docs       operator/developer documentation
+docs/       operator/developer documentation
 lab/        diagnostics
-a lib/      trusted application core
+lib/        trusted application core
 os/         image builder
 sudoers/    privilege policy
 systemd/    units/sandbox templates

@@ -50,6 +50,7 @@ lib/branding/issue
 lib/branding/motd
 lib/brandmeister.py
 lib/build_info.py
+lib/candidate_validate.py
 lib/config_model.py
 lib/configure.py
 lib/console/ywd-env.sh
@@ -62,6 +63,7 @@ lib/dashboard.py
 lib/dashboard_backup.py
 lib/dashboard_core.py
 lib/dashboard_plugin_upload.py
+lib/dashboard_plugin_wasm.py
 lib/dashboard_plugins.py
 lib/dashboard_update.py
 lib/generate-config.py
@@ -71,6 +73,8 @@ lib/migrate.py
 lib/mmdvm_session.py
 lib/mmdvm_telemetry.py
 lib/mmdvm_telemetry_bridge.py
+lib/mmdvm_voice.py
+lib/mmdvm_voice_bridge.py
 lib/mmdvm_voice_build.py
 lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
 lib/oled.py
@@ -118,6 +122,7 @@ systemd/ywd-dmrid-update.service
 systemd/ywd-dmrid-update.timer
 systemd/ywd-mmdvm-telemetry.service
 systemd/ywd-mmdvm-voice-build.service
+systemd/ywd-mmdvm-voice.service
 systemd/ywd-mmdvmhost.service
 systemd/ywd-mqtt.service
 systemd/ywd-oled.service

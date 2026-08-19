@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import dashboard_core as core
 import mmdvm_telemetry
+import mmdvm_voice
 import plugin_manager
 import plugin_package_manager
 import plugin_service_manager
@@ -121,6 +122,13 @@ def telemetry_for(ident):
     return mmdvm_telemetry.public_snapshot(config.get("stale_after_s", 8))
 
 
+def voice_for(ident, after=0, limit=32):
+    plugin = plugin_ui_manager.get_effective_plugin(ident)
+    if "read:dmr-voice" not in set(plugin.get("capabilities") or []):
+        raise ValueError("plugin is not permitted to read DMR voice frames")
+    return mmdvm_voice.public_poll(after, limit)
+
+
 def plugin_frame_html(plugin):
     ident = plugin["id"]
     ui = plugin["ui"]
@@ -190,6 +198,17 @@ def wrap_handler(base):
                     if len(parts) == 5 and parts[4] == "frame":
                         plugin = plugin_ui_manager.get_effective_plugin(ident)
                         self.send_plugin_ui_bytes(200, plugin_frame_html(plugin), "text/html; charset=utf-8")
+                        return
+                    if len(parts) == 5 and parts[4] == "dmr-voice":
+                        # Raw DMR voice-frame access is intentionally stronger
+                        # than ordinary status/UI access. Require the dashboard
+                        # control session as well as the signed plugin capability.
+                        if not self.require_control():
+                            return
+                        qs = parse_qs(parsed.query, keep_blank_values=False)
+                        after = str((qs.get("after") or ["0"])[0])[:32]
+                        limit = str((qs.get("limit") or ["32"])[0])[:8]
+                        self.send_json({"ok": True, "id": ident, "voice": voice_for(ident, after, limit)})
                         return
                     if len(parts) == 6 and parts[4] == "asset":
                         plugin, asset = plugin_ui_manager.asset_path(ident, parts[5])

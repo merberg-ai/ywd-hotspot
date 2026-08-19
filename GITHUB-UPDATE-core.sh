@@ -126,10 +126,17 @@ trap cleanup EXIT
 
 git -C "$REPO_DIR" archive "$target_sha" | tar -x -C "$stage"
 
+# Every promoted line uses the same capability-based coherence gate.  A
+# plugin/voice/telemetry runtime is validated because the candidate contains it,
+# never merely because the branch happens to be named dev-plugins.
+[[ -f "$stage/lib/candidate_validate.py" ]] || { echo "[FAIL] Candidate is missing lib/candidate_validate.py"; exit 1; }
+python3 "$stage/lib/candidate_validate.py" "$stage"
+
 required=(
   VERSION INSTALL.sh INSTALL-core.sh UPDATE.sh UPDATE-core.sh UNINSTALL.sh
   GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh
   bin/ywd-hotspotctl bin/ywd-hotspotctl-core bin/ywd-ui.sh lab/mmdvm-diag.sh
+  lib/candidate_validate.py
   lib/dashboard.py lib/dashboard_core.py lib/dashboard_update.py lib/admin.py lib/update_admin.py lib/update_runner.py
   lib/build_info.py lib/generate-config.py lib/migrate.py lib/config_model.py lib/oled.py lib/oled_owner.sh
   web/index.html web/app.js web/app-core.js web/talkgroups.js web/ui-polish.js web/ui-polish.css web/style.css
@@ -139,21 +146,19 @@ required=(
   systemd/ywd-dashboard.service systemd/ywd-activity.service systemd/ywd-oled.service systemd/ywd-update.service
   assets/branding/ywd-hotspot-badge-256.webp
 )
+
 plugin_target=0
-if [[ -z "$TAG" && "$BRANCH" == "dev-plugins" ]]; then
+if [[ -f "$stage/lib/plugin_ui_manager.py" || -f "$stage/lib/plugin_package_update.py" || -f "$stage/web/plugin-ui-host.js" || -f "$stage/systemd/ywd-plugin@.service" ]]; then
   plugin_target=1
   required+=(
-    lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_backup.py
-    lib/plugin_admin.py lib/plugin_admin_common.py lib/plugin_admin_upload.py lib/admin_dispatch.sh
-    lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_archive.py
-    lib/plugin_catalog_overlay.py lib/plugin_service_manager.py lib/plugin_service_runner.py lib/plugin_update_safety.py
+    lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py
+    lib/plugin_admin.py lib/plugin_admin_common.py lib/plugin_admin_packages.py lib/plugin_admin_state.py lib/plugin_admin_upload.py lib/admin_dispatch.sh
+    lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_archive.py lib/plugin_package_update.py
+    lib/plugin_catalog_overlay.py lib/plugin_service_manager.py lib/plugin_service_runner.py lib/plugin_ui_manager.py lib/plugin_update_safety.py
     lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh
-    lib/plugin_packages/system-info/plugin.json lib/plugin_packages/system-info/config.schema.json
-    lib/service_plugin_packages/service-heartbeat/plugin.json
-    lib/service_plugin_packages/service-heartbeat/config.schema.json
-    lib/service_plugin_packages/service-heartbeat/service.py
-    web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js
+    web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js
     web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js
+    web/plugin-ui-host.js web/plugin-ui-runtime.js web/plugin-ui.css
     web/backup-restore.js web/backup-restore.css systemd/ywd-plugin@.service
   )
 fi
@@ -174,25 +179,27 @@ if [[ -f "$stage/lib/plugin_update_safety.py" && -f "$stage/lib/plugin_service_m
   plugin_runtime_target=1
 fi
 if (( plugin_target )); then
-  (( plugin_runtime_target )) || { echo "[FAIL] dev-plugins candidate lacks service/update safety runtime"; exit 1; }
+  (( plugin_runtime_target )) || { echo "[FAIL] Plugin-capable candidate lacks service/update safety runtime"; exit 1; }
   PYTHONPATH="$stage/lib" \
   YWD_PLUGIN_CATALOG="$stage/lib/plugin_packages" \
   YWD_SERVICE_PLUGIN_CATALOG="$stage/lib/service_plugin_packages" \
   YWD_LOCAL_PLUGIN_ROOT="$stage/.plugin-local-does-not-exist" \
   YWD_PLUGIN_TRUST_DIR="$stage/.plugin-trust-does-not-exist" \
   YWD_PLUGIN_STATE="$stage/.plugin-state-does-not-exist" \
+  YWD_PLUGIN_PACKAGE_STATE="$stage/.plugin-package-state-does-not-exist" \
   YWD_PLUGIN_CONFIG_DIR="$stage/.plugin-config-does-not-exist" \
+  YWD_PLUGIN_DATA_DIR="$stage/.plugin-data-does-not-exist" \
   python3 - <<'PY'
 import dashboard_backup, dashboard_plugin_upload, dashboard_update
 import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
 import plugin_manager, plugin_service_manager, settings_backup, settings_admin
 snapshot = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
 assert snapshot["api"] == 1
-rows = [p for p in snapshot["plugins"] if p.get("id") == "system-info"]
-assert len(rows) == 1 and rows[0].get("valid") is True, rows
 assert snapshot["system"].get("enabled") is False
+assert all(p.get("valid") is True for p in snapshot.get("plugins", [])), snapshot.get("plugins", [])
 services = plugin_service_manager.discover()
-assert any(e.get("valid") and e.get("manifest",{}).get("id") == "service-heartbeat" for e in services), services
+assert all(e.get("valid") is True for e in services), services
+assert all(not e.get("manifest", {}).get("rf_mode") for e in services if e.get("valid")), services
 PY
 fi
 

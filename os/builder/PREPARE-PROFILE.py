@@ -28,6 +28,10 @@ def main() -> int:
         print(f"[OK] Builder profile prepared: {state}")
         print(f"     callsign: {summary['callsign']}  hotspot ID: {summary['hotspot_id']}")
         print(f"     radio: {summary['radio_mode']}  Wi-Fi: {'preconfigured' if summary['wifi_preconfigured'] else 'setup AP on first boot'}")
+        if summary.get("dashboard_backup_imported"):
+            print(f"     dashboard backup: imported ({summary.get('dashboard_backup_source') or 'unknown file'})")
+            if "restore" in paths:
+                print("     first boot: native dashboard settings restore")
         if summary["missing"]:
             print("     deferred: " + ", ".join(summary["missing"]))
         print(f"     generated: {paths['summary'].parent}")

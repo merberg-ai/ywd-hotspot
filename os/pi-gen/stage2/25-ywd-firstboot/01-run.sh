@@ -1,7 +1,12 @@
 #!/bin/bash -e
 
+THIS_STAGE="$(pwd -P)"
 APP="${ROOTFS_DIR}/opt/ywd-hotspot/app"
 LIBEXEC="${ROOTFS_DIR}/usr/local/libexec"
+FACTORY_CONFIG="${THIS_STAGE}/files/factory-config.json"
+FACTORY_PAYLOAD="${THIS_STAGE}/files/factory-provision.json"
+FACTORY_HELPER="${THIS_STAGE}/files/ywd-factory-provision.py"
+FACTORY_UNIT="${THIS_STAGE}/files/ywd-factory-provision.service"
 
 for f in \
   "${APP}/lib/setup_server.py" \
@@ -14,7 +19,9 @@ for f in \
   "${APP}/lib/update_admin.py" \
   "${APP}/lib/update_runner.py" \
   "${APP}/systemd/ywd-setup.service" \
-  "${APP}/systemd/ywd-update.service"; do
+  "${APP}/systemd/ywd-update.service" \
+  "${FACTORY_HELPER}" \
+  "${FACTORY_UNIT}"; do
   if [ ! -f "$f" ]; then
     echo "ERROR: first-boot/current-update payload missing: $f" >&2
     exit 1
@@ -28,36 +35,70 @@ install -m 0755 "${APP}/lib/setup_admin.py" "${LIBEXEC}/ywd-hotspot-setup-admin"
 install -m 0755 "${APP}/lib/update_admin.py" "${LIBEXEC}/ywd-hotspot-update-admin"
 install -m 0755 "${APP}/lib/update_runner.py" "${LIBEXEC}/ywd-update-runner"
 install -m 0755 "${APP}/lib/admin_dispatch.sh" "${LIBEXEC}/ywd-hotspot-admin"
+install -m 0755 "${FACTORY_HELPER}" "${LIBEXEC}/ywd-factory-provision"
+install -m 0644 "${FACTORY_UNIT}" "${ROOTFS_DIR}/etc/systemd/system/ywd-factory-provision.service"
 chmod 0755 \
   "${APP}/lib/setup_server.py" "${APP}/lib/setup_restore_server.py" \
   "${APP}/lib/settings_backup.py" "${APP}/lib/settings_admin.py" \
   "${APP}/lib/setup_admin.py" "${APP}/lib/setup_entry.sh" \
   "${APP}/lib/admin_dispatch.sh" "${APP}/lib/update_admin.py" "${APP}/lib/update_runner.py"
 
-install -d -m 0700 "${ROOTFS_DIR}/var/lib/ywd-hotspot/setup-tls"
+# Builder profiles always carry a canonical non-secret config overlay. Partial
+# profiles use the normal NOCALL/00000 placeholders for deferred identity and
+# simply pre-fill the secure first-boot wizard. A complete profile additionally
+# carries a one-shot root-only payload that finishes setup before the wizard can
+# start.
+if [ -f "${FACTORY_CONFIG}" ]; then
+  install -m 0640 "${FACTORY_CONFIG}" "${ROOTFS_DIR}/etc/ywd-hotspot/config.json"
+  chown root:ywd-hotspot "${ROOTFS_DIR}/etc/ywd-hotspot/config.json"
+  printf 'Installed builder-supplied canonical hotspot configuration.\n'
+fi
+
+install -d -m 0700 "${ROOTFS_DIR}/var/lib/ywd-hotspot/setup-tls" "${ROOTFS_DIR}/var/lib/ywd-hotspot/private"
+if [ -f "${FACTORY_PAYLOAD}" ]; then
+  install -m 0600 "${FACTORY_PAYLOAD}" "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-provision.json"
+  chown root:root "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-provision.json"
+  printf 'Installed sealed factory preconfiguration payload.\n'
+fi
+
+install -d -m 0755 "${ROOTFS_DIR}/etc/systemd/system/ywd-setup.service.d"
+cat > "${ROOTFS_DIR}/etc/systemd/system/ywd-setup.service.d/10-factory-provision.conf" <<'EOF'
+[Unit]
+Wants=ywd-factory-provision.service
+After=ywd-factory-provision.service
+EOF
+
 on_chroot <<'EOF'
 set -e
 chown -R ywd-hotspot:ywd-hotspot /var/lib/ywd-hotspot/setup-tls
+chmod 0700 /var/lib/ywd-hotspot/private
+chown root:root /var/lib/ywd-hotspot/private
 rm -f /var/lib/ywd-hotspot/setup-state.json
 rm -f /etc/ywd-hotspot/web-auth.json /etc/ywd-hotspot/bm-api.key
 visudo -cf /etc/sudoers.d/ywd-hotspot >/dev/null
+systemctl enable ywd-factory-provision.service
 systemctl enable ywd-setup.service
 systemctl disable ywd-mmdvmhost.service ywd-dmrgateway.service ywd-oled.service >/dev/null 2>&1 || true
 systemctl enable ywd-headless-oled.service
 EOF
 
 cat > "${ROOTFS_DIR}/etc/ywd-hotspot/m4-safety.txt" <<'EOF'
-YWD-Hotspot OS M4 first-boot safety state
+YWD-Hotspot OS first-boot safety state
 
 The appliance is factory-unconfigured until:
   /var/lib/ywd-hotspot/setup-state.json
 exists with state=complete.
 
-The network layer owns Wi-Fi onboarding first. After station Wi-Fi is online,
-the secure setup wizard starts on HTTPS port 8443 and requires the six-digit
-code shown on the OLED. The operator may either complete normal setup or restore
-a verified encrypted .ywdsettings backup. RF services remain disabled until the
-final wizard/restore action explicitly asks to enable them.
+If the image contains a complete builder preconfiguration, the root-only
+factory finalizer validates/applies it through the same setup-finish path used
+by the secure browser wizard. Successful factory provisioning creates the same
+setup-state.json and the wizard is skipped.
+
+If the builder profile is partial, invalid, or the factory finalizer fails, the
+normal flow remains authoritative: network onboarding owns Wi-Fi first, then the
+secure HTTPS setup wizard starts on port 8443 and requires the six-digit OLED
+code. RF stays disabled unless the completed configuration explicitly requests
+RF autostart.
 EOF
 
-printf 'Installed current YWD-Hotspot secure first-boot + restore layer; RF remains disabled.\n'
+printf 'Installed current YWD-Hotspot secure first-boot + factory-preconfiguration layer; RF remains gated.\n'

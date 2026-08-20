@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILDER_DIR="$ROOT_DIR/os/builder"
 CLI=(python3 "$BUILDER_DIR/PROFILE-CLI.py")
+SSH_KEYS=(python3 "$BUILDER_DIR/SSH-KEYS.py")
 
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
   RESET=$'\033[0m'; BOLD=$'\033[1m'; CYAN=$'\033[38;5;51m'; BLUE=$'\033[38;5;75m'
@@ -37,6 +38,22 @@ getv() { "${CLI[@]}" get "$1"; }
 # Send edited values over stdin rather than argv. Besides being simpler for
 # spaces/shell metacharacters, this keeps passwords and API keys out of ps.
 setv() { printf '%s' "$3" | "${CLI[@]}" set-stdin "$1" "$2"; }
+
+rf_autostart_on() {
+  [[ "$(getv config.maintenance.rf_autostart 2>/dev/null || printf 'no')" == "yes" ]]
+}
+
+rf_warning() {
+  if rf_autostart_on; then
+    printf '\n%s%s!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!%s\n' "$RED" "$BOLD" "$RESET"
+    printf '%s%s  WARNING: RF AUTOSTART IS ENABLED%s\n' "$RED" "$BOLD" "$RESET"
+    printf '%s  After successful first-boot setup/restore, the RF stack may%s\n' "$YELLOW" "$RESET"
+    printf '%s  start automatically and the hotspot can transmit RF.%s\n' "$YELLOW" "$RESET"
+    printf '%s  Set Web / Maintenance -> Enable RF on first boot = no%s\n' "$YELLOW" "$RESET"
+    printf '%s  if you want the new image to remain RF-gated after setup.%s\n' "$YELLOW" "$RESET"
+    printf '%s%s!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!%s\n' "$RED" "$BOLD" "$RESET"
+  fi
+}
 
 prompt_text() {
   local path="$1" label="$2" current answer
@@ -254,16 +271,71 @@ import_dashboard_settings() {
   pause
 }
 
-review_profile() { header; "${CLI[@]}" review || true; pause; }
-validate_profile() { header; printf '%s%sVALIDATING PROFILE%s\n\n' "$BOLD" "$CYAN" "$RESET"; "${CLI[@]}" validate && printf '\n%sValidation passed.%s\n' "$GREEN" "$RESET" || printf '\n%sValidation failed.%s\n' "$RED" "$RESET"; pause; }
+ssh_keys_menu() {
+  while true; do
+    header
+    printf '%s%sSSH ACCESS / KEY EXPORT%s\n\n' "$BOLD" "$CYAN" "$RESET"
+    printf 'The builder uses one Ed25519 CLIENT LOGIN key for the ywd account.\n'
+    printf 'Exporting it before the build gives you the exact private key needed\n'
+    printf 'to SSH/SFTP into the freshly flashed hotspot.\n\n'
+    printf '%sServer identity keys (ssh_host_*) are different: they identify the%s\n' "$DIM" "$RESET"
+    printf '%sserver and do not permit login. They should be unique per device and%s\n' "$DIM" "$RESET"
+    printf '%scan be exported from the dashboard after first boot for recovery.%s\n\n' "$DIM" "$RESET"
+    printf '%s  1%s  Generate / export SSH login key bundle\n' "$CYAN" "$RESET"
+    printf '%s  2%s  Show SSH login key status / fingerprint\n' "$CYAN" "$RESET"
+    printf '%s  B%s  Back\n\n' "$MAGENTA" "$RESET"
+    local choice
+    read -r -p 'Select: ' choice
+    case "${choice,,}" in
+      1)
+        printf '\n'
+        if "${SSH_KEYS[@]}" export; then
+          printf '\n%sKeep that archive private; it contains an unencrypted login key.%s\n' "$YELLOW" "$RESET"
+        fi
+        pause
+        ;;
+      2)
+        printf '\n'
+        "${SSH_KEYS[@]}" status || true
+        pause
+        ;;
+      b|'') return 0 ;;
+      *) printf '%sUnknown selection.%s\n' "$RED" "$RESET"; sleep 1 ;;
+    esac
+  done
+}
+
+review_profile() {
+  header
+  "${CLI[@]}" review || true
+  rf_warning
+  pause
+}
+
+validate_profile() {
+  header
+  printf '%s%sVALIDATING PROFILE%s\n\n' "$BOLD" "$CYAN" "$RESET"
+  "${CLI[@]}" validate && printf '\n%sValidation passed.%s\n' "$GREEN" "$RESET" || printf '\n%sValidation failed.%s\n' "$RED" "$RESET"
+  rf_warning
+  pause
+}
+
 run_doctor() { header; printf '%s%sBUILDER DOCTOR%s\n\n' "$BOLD" "$CYAN" "$RESET"; bash "$BUILDER_DIR/DOCTOR.sh" || true; pause; }
 
 run_build() {
   header
   "${CLI[@]}" review || true
+  rf_warning
   printf '\n%sThis starts a full Raspberry Pi OS image build.%s\n' "$YELLOW" "$RESET"
-  read -r -p 'Type BUILD to continue: ' answer
-  [[ "$answer" == 'BUILD' ]] || return 0
+  local answer
+  if rf_autostart_on; then
+    printf '%sBecause RF autostart is ON, extra confirmation is required.%s\n' "$RED" "$RESET"
+    read -r -p 'Type BUILD-RF-ON to continue: ' answer
+    [[ "$answer" == 'BUILD-RF-ON' ]] || return 0
+  else
+    read -r -p 'Type BUILD to continue: ' answer
+    [[ "$answer" == 'BUILD' ]] || return 0
+  fi
   printf '\n'
   bash "$BUILDER_DIR/RUN-BUILD.sh"
   pause
@@ -289,6 +361,7 @@ main_menu() {
     printf '%s  7%s  Web / Maintenance\n' "$CYAN" "$RESET"
     line
     printf '%s  I%s  Import dashboard .ywdsettings\n' "$BLUE" "$RESET"
+    printf '%s  K%s  SSH access / key export\n' "$BLUE" "$RESET"
     printf '%s  R%s  Review configuration\n' "$MAGENTA" "$RESET"
     printf '%s  V%s  Validate profile\n' "$MAGENTA" "$RESET"
     printf '%s  D%s  Builder doctor\n' "$MAGENTA" "$RESET"
@@ -305,6 +378,7 @@ main_menu() {
       6) edit_instrumentation ;;
       7) edit_maintenance ;;
       i) import_dashboard_settings ;;
+      k) ssh_keys_menu ;;
       r) review_profile ;;
       v) validate_profile ;;
       d) run_doctor ;;
@@ -318,4 +392,5 @@ main_menu() {
 
 command -v python3 >/dev/null 2>&1 || { echo 'ERROR: python3 is required.' >&2; exit 1; }
 [[ -f "$BUILDER_DIR/profile_model.py" ]] || { echo 'ERROR: builder profile engine is missing.' >&2; exit 1; }
+[[ -f "$BUILDER_DIR/SSH-KEYS.py" ]] || { echo 'ERROR: builder SSH key helper is missing.' >&2; exit 1; }
 main_menu

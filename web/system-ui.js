@@ -34,36 +34,6 @@
     }
   }
 
-  function installTalkgroupConfirmDedupe() {
-    if (window.__ywdTgConfirmDedupe || typeof window.ywdConfirm !== 'function') return false;
-    const baseConfirm = window.ywdConfirm;
-    const duplicateLabels = new Set(['APPLY PLAN', 'DROP DYNAMIC', 'REPLACE SET', 'DELETE SET']);
-    let recentlyAccepted = null;
-
-    window.ywdConfirm = async function(options = {}) {
-      const label = String(options?.confirmText || '').trim().toUpperCase();
-      const now = performance.now();
-      if (recentlyAccepted && recentlyAccepted.label === label && now - recentlyAccepted.at < 140) {
-        recentlyAccepted = null;
-        return true;
-      }
-
-      const ok = await baseConfirm(options);
-      if (ok && duplicateLabels.has(label)) {
-        const marker = {label, at: performance.now()};
-        recentlyAccepted = marker;
-        setTimeout(() => {
-          if (recentlyAccepted === marker) recentlyAccepted = null;
-        }, 180);
-      } else {
-        recentlyAccepted = null;
-      }
-      return ok;
-    };
-    window.__ywdTgConfirmDedupe = true;
-    return true;
-  }
-
   function installNavigation() {
     const tabs = document.querySelector('.tabs');
     const controlTab = tabs?.querySelector('[data-tab="control"]');
@@ -338,14 +308,13 @@
   }
 
   function install() {
-    const dedupe = installTalkgroupConfirmDedupe();
     const nav = installNavigation();
     const quick = installStatusQuickActions();
     const runtime = installRuntimeCard();
     const dmrid = installDmrIdCard();
     const hooked = hookRender();
     if (typeof setCtl === 'function') setCtl();
-    return dedupe && nav && quick && runtime && dmrid && hooked;
+    return nav && quick && runtime && dmrid && hooked;
   }
 
   let tries = 0;

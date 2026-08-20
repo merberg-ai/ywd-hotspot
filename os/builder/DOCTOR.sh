@@ -44,6 +44,7 @@ else
 fi
 
 for path in \
+  os/builder/SSH-KEYS.py \
   os/pi-gen/stage2/10-ywd-headless \
   os/pi-gen/stage2/15-ywd-network \
   os/pi-gen/stage2/20-ywd-runtime \

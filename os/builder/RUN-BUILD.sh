@@ -24,6 +24,28 @@ chmod 0700 "$LOCAL_DIR" "$GEN_DIR"
 
 python3 "$BUILDER_DIR/PREPARE-PROFILE.py"
 
+# Generate/reuse the exact Ed25519 client key BUILD.sh already consumes from
+# os/local/ywd-os-dev_ed25519. Users can export this same key before or after
+# the build with SSH-KEYS.py; the matching public key is what pi-gen bakes into
+# the ywd account.
+python3 "$BUILDER_DIR/SSH-KEYS.py" ensure >/dev/null
+printf '[INFO] SSH login key: %s\n' "$(python3 "$BUILDER_DIR/SSH-KEYS.py" fingerprint)"
+
+RF_AUTOSTART="$(python3 - "$GEN_DIR/summary.json" <<'PY'
+import json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    print('1' if json.load(f).get('rf_autostart') else '0')
+PY
+)"
+if [[ "$RF_AUTOSTART" == "1" ]]; then
+  printf '\n'
+  printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
+  printf ' WARNING: RF AUTOSTART IS ENABLED IN THIS IMAGE PROFILE\n'
+  printf ' After successful first-boot setup/restore, the RF stack may\n'
+  printf ' start automatically and the hotspot can transmit RF.\n'
+  printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n'
+fi
+
 install -m 0600 "$GEN_DIR/factory-config.json" "$CONFIG_OVERLAY"
 
 if [[ -f "$GEN_DIR/factory-restore.json" ]]; then

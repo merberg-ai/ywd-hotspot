@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILDER_DIR="$ROOT_DIR/os/builder"
 CLI=(python3 "$BUILDER_DIR/PROFILE-CLI.py")
+SYSTEM=(python3 "$BUILDER_DIR/SYSTEM-CLI.py")
 SSH_KEYS=(python3 "$BUILDER_DIR/SSH-KEYS.py")
 
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
@@ -25,11 +26,16 @@ header() {
   printf '%s  dev-builder / interactive appliance image forge%s\n' "$BLUE" "$RESET"
   printf '%s%s============================================================%s\n' "$CYAN" "$BOLD" "$RESET"
   printf '%s  ASCII/SSH-safe interface - RF-safe by default%s\n\n' "$DIM" "$RESET"
-  local status
+  local status system_status
   if status="$("${CLI[@]}" status 2>/dev/null)"; then
     printf '%sSTATUS%s  %s\n' "$MAGENTA" "$RESET" "$status"
   else
     printf '%sSTATUS%s  profile needs attention\n' "$RED" "$RESET"
+  fi
+  if system_status="$("${SYSTEM[@]}" status 2>/dev/null)"; then
+    printf '%sSYSTEM%s  %s\n' "$BLUE" "$RESET" "$system_status"
+  else
+    printf '%sSYSTEM%s  OS settings need attention\n' "$RED" "$RESET"
   fi
   line
 }
@@ -38,6 +44,8 @@ getv() { "${CLI[@]}" get "$1"; }
 # Send edited values over stdin rather than argv. Besides being simpler for
 # spaces/shell metacharacters, this keeps passwords and API keys out of ps.
 setv() { printf '%s' "$3" | "${CLI[@]}" set-stdin "$1" "$2"; }
+sys_getv() { "${SYSTEM[@]}" get "$1"; }
+sys_setv() { printf '%s' "$2" | "${SYSTEM[@]}" set-stdin "$1"; }
 
 rf_autostart_on() {
   [[ "$(getv config.maintenance.rf_autostart 2>/dev/null || printf 'no')" == "yes" ]]
@@ -113,6 +121,24 @@ prompt_choice() {
   setv "$path" str "$answer" || { printf '%sValue rejected; previous value kept.%s\n' "$RED" "$RESET"; pause; }
 }
 
+prompt_system_text() {
+  local key="$1" label="$2" current answer
+  current="$(sys_getv "$key")"
+  printf '\n%s%s%s\nCurrent: %s\n' "$CYAN" "$label" "$RESET" "$current"
+  read -r -p 'New value [Enter = keep]: ' answer
+  [[ -z "$answer" ]] && return 0
+  sys_setv "$key" "$answer" || { printf '%sValue rejected; previous value kept.%s\n' "$RED" "$RESET"; pause; }
+}
+
+prompt_system_choice() {
+  local key="$1" label="$2" choices="$3" current answer
+  current="$(sys_getv "$key")"
+  printf '\n%s%s%s\nCurrent: %s\nChoices: %s\n' "$CYAN" "$label" "$RESET" "$current" "$choices"
+  read -r -p 'New value [Enter = keep]: ' answer
+  [[ -z "$answer" ]] && return 0
+  sys_setv "$key" "$answer" || { printf '%sValue rejected; previous value kept.%s\n' "$RED" "$RESET"; pause; }
+}
+
 section_banner() {
   header
   printf '%s%s%s%s\n' "$BOLD" "$CYAN" "$1" "$RESET"
@@ -127,6 +153,25 @@ edit_image_wifi() {
   prompt_text wifi.ssid 'Wi-Fi SSID (blank = setup AP)'
   prompt_secret wifi.password 'Wi-Fi password (blank valid for open network)'
   prompt_bool wifi.hidden 'Hidden Wi-Fi'
+}
+
+edit_system() {
+  section_banner 'SYSTEM / OS'
+  printf '%sThese values are baked into Raspberry Pi OS itself.%s\n' "$DIM" "$RESET"
+  prompt_system_text hostname 'Hostname (mDNS becomes hostname.local)'
+  prompt_system_text timezone 'Timezone (IANA name, e.g. America/Los_Angeles)'
+  prompt_system_text locale 'Default locale'
+  prompt_system_text keyboard_keymap 'Keyboard keymap'
+  prompt_system_text keyboard_layout 'Keyboard layout description'
+  prompt_system_text wifi_country 'Wi-Fi regulatory country (2 letters)'
+  prompt_system_choice update_channel 'YWD-Hotspot update channel' 'main | dev'
+  prompt_system_choice ssh_policy 'SSH access policy' 'key-only | disabled'
+  if [[ "$(sys_getv ssh_policy)" == "disabled" ]]; then
+    printf '\n%sSSH is disabled in the image. Exported client keys remain valid material,%s\n' "$YELLOW" "$RESET"
+    printf '%sbut cannot be used until SSH is enabled on the appliance later.%s\n' "$YELLOW" "$RESET"
+  else
+    printf '\n%sSSH will be enabled with public-key authentication only for user ywd.%s\n' "$GREEN" "$RESET"
+  fi
 }
 
 edit_station() {
@@ -308,6 +353,8 @@ ssh_keys_menu() {
 review_profile() {
   header
   "${CLI[@]}" review || true
+  printf '\n'
+  "${SYSTEM[@]}" review || true
   rf_warning
   pause
 }
@@ -315,7 +362,15 @@ review_profile() {
 validate_profile() {
   header
   printf '%s%sVALIDATING PROFILE%s\n\n' "$BOLD" "$CYAN" "$RESET"
-  "${CLI[@]}" validate && printf '\n%sValidation passed.%s\n' "$GREEN" "$RESET" || printf '\n%sValidation failed.%s\n' "$RED" "$RESET"
+  local ok=1
+  "${CLI[@]}" validate || ok=0
+  printf '\n'
+  "${SYSTEM[@]}" validate || ok=0
+  if [[ "$ok" == "1" ]]; then
+    printf '\n%sValidation passed.%s\n' "$GREEN" "$RESET"
+  else
+    printf '\n%sValidation failed.%s\n' "$RED" "$RESET"
+  fi
   rf_warning
   pause
 }
@@ -325,6 +380,13 @@ run_doctor() { header; printf '%s%sBUILDER DOCTOR%s\n\n' "$BOLD" "$CYAN" "$RESET
 run_build() {
   header
   "${CLI[@]}" review || true
+  printf '\n'
+  "${SYSTEM[@]}" review || return 0
+  if ! "${SYSTEM[@]}" validate >/dev/null; then
+    printf '\n%sSystem / OS settings are invalid; build cancelled.%s\n' "$RED" "$RESET"
+    pause
+    return 0
+  fi
   rf_warning
   printf '\n%sThis starts a full Raspberry Pi OS image build.%s\n' "$YELLOW" "$RESET"
   local answer
@@ -359,6 +421,7 @@ main_menu() {
     printf '%s  5%s  OLED / Display\n' "$CYAN" "$RESET"
     printf '%s  6%s  Instrumentation / Meters\n' "$CYAN" "$RESET"
     printf '%s  7%s  Web / Maintenance\n' "$CYAN" "$RESET"
+    printf '%s  8%s  System / OS\n' "$CYAN" "$RESET"
     line
     printf '%s  I%s  Import dashboard .ywdsettings\n' "$BLUE" "$RESET"
     printf '%s  K%s  SSH access / key export\n' "$BLUE" "$RESET"
@@ -377,6 +440,7 @@ main_menu() {
       5) edit_oled ;;
       6) edit_instrumentation ;;
       7) edit_maintenance ;;
+      8) edit_system ;;
       i) import_dashboard_settings ;;
       k) ssh_keys_menu ;;
       r) review_profile ;;
@@ -392,5 +456,6 @@ main_menu() {
 
 command -v python3 >/dev/null 2>&1 || { echo 'ERROR: python3 is required.' >&2; exit 1; }
 [[ -f "$BUILDER_DIR/profile_model.py" ]] || { echo 'ERROR: builder profile engine is missing.' >&2; exit 1; }
+[[ -f "$BUILDER_DIR/SYSTEM-CLI.py" ]] || { echo 'ERROR: builder System / OS helper is missing.' >&2; exit 1; }
 [[ -f "$BUILDER_DIR/SSH-KEYS.py" ]] || { echo 'ERROR: builder SSH key helper is missing.' >&2; exit 1; }
 main_menu

@@ -28,6 +28,7 @@ docs/README.md
 docs/ARCHITECTURE.md
 docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
 docs/BACKUP-RESTORE.md
+docs/BUILDING.md
 docs/CALIBRATION.md
 docs/DISPLAY.md
 docs/DMR-VOICE.md

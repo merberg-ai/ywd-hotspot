@@ -34,7 +34,9 @@ header() {
 }
 
 getv() { "${CLI[@]}" get "$1"; }
-setv() { "${CLI[@]}" set "$1" "$2" "$3"; }
+# Send edited values over stdin rather than argv. Besides being simpler for
+# spaces/shell metacharacters, this keeps passwords and API keys out of ps.
+setv() { printf '%s' "$3" | "${CLI[@]}" set-stdin "$1" "$2"; }
 
 prompt_text() {
   local path="$1" label="$2" current answer

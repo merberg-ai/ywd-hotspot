@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Any
 
 from profile_model import (
@@ -10,6 +11,7 @@ from profile_model import (
     compile_profile,
     default_profile,
     get_path,
+    import_dashboard_backup,
     load_profile,
     save_profile,
     set_path,
@@ -37,12 +39,9 @@ def typed(value: str, kind: str) -> Any:
     raise ValueError(f"unsupported type: {kind}")
 
 
-def store(profile: dict[str, Any], path: str, kind: str, value: str) -> None:
-    set_path(profile, path, typed(value, kind))
-    # Validate the whole profile before saving. A rejected edit never replaces
-    # the last usable persistent builder profile.
-    compile_profile(profile)
-    save_profile(profile)
+def _import_info(profile: dict[str, Any]) -> dict[str, Any] | None:
+    info = profile.get("imported_backup")
+    return info if isinstance(info, dict) and isinstance(info.get("payload"), dict) else None
 
 
 def redacted_review(profile: dict[str, Any]) -> str:
@@ -51,9 +50,19 @@ def redacted_review(profile: dict[str, Any]) -> str:
     wifi = compiled["wifi"]
     creds = profile.get("credentials") or {}
     image = compiled["image"]
+    imported = _import_info(profile)
+    imported_payload = imported.get("payload") if imported else {}
+    imported_web_auth = (imported_payload.get("secrets") or {}).get("web_auth") if isinstance(imported_payload, dict) else None
 
     def secret_state(key: str) -> str:
         return "configured" if str(creds.get(key) or "") else "blank"
+
+    if str(creds.get("dashboard_password") or ""):
+        dashboard_state = "configured (builder password)"
+    elif imported_web_auth:
+        dashboard_state = "configured (imported credential)"
+    else:
+        dashboard_state = "blank"
 
     lines = [
         "YWD-HOTSPOT OS BUILDER - PROFILE REVIEW",
@@ -77,7 +86,7 @@ def redacted_review(profile: dict[str, Any]) -> str:
         f"BrandMeister master:    {cfg['brandmeister']['master']}:{cfg['brandmeister']['port']}",
         f"Hotspot Security pass:  {secret_state('hotspot_password')}",
         f"BrandMeister API key:   {secret_state('bm_api_key')}",
-        f"Dashboard password:     {secret_state('dashboard_password')}",
+        f"Dashboard credential:   {dashboard_state}",
         "",
         f"OLED:                   {'enabled' if cfg['display']['enabled'] else 'disabled'}",
         f"OLED runtime mode:      {cfg['display']['runtime_mode']}",
@@ -88,6 +97,28 @@ def redacted_review(profile: dict[str, Any]) -> str:
         "",
         f"Hotspot preconfigured:  {'YES - wizard will be skipped' if compiled['complete'] else 'NO - wizard will run'}",
     ]
+
+    if imported:
+        doc = imported["payload"]
+        source = doc.get("source") if isinstance(doc.get("source"), dict) else {}
+        plugins = doc.get("plugins") if isinstance(doc.get("plugins"), dict) else {}
+        plugin_configs = plugins.get("configs") if isinstance(plugins.get("configs"), dict) else {}
+        trust = plugins.get("trust_keys") if isinstance(plugins.get("trust_keys"), dict) else {}
+        lines += [
+            "",
+            "IMPORTED DASHBOARD BACKUP",
+            "-------------------------",
+            f"File:                   {imported.get('source_file') or 'unknown'}",
+            f"Created:                {doc.get('created_at') or 'unknown'}",
+            f"Source hotspot:         {source.get('hostname') or 'unknown'}",
+            f"Source version:         {source.get('version') or 'unknown'}",
+            f"Calibration baseline:   {'included' if doc.get('calibration_baseline') else 'not included'}",
+            f"Plugin configs:         {len(plugin_configs)}",
+            f"Plugin trust keys:      {len(trust)}",
+            f"Backup Wi-Fi:           {'included' if doc.get('wifi') else 'not included'}",
+            "Restore mode:           native dashboard restore engine",
+        ]
+
     if not compiled["complete"]:
         lines.append("Deferred requirements:   " + ", ".join(compiled["missing"]))
     return "\n".join(lines)
@@ -98,7 +129,14 @@ def status_line(profile: dict[str, Any]) -> str:
     wifi = "preconfigured" if compiled["wifi"]["ssid"] else "setup AP"
     setup = "PRECONFIGURED" if compiled["complete"] else "FIRST-BOOT WIZARD"
     rf = "ON" if compiled["config"]["maintenance"]["rf_autostart"] else "OFF"
-    return f"SETUP={setup} | WIFI={wifi} | RF={rf}"
+    imported = " | IMPORT=dashboard-backup" if compiled.get("imported_backup") else ""
+    return f"SETUP={setup} | WIFI={wifi} | RF={rf}{imported}"
+
+
+def store(profile: dict[str, Any], path: str, kind: str, value: str) -> None:
+    set_path(profile, path, typed(value, kind))
+    compile_profile(profile)
+    save_profile(profile)
 
 
 def main() -> None:
@@ -116,6 +154,9 @@ def main() -> None:
     ss = sp.add_parser("set-stdin")
     ss.add_argument("path")
     ss.add_argument("kind", choices=["str", "int", "float", "bool"])
+
+    imp = sp.add_parser("import-settings")
+    imp.add_argument("path", type=Path)
 
     sp.add_parser("validate")
     sp.add_parser("review")
@@ -141,17 +182,37 @@ def main() -> None:
         return
 
     if args.cmd == "set-stdin":
-        # Intended for passwords/API keys so the secret never appears in argv
-        # or a process listing. The shell frontend writes exactly the entered
-        # bytes to stdin without a trailing newline.
         store(profile, args.path, args.kind, sys.stdin.read())
+        return
+
+    if args.cmd == "import-settings":
+        passphrase = sys.stdin.read()
+        if passphrase.endswith("\n"):
+            passphrase = passphrase[:-1]
+        import_dashboard_backup(args.path, passphrase, profile)
+        imported = load_profile()
+        doc = imported["imported_backup"]["payload"]
+        source = doc.get("source") if isinstance(doc.get("source"), dict) else {}
+        print("IMPORTED")
+        print(f"File: {args.path.expanduser()}")
+        print(f"Created: {doc.get('created_at') or 'unknown'}")
+        print(f"Source: {source.get('hostname') or 'unknown'} / {source.get('version') or 'unknown'}")
+        print("Canonical hotspot configuration imported.")
+        print("BrandMeister credentials imported.")
+        print("Dashboard password hash imported; the plaintext password is never recovered or exposed.")
+        if doc.get("wifi"):
+            print("Wi-Fi profile imported.")
+        print("Calibration/plugin/trust state will be carried through the native dashboard restore path at first boot.")
         return
 
     if args.cmd == "validate":
         compiled = compile_profile(profile)
         print("VALID")
         if compiled["complete"]:
-            print("Hotspot configuration is complete; first-boot hotspot wizard will be skipped.")
+            if compiled.get("imported_backup"):
+                print("Hotspot configuration is complete; imported dashboard backup will be restored before the setup wizard starts.")
+            else:
+                print("Hotspot configuration is complete; first-boot hotspot wizard will be skipped.")
         else:
             print("Hotspot configuration is partial; first-boot hotspot wizard will run.")
             print("Deferred: " + ", ".join(compiled["missing"]))

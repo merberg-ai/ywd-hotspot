@@ -3,6 +3,21 @@
 THIS_STAGE="$(pwd -P)"
 APP_SRC="${THIS_STAGE}/files/app"
 BUILD_ENV="${THIS_STAGE}/files/build.env"
+CACHE_STAGE="${THIS_STAGE}/files/runtime-cache"
+CACHE_ROOTFS="${ROOTFS_DIR}/var/cache/ywd-hotspot/runtime-build"
+
+sync_runtime_cache_back() {
+  if [ -d "${CACHE_ROOTFS}" ]; then
+    rm -rf "${CACHE_STAGE}"
+    mkdir -p "${CACHE_STAGE}"
+    cp -a "${CACHE_ROOTFS}/." "${CACHE_STAGE}/" 2>/dev/null || true
+    chmod -R a+rX "${CACHE_STAGE}" 2>/dev/null || true
+    if [ -n "${SUDO_UID:-}" ] && [ -n "${SUDO_GID:-}" ]; then
+      chown -R "${SUDO_UID}:${SUDO_GID}" "${CACHE_STAGE}" 2>/dev/null || true
+    fi
+  fi
+}
+trap sync_runtime_cache_back EXIT
 
 printf 'YWD runtime stage directory: %s\n' "$THIS_STAGE"
 printf 'YWD runtime app payload:    %s\n' "$APP_SRC"
@@ -26,6 +41,7 @@ source "${BUILD_ENV}"
 : "${YWD_GIT_COMMIT_DATE:?missing YWD_GIT_COMMIT_DATE}"
 : "${YWD_UPDATE_CHANNEL:=dev}"
 : "${YWD_OS_VERSION:=M4.2-unified-dev}"
+: "${YWD_RUNTIME_CACHE_BYPASS:=0}"
 
 printf 'Installing current YWD-Hotspot runtime payload...\n'
 
@@ -42,7 +58,11 @@ install -d -m 0755 "${ROOTFS_DIR}/opt/ywd-hotspot/app" "${ROOTFS_DIR}/usr/local/
 install -d -m 0750 "${ROOTFS_DIR}/etc/ywd-hotspot"
 install -d -m 0750 "${ROOTFS_DIR}/var/lib/ywd-hotspot" "${ROOTFS_DIR}/var/lib/ywd-hotspot/diagnostics"
 install -d -m 0700 "${ROOTFS_DIR}/var/lib/ywd-hotspot/private" "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/config-history"
+install -d -m 0755 "${CACHE_ROOTFS}"
 cp -a "${APP_SRC}/." "${ROOTFS_DIR}/opt/ywd-hotspot/app/"
+if [ -d "${CACHE_STAGE}" ]; then
+  cp -a "${CACHE_STAGE}/." "${CACHE_ROOTFS}/" 2>/dev/null || true
+fi
 
 chmod +x \
   "${ROOTFS_DIR}/opt/ywd-hotspot/app/INSTALL.sh" \
@@ -124,23 +144,16 @@ case "$DETECTED_CPUS" in ''|*[!0-9]*) DETECTED_CPUS=1 ;; esac
 BUILD_JOBS="$DETECTED_CPUS"
 [ "$BUILD_JOBS" -lt 1 ] && BUILD_JOBS=1
 [ "$BUILD_JOBS" -gt 4 ] && BUILD_JOBS=4
-printf 'Building pinned MMDVM-Host and DMRGateway inside armhf rootfs...\n'
+printf 'Installing canonical MMDVM-Host + DMRGateway inside armhf rootfs...\n'
+printf 'MMDVM-Host source: %s @ %s + YWD patch API %s\n' "$MMDVM_HOST_REPO" "$MMDVM_HOST_COMMIT" "$MMDVM_YWD_PATCH_API"
+printf 'MMDVM patch SHA256: %s\n' "$MMDVM_YWD_PATCH_SHA256"
 printf 'Runtime compile parallelism: detected %s CPU(s), using -j%s (cap 4)\n' "$DETECTED_CPUS" "$BUILD_JOBS"
 on_chroot <<EOF
 set -e
-rm -rf /tmp/ywd-runtime-build
-mkdir -p /tmp/ywd-runtime-build
-
-git clone --quiet '${MMDVM_HOST_REPO}' /tmp/ywd-runtime-build/MMDVM-Host
-git -C /tmp/ywd-runtime-build/MMDVM-Host checkout --quiet --detach '${MMDVM_HOST_COMMIT}'
-make -C /tmp/ywd-runtime-build/MMDVM-Host -j${BUILD_JOBS}
-install -m 0755 /tmp/ywd-runtime-build/MMDVM-Host/MMDVM-Host /usr/local/bin/MMDVM-Host
-
-git clone --quiet '${DMR_GATEWAY_REPO}' /tmp/ywd-runtime-build/DMRGateway
-git -C /tmp/ywd-runtime-build/DMRGateway checkout --quiet --detach '${DMR_GATEWAY_COMMIT}'
-make -C /tmp/ywd-runtime-build/DMRGateway -j${BUILD_JOBS}
-install -m 0755 /tmp/ywd-runtime-build/DMRGateway/DMRGateway /usr/local/bin/DMRGateway
-rm -rf /tmp/ywd-runtime-build
+YWD_RUNTIME_BUILD_CACHE=/var/cache/ywd-hotspot/runtime-build \
+YWD_RUNTIME_CACHE_BYPASS='${YWD_RUNTIME_CACHE_BYPASS}' \
+YWD_BUILD_JOBS='${BUILD_JOBS}' \
+python3 /opt/ywd-hotspot/app/lib/runtime_build.py install
 EOF
 
 # Keep a normal full-ref Git checkout in the image. The deployed runtime stays
@@ -199,9 +212,12 @@ YWD-Hotspot OS unified image safety state
 Application: $(tr -d '\r\n' < "${APP_SRC}/VERSION")
 OS: ${YWD_OS_VERSION}
 Source: ${YWD_GIT_BRANCH} @ ${YWD_GIT_COMMIT}
+MMDVM-Host: ${MMDVM_HOST_COMMIT} + YWD voice tap patch API ${MMDVM_YWD_PATCH_API}
+MMDVM patch SHA256: ${MMDVM_YWD_PATCH_SHA256}
 
-RF services are disabled at image build time. The M4 first-boot safety gate and
-secure setup wizard must complete before RF can be explicitly enabled.
+RF services are disabled at image build time. The first-boot safety gate and
+secure setup wizard/factory restore must complete before RF follows the selected
+autostart policy.
 EOF
 
-printf 'Current YWD-Hotspot runtime installation complete; RF remains disabled.\n'
+printf 'Current YWD-Hotspot runtime installation complete; canonical patched MMDVM installed; RF remains disabled.\n'

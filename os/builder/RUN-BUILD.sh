@@ -45,4 +45,4 @@ fi
 source "$GEN_DIR/build.env"
 export YWD_IMG_NAME YWD_OS_VERSION
 
-exec bash "$BUILDER_DIR/BUILD.sh"
+bash "$BUILDER_DIR/BUILD.sh"

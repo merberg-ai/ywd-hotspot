@@ -21,6 +21,10 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin rf-restart, \
  /usr/local/libexec/ywd-hotspot-admin service-restart, \
  /usr/local/libexec/ywd-hotspot-admin reboot, \
+ /usr/local/libexec/ywd-hotspot-admin shutdown, \
+ /usr/local/libexec/ywd-hotspot-admin dmrid-status, \
+ /usr/local/libexec/ywd-hotspot-admin dmrid-check, \
+ /usr/local/libexec/ywd-hotspot-admin dmrid-update, \
  /usr/local/libexec/ywd-hotspot-admin diagnostics, \
  /usr/local/libexec/ywd-hotspot-admin calibration-baseline-save, \
  /usr/local/libexec/ywd-hotspot-admin calibration-baseline-restore, \

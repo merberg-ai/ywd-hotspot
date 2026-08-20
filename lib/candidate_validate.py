@@ -37,11 +37,15 @@ CORE_REQUIRED = (
     "lib/dashboard_core.py",
     "lib/dashboard_update.py",
     "lib/build_info.py",
+    "lib/candidate_validate.py",
     "lib/config_model.py",
+    "lib/dmrid_admin.py",
     "lib/generate-config.py",
+    "lib/id-update.py",
     "lib/migrate.py",
     "lib/oled.py",
     "lib/oled_owner.sh",
+    "lib/system_admin.py",
     "lib/update_admin.py",
     "lib/update_runner.py",
     "sudoers/ywd-hotspot",
@@ -51,6 +55,8 @@ CORE_REQUIRED = (
     "systemd/ywd-activity.service",
     "systemd/ywd-oled.service",
     "systemd/ywd-update.service",
+    "systemd/ywd-dmrid-update.service",
+    "systemd/ywd-dmrid-update.timer",
     "web/index.html",
     "web/app.js",
     "web/app-core.js",
@@ -61,6 +67,8 @@ CORE_REQUIRED = (
     "web/update.js",
     "web/update.css",
     "web/update-progress.js",
+    "web/system-ui.js",
+    "web/system-ui.css",
 )
 
 PLUGIN_MARKERS = (

@@ -16,6 +16,7 @@ import admin
 
 CFG = Path(os.environ.get("YWD_CONFIG", "/etc/ywd-hotspot/config.json"))
 DB = Path(os.environ.get("YWD_DMRID_FILE", "/var/lib/ywd-hotspot/DMRIds.dat"))
+META = Path(os.environ.get("YWD_DMRID_META", "/var/lib/ywd-hotspot/dmrid-status.json"))
 UPDATER = HERE / "id-update.py"
 SOURCE = "RadioID.net"
 
@@ -46,14 +47,33 @@ def unit_enabled(unit: str) -> str:
     return value or "unknown"
 
 
-def record_count() -> int | None:
-    if not DB.is_file():
-        return None
+def record_count(stat) -> int | None:
+    """Count non-empty records once per database revision and cache the result."""
+    signature = {"size_bytes": int(stat.st_size), "mtime_ns": int(stat.st_mtime_ns)}
+    try:
+        cached = json.loads(META.read_text(encoding="utf-8"))
+        if (
+            isinstance(cached, dict)
+            and cached.get("size_bytes") == signature["size_bytes"]
+            and cached.get("mtime_ns") == signature["mtime_ns"]
+            and isinstance(cached.get("records"), int)
+            and cached["records"] >= 0
+        ):
+            return int(cached["records"])
+    except Exception:
+        pass
+
     try:
         with DB.open("rb") as handle:
-            return sum(1 for line in handle if line.strip())
+            count = sum(1 for line in handle if line.strip())
     except Exception:
         return None
+
+    try:
+        admin.atomic_json(META, {**signature, "records": count, "counted_at": time.time()})
+    except Exception:
+        pass
+    return count
 
 
 def status() -> dict:
@@ -65,18 +85,24 @@ def status() -> dict:
     next_due = None
     due = True
     size = None
+    records = None
+    usable = False
     if present:
         stat = DB.stat()
         updated = float(stat.st_mtime)
         size = int(stat.st_size)
         age = max(0.0, now - updated)
         next_due = updated + days * 86400
-        due = age >= days * 86400
+        records = record_count(stat)
+        usable = size > 0 and records is not None and records > 0
+        due = (not usable) or age >= days * 86400
 
     service_result = unit_value("ywd-dmrid-update.service", "Result") or "unknown"
     exit_status = unit_value("ywd-dmrid-update.service", "ExecMainStatus") or "unknown"
     if not present:
         state = "missing"
+    elif not usable:
+        state = "empty"
     elif service_result not in {"success", "unknown"}:
         state = "warning"
     elif due:
@@ -90,7 +116,8 @@ def status() -> dict:
             "source": SOURCE,
             "path": str(DB),
             "present": present,
-            "records": record_count(),
+            "usable": usable,
+            "records": records,
             "size_bytes": size,
             "last_updated": updated,
             "age_s": age,

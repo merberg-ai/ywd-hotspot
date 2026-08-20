@@ -4,17 +4,33 @@
 
 YWD-Hotspot keeps Git history useful without letting temporary development branches become permanent clutter.
 
-## Long-lived branches
-
-Only three core branches are intended to remain active:
+## Active branch roles
 
 | Branch | Role |
 |---|---|
-| `main` | conservative/promoted line |
+| `main` | conservative/promoted releases |
 | `dev` | physically accepted integrated development baseline |
-| `dev-plugins` | next-development / experimental integration line |
+| `dev-builder` | isolated OS image/builder work |
+| `dev-plugins` | plugin/framework development line |
 
-`dev-plugins` may move ahead. Once a state is physically exercised and intentionally accepted, it can be fast-forwarded into `dev`. Promotion from `dev` to `main` remains a separate deliberate decision.
+Temporary release branches such as `dev-release-0.1.0` are cut from an exact accepted parent and are removed or archived after their accepted work is merged forward.
+
+## Promotion model
+
+For the 0.1.0 release:
+
+```text
+dev
+  └── dev-release-0.1.0
+          ↓ physical RC acceptance
+        dev
+          ↓ separate release decision
+        main
+```
+
+`dev-builder` remains isolated during release hardening. After the final release state is proven, release changes can be intentionally synchronized forward into builder work before image development resumes.
+
+Promotion is never automatic.
 
 ## Companion plugin repository
 
@@ -28,72 +44,26 @@ Core remains authoritative for package verification, lifecycle management, capab
 
 ## Checkpoint policy
 
-The desired long-term form of a known-good historical milestone is an immutable tag:
+A known-good checkpoint is created only after the relevant hardware/runtime behavior has actually been exercised.
 
-```text
-checkpoint/<name>
-```
+Current release hardening uses named `checkpoint-release-*` references as rollback anchors. They are historical safety references, not active development lines.
 
-Checkpoint tags never move and are created only after the relevant hardware/runtime behavior has actually been exercised.
-
-### Legacy checkpoint branches
-
-Rapid Alpha development created a number of historical `checkpoint-*` **branches** before the tag policy was standardized. They are not active development lines.
-
-Cleanup rule:
-
-1. verify the exact commit represented by the branch;
-2. verify or create an immutable checkpoint/archive tag pointing to that commit;
-3. only then remove the redundant branch.
-
-Never delete a legacy checkpoint branch merely because its name looks old if its commit has not first been preserved by an immutable reference.
-
-## Archive policy
-
-Superseded or divergent historical work that is worth retaining should use:
-
-```text
-archive/<name>
-```
-
-A particularly important case is a temporary work branch that contains commits not merged into the active line. Preserve its tip as an archive reference before deleting the branch.
+Do not delete a checkpoint merely because its name looks old until its commit has been intentionally preserved by the repository's long-term archive/tag policy.
 
 ## Temporary branches
 
-Feature, audit, recovery, and hotfix work should be temporary:
-
-```text
-work/<topic>
-audit/<topic>
-hotfix/<topic>
-```
-
-Normal lifecycle:
+Feature, release, audit, recovery, and hotfix work should be scoped and temporary. Normal lifecycle:
 
 1. branch from an exact verified parent;
 2. make the smallest scoped change;
 3. run static/source validation;
 4. compare exact changed-file scope;
 5. test on real hardware when runtime behavior changed;
-6. publish to the intended active line;
-7. create a checkpoint only after acceptance when warranted;
-8. remove temporary scaffolding/branch references once useful history is preserved.
-
-## Promotion model
-
-```text
-dev-plugins
-    ↓ physical validation + explicit acceptance
-dev
-    ↓ separate soak/release decision
-main
-```
-
-Promotion is not automatic.
+6. freeze an accepted rollback checkpoint when useful;
+7. merge/promote intentionally;
+8. remove temporary scaffolding only after useful history is preserved.
 
 ## Repository layout
-
-Operational top-level layout:
 
 ```text
 assets/     source artwork and optimized branding derivatives
@@ -112,40 +82,46 @@ Do not move runtime paths merely for aesthetics. Installer/updater/image-builder
 
 Root install/update/migration wrappers remain at repository root as public operator entry points.
 
+## RF / RX Monitor boundary
+
+Repository cleanup is not a reason to move the tested radio baseline.
+
+Current RF pins remain:
+
+```text
+MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
+The optional passive RX Monitor voice path uses:
+
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
+
+That patch is part of a narrow observation capability while MMDVM-Host stays the sole modem owner. Pin/patch changes require isolated RF regression testing.
+
 ## Manifest and candidate-validation policy
 
-`MANIFEST.txt` is the current repository/runtime inventory used for release auditing. It must track current trusted runtime pieces rather than lagging behind newly promoted subsystems.
+`MANIFEST.txt` is the current repository/runtime inventory used for release auditing. It must track current trusted runtime pieces rather than lag behind newly promoted subsystems.
 
-The managed updater additionally performs capability-based candidate validation. If a staged tree contains plugin UI/package-update, passive voice, or telemetry markers, the complete corresponding runtime set must be present regardless of branch name.
+The managed updater performs capability-based candidate validation. If a staged tree contains plugin UI/package-update, passive voice, or telemetry markers, the complete corresponding runtime set must be present regardless of branch name.
 
 Repository cleanup must not weaken this invariant.
-
-## Branding assets
-
-Canonical source artwork belongs under `assets/branding/`. Lightweight runtime derivatives may also exist under `web/` when atomic WebUI deployment needs them.
-
-Duplicated derivatives should come from the same validated source and be documented rather than treated as accidental duplicates.
-
-## Compatibility fixtures
-
-Apparently obsolete source may remain temporarily when an update/migration path still needs it to safely retire older installed state. Such fixtures should be documented and hidden/inert rather than mistaken for active operator features.
-
-Once candidate/install/update self-tests no longer depend on a proof package, that package may be retired in a separate hardware-tested cleanup change.
 
 ## Cleanup checklist
 
 Periodic cleanup should verify:
 
-- only `main`, `dev`, and `dev-plugins` are intended long-lived active branches;
-- legacy checkpoint branches have immutable preserved references before removal;
-- divergent work branches are archived before deletion;
-- temporary CI/scaffolding is absent;
+- `main` and `dev` retain clear release/integration roles;
+- specialized `dev-builder` and `dev-plugins` work stays isolated from unrelated release changes;
+- temporary release/feature branches are removed or archived after promotion;
+- checkpoint history is preserved before cleanup;
 - `MANIFEST.txt` matches current trusted runtime files;
-- README/install/architecture/plugin/update docs describe the current product rather than an old Alpha phase;
+- README/install/build/architecture/plugin/update docs describe the current product rather than an old Alpha phase;
 - generated/local plugin decoder artifacts remain ignored unless an explicit distribution decision is made;
-- reference/proof plugins are not presented as user features once their validation purpose has ended;
 - no secrets, runtime config, backups, SSH private keys, or signing private keys are tracked.
 
 ## Safety rule
 
-Repository cleanup is not a reason to change RF behavior. Branch/docs/asset/fixture organization stays isolated from MMDVM-Host/DMRGateway pins, calibration, frequencies, modem ownership, and normal DMR service behavior.
+Repository cleanup and documentation work stay isolated from MMDVM-Host/DMRGateway pins, calibration, frequencies, modem ownership, and normal DMR service behavior unless that radio change is explicitly the scoped task.

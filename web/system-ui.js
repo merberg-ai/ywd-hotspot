@@ -131,6 +131,7 @@
       const actions = host.querySelector('.system-power-actions');
       reboot.className = 'btn danger ctl';
       actions.appendChild(reboot);
+      runtime.querySelector('hr')?.remove();
 
       const shutdown = document.createElement('button');
       shutdown.id = 'shutdownPi';
@@ -204,5 +205,5 @@
     tries += 1;
     if (install() || tries >= 80) clearInterval(timer);
   }, 100);
-  install();
+  if (install()) clearInterval(timer);
 })();

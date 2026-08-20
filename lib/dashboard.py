@@ -10,6 +10,19 @@ from urllib.parse import parse_qs, urlparse
 import dashboard_core as core
 import dashboard_update
 
+
+def _load_installed_version():
+    """Make the installed VERSION file authoritative for the live dashboard."""
+    try:
+        value = (core.WEB.parent / "VERSION").read_text(encoding="utf-8").strip()
+        if value:
+            core.VERSION = value
+    except Exception:
+        pass
+
+
+_load_installed_version()
+
 TG_CACHE = core.VAR / "talkgroup-directory.json"
 SETUP_STATE = core.VAR / "setup-state.json"
 M4_GATE = core.Path("/etc/ywd-hotspot/m4-safety.txt")

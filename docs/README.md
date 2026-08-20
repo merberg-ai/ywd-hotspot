@@ -26,6 +26,7 @@
 | 🥧 Build a complete appliance image | **[OS Development](OS-DEVELOPMENT.md)** |
 | 🌿 Understand branches/checkpoints/cleanup | **[Repository Policy](REPOSITORY.md)** |
 | 🧰 Clone, validate, and develop safely | **[GitHub / Development](GITHUB-SETUP.md)** |
+| 🗃️ Review Alpha21/22 implementation archaeology | **[Archived Alpha21–22 notes](history/ALPHA21-22-DEVELOPMENT-NOTES.md)** |
 | 🔐 Review secrets/network exposure rules | **[Security](../SECURITY.md)** |
 | 🤝 Contribute | **[Contributing](../CONTRIBUTING.md)** |
 | 🗒️ Review project release history | **[Changelog](../CHANGELOG.md)** |

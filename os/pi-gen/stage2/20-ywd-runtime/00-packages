@@ -1,5 +1,6 @@
 build-essential
 git
+file
 ca-certificates
 libmosquitto-dev
 libmosquitto1

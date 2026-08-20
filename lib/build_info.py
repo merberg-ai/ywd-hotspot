@@ -12,6 +12,7 @@ from pathlib import Path
 DEFAULT_OUT = Path("/etc/ywd-hotspot/build-info.json")
 CHANNEL_FILE = Path("/etc/ywd-hotspot/update-channel")
 REPOSITORY = "https://github.com/merberg-ai/ywd-hotspot"
+CHANNELS = {"main", "dev", "dev-plugins"}
 
 
 def run_git(source: Path, *args: str) -> str:
@@ -31,15 +32,15 @@ def run_git(source: Path, *args: str) -> str:
 
 def read_channel(branch: str) -> str:
     env = os.environ.get("YWD_UPDATE_CHANNEL", "").strip()
-    if env in {"main", "dev", "dev-plugins"}:
+    if env in CHANNELS:
         return env
     try:
         value = CHANNEL_FILE.read_text(encoding="utf-8").strip()
-        if value:
+        if value in CHANNELS:
             return value
     except Exception:
         pass
-    if branch in {"main", "dev"}:
+    if branch in CHANNELS:
         return branch
     return "main"
 

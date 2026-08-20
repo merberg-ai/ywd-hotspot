@@ -31,7 +31,7 @@ def run_git(source: Path, *args: str) -> str:
 
 def read_channel(branch: str) -> str:
     env = os.environ.get("YWD_UPDATE_CHANNEL", "").strip()
-    if env:
+    if env in {"main", "dev", "dev-plugins"}:
         return env
     try:
         value = CHANNEL_FILE.read_text(encoding="utf-8").strip()

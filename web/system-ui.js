@@ -193,6 +193,122 @@
     return true;
   }
 
+  function formatDate(epoch) {
+    const n = Number(epoch);
+    return Number.isFinite(n) && n > 0 ? new Date(n * 1000).toLocaleString() : '—';
+  }
+
+  function formatAge(seconds) {
+    let s = Number(seconds);
+    if (!Number.isFinite(s) || s < 0) return '—';
+    if (s < 60) return `${Math.floor(s)} sec`;
+    if (s < 3600) return `${Math.floor(s / 60)} min`;
+    if (s < 86400) return `${Math.floor(s / 3600)} hr`;
+    const days = Math.floor(s / 86400);
+    const hours = Math.floor((s % 86400) / 3600);
+    return hours ? `${days}d ${hours}h` : `${days}d`;
+  }
+
+  function renderDmrIdStatus(doc) {
+    const card = document.getElementById('dmridCard');
+    if (!card || !doc?.database) return;
+    const db = doc.database;
+    const timer = doc.timer || {};
+    const service = doc.service || {};
+    const status = document.getElementById('dmridState');
+    const stateName = String(db.state || 'unknown').toLowerCase();
+    const label = stateName === 'current' ? 'CURRENT' : stateName === 'due' ? 'DUE' : stateName === 'missing' ? 'MISSING' : 'CHECK';
+    status.textContent = label;
+    status.className = `dmrid-badge ${stateName === 'current' ? 'goodtext' : stateName === 'missing' ? 'badtext' : 'warntext'}`;
+    document.getElementById('dmridSource').textContent = db.source || 'RadioID.net';
+    document.getElementById('dmridRecords').textContent = Number.isFinite(Number(db.records)) ? Number(db.records).toLocaleString() : '—';
+    document.getElementById('dmridUpdated').textContent = formatDate(db.last_updated);
+    document.getElementById('dmridAge').textContent = formatAge(db.age_s);
+    document.getElementById('dmridInterval').textContent = `${db.interval_days || 7} days`;
+    document.getElementById('dmridNext').textContent = db.present ? formatDate(db.next_due) : 'update required';
+    document.getElementById('dmridTimer').textContent = `${String(timer.active || 'unknown').toUpperCase()} · ${String(timer.enabled || 'unknown').toUpperCase()}`;
+    document.getElementById('dmridResult').textContent = `${String(service.result || 'unknown').toUpperCase()} · EXIT ${service.exit_status ?? '—'}`;
+  }
+
+  async function loadDmrIdStatus(showError = false) {
+    try {
+      const r = await fetch('/api/system/dmrid', {cache: 'no-store'});
+      const doc = await r.json();
+      if (!r.ok || doc?.error) throw new Error(doc?.error || `HTTP ${r.status}`);
+      renderDmrIdStatus(doc);
+      return doc;
+    } catch (err) {
+      const stateLabel = document.getElementById('dmridState');
+      if (stateLabel) {
+        stateLabel.textContent = 'UNAVAILABLE';
+        stateLabel.className = 'dmrid-badge badtext';
+      }
+      if (showError) toast(`DMR ID status failed: ${err.message || err}`, true);
+      return null;
+    }
+  }
+
+  function installDmrIdCard() {
+    const page = document.getElementById('system');
+    const runtime = byTitle(page, 'RUNTIME');
+    const grid = runtime?.parentElement;
+    if (!page || !runtime || !grid) return false;
+    if (document.getElementById('dmridCard')) return true;
+
+    const card = document.createElement('article');
+    card.className = 'card system-dmrid-card';
+    card.id = 'dmridCard';
+    card.innerHTML = `
+      <div class="card-title title-row"><span>DMR ID DATABASE</span><span id="dmridState" class="dmrid-badge">CHECKING…</span></div>
+      <p class="hint">Local RadioID lookup data used for callsign display. The timer performs lightweight due-checks; downloads occur only when the configured interval is due.</p>
+      <div class="dmrid-grid">
+        <div><span>SOURCE</span><b id="dmridSource">—</b></div>
+        <div><span>RECORDS</span><b id="dmridRecords">—</b></div>
+        <div><span>LAST UPDATED</span><b id="dmridUpdated">—</b></div>
+        <div><span>AGE</span><b id="dmridAge">—</b></div>
+        <div><span>UPDATE INTERVAL</span><b id="dmridInterval">—</b></div>
+        <div><span>NEXT DUE</span><b id="dmridNext">—</b></div>
+        <div><span>TIMER</span><b id="dmridTimer">—</b></div>
+        <div><span>LAST SERVICE RESULT</span><b id="dmridResult">—</b></div>
+      </div>
+      <div class="buttonrow wrap dmrid-actions"><button id="dmridCheck" class="btn ctl" type="button">CHECK NOW</button><button id="dmridUpdate" class="btn primary ctl" type="button">UPDATE NOW</button></div>
+    `;
+    const host = document.getElementById('hostPowerCard');
+    grid.insertBefore(card, host || null);
+
+    const check = document.getElementById('dmridCheck');
+    const update = document.getElementById('dmridUpdate');
+    check.onclick = async () => {
+      await runButton(check, 'CHECKING…', async () => {
+        const out = await post('/api/system/dmrid/check', {});
+        renderDmrIdStatus(out);
+        toast(out.message || 'DMR ID database check completed');
+      });
+    };
+    update.onclick = async () => {
+      const ok = await requireConfirm({
+        title: 'UPDATE DMR ID DATABASE',
+        message: 'Download a fresh RadioID database now, even if the normal update interval is not due yet?',
+        confirmText: 'UPDATE NOW',
+        cancelText: 'CANCEL',
+        tone: 'warn',
+        kicker: 'YWD // SYSTEM'
+      });
+      if (!ok) return;
+      await runButton(update, 'UPDATING…', async () => {
+        const out = await post('/api/system/dmrid/update', {});
+        renderDmrIdStatus(out);
+        toast(out.message || 'DMR ID database updated');
+      });
+    };
+
+    loadDmrIdStatus(true);
+    if (!window.__ywdDmrIdPoll) {
+      window.__ywdDmrIdPoll = setInterval(() => loadDmrIdStatus(false), 60000);
+    }
+    return true;
+  }
+
   function syncRfState(d) {
     const toggle = document.getElementById('rfToggle');
     const label = document.getElementById('rfRuntimeState');
@@ -226,9 +342,10 @@
     const nav = installNavigation();
     const quick = installStatusQuickActions();
     const runtime = installRuntimeCard();
+    const dmrid = installDmrIdCard();
     const hooked = hookRender();
     if (typeof setCtl === 'function') setCtl();
-    return dedupe && nav && quick && runtime && hooked;
+    return dedupe && nav && quick && runtime && dmrid && hooked;
   }
 
   let tries = 0;

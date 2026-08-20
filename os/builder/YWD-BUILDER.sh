@@ -224,6 +224,36 @@ edit_maintenance() {
   prompt_int config.maintenance.config_history_keep 'Config history snapshots'
 }
 
+import_dashboard_settings() {
+  header
+  printf '%s%sIMPORT DASHBOARD SETTINGS%s\n\n' "$BOLD" "$CYAN" "$RESET"
+  printf 'Import an encrypted .ywdsettings export from an existing YWD-Hotspot.\n'
+  printf 'Canonical hotspot settings and supported saved state become the builder baseline.\n'
+  printf '%sThe dashboard password itself is never recovered; its existing credential hash is preserved.%s\n\n' "$DIM" "$RESET"
+
+  local path passphrase
+  read -r -p 'Backup path: ' path
+  [[ -z "$path" ]] && return 0
+  if [[ "$path" == '~/'* ]]; then
+    path="$HOME/${path:2}"
+  fi
+  if [[ ! -f "$path" ]]; then
+    printf '%sBackup not found: %s%s\n' "$RED" "$path" "$RESET"
+    pause
+    return 0
+  fi
+
+  read -r -s -p 'Backup passphrase: ' passphrase
+  printf '\n\n'
+  if printf '%s' "$passphrase" | "${CLI[@]}" import-settings "$path"; then
+    printf '\n%sImport succeeded. Review or edit any values before building.%s\n' "$GREEN" "$RESET"
+  else
+    printf '\n%sImport failed. Existing builder profile was not replaced.%s\n' "$RED" "$RESET"
+  fi
+  unset passphrase
+  pause
+}
+
 review_profile() { header; "${CLI[@]}" review || true; pause; }
 validate_profile() { header; printf '%s%sVALIDATING PROFILE%s\n\n' "$BOLD" "$CYAN" "$RESET"; "${CLI[@]}" validate && printf '\n%sValidation passed.%s\n' "$GREEN" "$RESET" || printf '\n%sValidation failed.%s\n' "$RED" "$RESET"; pause; }
 run_doctor() { header; printf '%s%sBUILDER DOCTOR%s\n\n' "$BOLD" "$CYAN" "$RESET"; bash "$BUILDER_DIR/DOCTOR.sh" || true; pause; }
@@ -258,6 +288,7 @@ main_menu() {
     printf '%s  6%s  Instrumentation / Meters\n' "$CYAN" "$RESET"
     printf '%s  7%s  Web / Maintenance\n' "$CYAN" "$RESET"
     line
+    printf '%s  I%s  Import dashboard .ywdsettings\n' "$BLUE" "$RESET"
     printf '%s  R%s  Review configuration\n' "$MAGENTA" "$RESET"
     printf '%s  V%s  Validate profile\n' "$MAGENTA" "$RESET"
     printf '%s  D%s  Builder doctor\n' "$MAGENTA" "$RESET"
@@ -273,6 +304,7 @@ main_menu() {
       5) edit_oled ;;
       6) edit_instrumentation ;;
       7) edit_maintenance ;;
+      i) import_dashboard_settings ;;
       r) review_profile ;;
       v) validate_profile ;;
       d) run_doctor ;;

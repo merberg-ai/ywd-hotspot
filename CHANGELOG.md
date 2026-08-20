@@ -8,7 +8,7 @@ YWD-Hotspot remains alpha software. Entries describe tested development mileston
 
 ## 0.1.0-alpha22.7.3-dev — Pre-main Runtime Cleanup
 
-**Status:** cleanup candidate on `dev-plugins`; requires one Pi update/smoke test before promotion.
+**Status:** physically validated on the Pi and promoted to `dev`.
 
 - retires the bundled `system-info` and `service-heartbeat` proof packages now that the real plugin lifecycle is physically proven;
 - removes their historical implicit-installed defaults from package registration;
@@ -154,4 +154,4 @@ YWD-Hotspot remains alpha software. Entries describe tested development mileston
 
 Earlier builds established the basic Raspberry Pi + MMDVM appliance, canonical configuration, MMDVM-Host/DMRGateway pinning, BrandMeister controls, dashboard/OLED/diagnostics, calibration, GitHub update management, and RF-state-preserving installer/updater behavior.
 
-Detailed intermediate implementation notes remain in Git history and the Alpha development documents pending their archival consolidation under `docs/history/`.
+Detailed Alpha21/22 implementation notes are archived in [`docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md`](docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md); earlier detail remains available in Git history and checkpoint refs.

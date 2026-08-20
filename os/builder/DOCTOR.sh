@@ -26,7 +26,7 @@ printf 'Source:            %s @ %s\n' "$BRANCH" "$COMMIT"
 printf 'Application:       %s\n' "$VERSION"
 printf 'Free space:        %s\n\n' "$(df -h "$ROOT_DIR" | awk 'NR==2 {print $4}')"
 
-for cmd in git curl rsync xz debootstrap qemu-arm parted losetup mount umount sha256sum ssh-keygen; do check_cmd "$cmd"; done
+for cmd in git curl rsync xz openssl debootstrap qemu-arm parted losetup mount umount sha256sum ssh-keygen; do check_cmd "$cmd"; done
 
 if [[ "$PAGE_SIZE" != "4096" ]]; then
   printf '[MISS] armhf builder requires a 4096-byte kernel page size (current: %s).\n' "$PAGE_SIZE"
@@ -49,7 +49,7 @@ for path in \
   os/pi-gen/stage2/20-ywd-runtime \
   os/pi-gen/stage2/25-ywd-firstboot \
   os/pi-gen/stage2/27-ywd-polish \
-  lib/oled.py lib/config_model.py lib/update_runner.py lib/update_admin.py \
+  lib/oled.py lib/config_model.py lib/settings_backup.py lib/settings_admin.py lib/update_runner.py lib/update_admin.py \
   systemd/ywd-update.service web/update.js web/instrumentation.js; do
   if [[ -e "$ROOT_DIR/$path" ]]; then printf '[OK]   source %s\n' "$path"; else printf '[MISS] source %s\n' "$path"; fail=1; fi
 done
@@ -68,7 +68,7 @@ if [[ "$fail" -ne 0 ]]; then
   printf 'Doctor found requirements that need attention.\n'
   printf 'For missing builder/pi-gen packages on Debian/Ubuntu/Raspberry Pi OS:\n\n'
   printf '  sudo apt update\n'
-  printf '  sudo apt install coreutils quilt parted qemu-user qemu-user-binfmt debootstrap zerofree zip \\\n    dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils file git curl bc \\\n    gpg pigz xxd arch-test bmap-tools kmod openssh-client\n'
+  printf '  sudo apt install coreutils quilt parted qemu-user qemu-user-binfmt debootstrap zerofree zip \\\n    dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils file git curl bc \\\n    gpg pigz xxd arch-test bmap-tools kmod openssh-client openssl\n'
   exit 1
 fi
 

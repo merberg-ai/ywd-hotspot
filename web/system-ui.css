@@ -1,0 +1,37 @@
+/* Dashboard System/quick-control layout. */
+.bm-quick-controls{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:13px;
+  padding-top:11px;
+  border-top:1px solid #17333d;
+}
+.bm-quick-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ywd-quick-btn{padding:5px 8px;font-size:9px;letter-spacing:.04em}
+.system-state-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin:-2px 0 10px;
+  padding:9px 10px;
+  border:1px solid #173944;
+  border-radius:8px;
+  background:#051017;
+  color:var(--muted);
+  font-size:11px;
+}
+.system-state-row b{font-size:10px;letter-spacing:.04em;text-align:right}
+.system-runtime-card .buttonrow{align-items:center}
+.system-power-card{border-color:#59313a;background:linear-gradient(180deg,#1a0d12ee,#0d090cee)}
+.system-power-card .card-title{color:var(--bad)}
+.system-power-actions .btn{min-width:132px}
+@media(max-width:520px){
+  .bm-quick-controls{align-items:flex-start;flex-direction:column}
+  .bm-quick-actions{width:100%;justify-content:flex-start}
+  .ywd-quick-btn{flex:0 1 auto!important;width:auto}
+  .system-state-row{align-items:flex-start;flex-direction:column}
+  .system-power-actions .btn{min-width:0;width:100%}
+}

@@ -5,6 +5,7 @@ APP=/opt/ywd-hotspot/app
 CORE="$SELF/ywd-hotspotctl-core"
 CHANNEL_FILE=/etc/ywd-hotspot/update-channel
 BUILD_INFO=/etc/ywd-hotspot/build-info.json
+CFG=/etc/ywd-hotspot/config.json
 [[ -x "$CORE" ]] || CORE="$APP/bin/ywd-hotspotctl-core"
 [[ -r "$SELF/ywd-ui.sh" ]] && source "$SELF/ywd-ui.sh"
 [[ -x "$CORE" ]] || { echo "[FAIL] YWD-Hotspot CLI core not found." >&2; exit 1; }
@@ -22,6 +23,53 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 pretty(){ if declare -F ywd_pretty_capture >/dev/null; then ywd_pretty_capture "$CORE" "$@"; else "$CORE" "$@"; fi; }
+
+status_output(){
+  local mode="simplex" rx="" tx=""
+  local -a radio=()
+  mapfile -t radio < <(python3 - "$CFG" <<'PY'
+import json, sys
+try:
+    r = json.load(open(sys.argv[1], encoding='utf-8')).get('radio', {})
+except Exception:
+    r = {}
+mode = str(r.get('mode', 'simplex')).strip().lower()
+print(mode if mode in {'simplex', 'duplex'} else 'simplex')
+print(f"{float(r.get('rx_frequency_hz', r.get('frequency_hz', 0))) / 1e6:.6f} MHz")
+print(f"{float(r.get('tx_frequency_hz', r.get('frequency_hz', 0))) / 1e6:.6f} MHz")
+PY
+)
+  mode="${radio[0]:-simplex}"
+  rx="${radio[1]:-0.000000 MHz}"
+  tx="${radio[2]:-0.000000 MHz}"
+
+  if [[ "$mode" == "duplex" ]]; then
+    "$CORE" status "$@" | awk -v rx="$rx" -v tx="$tx" '
+      /^Frequency[[:space:]]/ {
+        printf "%-18s %s\n", "Radio mode", "duplex"
+        printf "%-18s %s\n", "Hotspot RX", rx
+        printf "%-18s %s\n", "Hotspot TX", tx
+        next
+      }
+      { print }
+    '
+  else
+    "$CORE" status "$@" | awk '
+      /^Frequency[[:space:]]/ {
+        printf "%-18s %s\n", "Radio mode", "simplex"
+      }
+      { print }
+    '
+  fi
+}
+
+pretty_status(){
+  if declare -F ywd_pretty_capture >/dev/null; then
+    ywd_pretty_capture status_output "$@"
+  else
+    status_output "$@"
+  fi
+}
 
 plugins_channel_active(){
   [[ -r "$CHANNEL_FILE" ]] && [[ "$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null || true)" == "dev-plugins" ]]
@@ -91,7 +139,7 @@ menu(){
     printf '  %b0%b  Exit\n\n' "${YWD_DIM:-}" "${YWD_RESET:-}"
     read -r -p "ywd> " n
     case "$n" in
-      1) pretty status;; 2) pretty lastheard;; 3) "$CORE" logs;; 4) "$CORE" restart;;
+      1) pretty_status;; 2) pretty lastheard;; 3) "$CORE" logs;; 4) "$CORE" restart;;
       5) "$CORE" configure;; 6) "$CORE" apply;; 7) pretty health;; 8) "$CORE" start;; 9) "$CORE" stop;;
       10) "$CORE" bm-api-key;; 11) "$CORE" web-password;; 12) "$CORE" update-ids;;
       13) "$CORE" bm dropqso;; 14) "$CORE" bm dropdyn;; 15) "$CORE" diagnostics;; 16) pretty history;;
@@ -106,7 +154,8 @@ menu(){
 
 case "$cmd" in
   menu|"") menu;;
-  status|lastheard|health|history) shift || true; pretty "$cmd" "$@";;
+  status) shift || true; pretty_status "$@";;
+  lastheard|health|history) shift || true; pretty "$cmd" "$@";;
   source) shift || true; source_output "$@";;
   calibration)
     if [[ "${2:-}" == "export" ]]; then exec "$CORE" "$@"; fi

@@ -43,8 +43,10 @@ chmod 0755 \
   "${APP}/lib/admin_dispatch.sh" "${APP}/lib/update_admin.py" "${APP}/lib/update_runner.py"
 
 if [ -f "${FACTORY_CONFIG}" ]; then
+  # Install from the builder host, but apply named ownership in the target
+  # chroot below. Resolving ywd-hotspot on the builder host is incorrect and
+  # fails when that group does not exist outside the image rootfs.
   install -m 0640 "${FACTORY_CONFIG}" "${ROOTFS_DIR}/etc/ywd-hotspot/config.json"
-  chown root:ywd-hotspot "${ROOTFS_DIR}/etc/ywd-hotspot/config.json"
   printf 'Installed builder-supplied canonical hotspot configuration.\n'
 fi
 
@@ -69,6 +71,10 @@ EOF
 
 on_chroot <<'EOF'
 set -e
+if [ -f /etc/ywd-hotspot/config.json ]; then
+    chown root:ywd-hotspot /etc/ywd-hotspot/config.json
+    chmod 0640 /etc/ywd-hotspot/config.json
+fi
 chown -R ywd-hotspot:ywd-hotspot /var/lib/ywd-hotspot/setup-tls
 chmod 0700 /var/lib/ywd-hotspot/private
 chown root:root /var/lib/ywd-hotspot/private

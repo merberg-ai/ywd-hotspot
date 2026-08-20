@@ -107,11 +107,6 @@ lib/update_admin.py
 lib/update_runner.py
 lib/web_auth.py
 lib/ywd-mosquitto.conf
-lib/plugin_packages/system-info/config.schema.json
-lib/plugin_packages/system-info/plugin.json
-lib/service_plugin_packages/service-heartbeat/config.schema.json
-lib/service_plugin_packages/service-heartbeat/plugin.json
-lib/service_plugin_packages/service-heartbeat/service.py
 os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
 pins.env
 sudoers/ywd-hotspot

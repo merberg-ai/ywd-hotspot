@@ -44,6 +44,7 @@ else
 fi
 
 for path in \
+  os/builder/SYSTEM-CLI.py \
   os/builder/SSH-KEYS.py \
   os/pi-gen/stage2/10-ywd-headless \
   os/pi-gen/stage2/15-ywd-network \
@@ -54,6 +55,14 @@ for path in \
   systemd/ywd-update.service web/update.js web/instrumentation.js; do
   if [[ -e "$ROOT_DIR/$path" ]]; then printf '[OK]   source %s\n' "$path"; else printf '[MISS] source %s\n' "$path"; fail=1; fi
 done
+
+if python3 "$ROOT_DIR/os/builder/SYSTEM-CLI.py" validate >/dev/null 2>&1; then
+  printf '[OK]   System / OS builder profile\n'
+else
+  printf '[MISS] System / OS builder profile is invalid\n'
+  python3 "$ROOT_DIR/os/builder/SYSTEM-CLI.py" validate || true
+  fail=1
+fi
 
 if ! git -C "$ROOT_DIR" diff --quiet --ignore-submodules -- || ! git -C "$ROOT_DIR" diff --cached --quiet --ignore-submodules --; then
   printf '[MISS] tracked source is dirty; commit/stash changes before building.\n'

@@ -8,7 +8,7 @@ This guide separates the four things people often mean by â€œbuild YWD-Hotspot.â
 
 For a normal Raspberry Pi hotspot install, you do **not** manually clone and build MMDVM-Host yourself. `INSTALL.sh` is the supported build/install entry point.
 
-### Promoted `main`
+### Stable `main`
 
 ```bash
 sudo apt update
@@ -19,18 +19,7 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-### Current 0.1.0 RC test branch
-
-Until RC1 is promoted to `main`:
-
-```bash
-sudo apt update
-sudo apt install -y git
-cd ~
-git clone --branch dev-release-0.1.0 https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-sudo ./INSTALL.sh
-```
+For intentionally testing the accepted development baseline instead of the stable release, clone `--branch dev`. The completed `dev-release-0.1.0` branch is release history rather than the normal 0.1.0 build path.
 
 The fresh installer:
 

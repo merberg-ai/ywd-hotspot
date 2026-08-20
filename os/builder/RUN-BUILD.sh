@@ -75,6 +75,21 @@ printf '[INFO] System profile: %s\n' "$(python3 "$BUILDER_DIR/SYSTEM-CLI.py" sta
 python3 "$BUILDER_DIR/SSH-KEYS.py" ensure >/dev/null
 printf '[INFO] SSH login key: %s\n' "$(python3 "$BUILDER_DIR/SSH-KEYS.py" fingerprint)"
 
+# A one-shot bypass is useful when deliberately verifying a clean rebuild.  It
+# is consumed only when RUN-BUILD actually begins, so merely opening/quitting
+# the interactive builder does not lose the request.
+if [[ -f "$BUILDER_DIR/RUNTIME-CACHE.py" ]]; then
+  YWD_RUNTIME_CACHE_BYPASS="$(python3 "$BUILDER_DIR/RUNTIME-CACHE.py" consume-bypass)"
+else
+  YWD_RUNTIME_CACHE_BYPASS="0"
+fi
+export YWD_RUNTIME_CACHE_BYPASS
+if [[ "$YWD_RUNTIME_CACHE_BYPASS" == "1" ]]; then
+  printf '[INFO] Runtime compile cache: BYPASS ONCE requested; binaries will be rebuilt and the new results cached.\n'
+else
+  printf '[INFO] Runtime compile cache: enabled.\n'
+fi
+
 RF_AUTOSTART="$(python3 - "$GEN_DIR/summary.json" <<'PY'
 import json, sys
 with open(sys.argv[1], 'r', encoding='utf-8') as f:

@@ -251,6 +251,12 @@ class H(core.H):
         if path == "/ywd-hotspot-banner.webp":
             self.serve_asset(core.BRANDING / "ywd-hotspot-banner-webui.webp", "image/webp")
             return
+        if path == "/api/system/dmrid":
+            try:
+                self.send_json(core.admin_call("dmrid-status", {}, 12))
+            except Exception as exc:
+                self.send_json({"error": str(exc)[:800]}, 502)
+            return
         if path == "/api/talkgroups/search":
             qs = parse_qs(parsed.query, keep_blank_values=False)
             query = str((qs.get("q") or [""])[0])[:80]
@@ -278,12 +284,18 @@ class H(core.H):
         """Add System actions and keep BrandMeister operations timeslot-aware."""
         path = urlparse(self.path).path
 
-        if path == "/api/runtime/shutdown":
+        if path in {"/api/runtime/shutdown", "/api/system/dmrid/check", "/api/system/dmrid/update"}:
             if not self.require_control():
                 return
             try:
                 body = self.body_json()
-                self.send_json(core.admin_call("shutdown", body))
+                if path == "/api/runtime/shutdown":
+                    out = core.admin_call("shutdown", body)
+                elif path == "/api/system/dmrid/check":
+                    out = core.admin_call("dmrid-check", body, 95)
+                else:
+                    out = core.admin_call("dmrid-update", body, 95)
+                self.send_json(out)
             except ValueError as exc:
                 self.send_json({"error": str(exc)}, 400)
             except Exception as exc:

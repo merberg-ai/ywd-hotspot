@@ -18,7 +18,9 @@ if [[ -f /etc/ywd-hotspot/config.json && -d /opt/ywd-hotspot/app ]] && [[ "${YWD
      - does NOT rebuild MMDVM-Host or DMRGateway
 
   2) Full/recovery installation
-     - runs the complete installer and may rebuild pinned upstream binaries
+     - runs the complete installer
+     - verifies/builds the canonical YWD-patched MMDVM-Host
+     - verifies/builds pinned DMRGateway
 
   3) Cancel
 EOF
@@ -55,7 +57,7 @@ PY
 echo; echo "Installing build/runtime dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends build-essential git ca-certificates openssl libmosquitto-dev libmosquitto1 nlohmann-json3-dev python3 python3-smbus i2c-tools iw sudo
+apt-get install -y --no-install-recommends build-essential git file ca-certificates openssl libmosquitto-dev libmosquitto1 nlohmann-json3-dev python3 python3-smbus i2c-tools iw sudo
 [[ -r /usr/include/nlohmann/json.hpp ]] || { echo "[FAIL] nlohmann/json.hpp missing."; exit 1; }
 command -v openssl >/dev/null 2>&1 || { echo "[FAIL] openssl is required for YWD settings backups/plugin signatures."; exit 1; }
 
@@ -65,15 +67,16 @@ install -d -m 0755 /opt/ywd-hotspot/src /opt/ywd-hotspot/app /usr/local/libexec
 install -d -o root -g ywd-hotspot -m 0750 /etc/ywd-hotspot
 install -d -o ywd-hotspot -g ywd-hotspot -m 0750 /var/lib/ywd-hotspot /var/lib/ywd-hotspot/diagnostics
 install -d -o root -g root -m 0700 /var/lib/ywd-hotspot/private /var/lib/ywd-hotspot/private/config-history
+install -d -o root -g root -m 0755 /var/cache/ywd-hotspot/runtime-build
 
-build_repo(){
-  local name="$1" repo="$2" pin="$3" binary="$4" dir="/opt/ywd-hotspot/src/$1"
-  echo; echo "------------------------------------------------------------"; echo "Building $name @ $pin"
-  if [[ -d "$dir/.git" ]] && [[ "$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)" == "$pin" ]]; then echo "Reusing $dir"; else rm -rf "$dir"; git clone "$repo" "$dir"; git -C "$dir" checkout --detach "$pin"; fi
-  (cd "$dir" && make -j1); install -m 0755 "$dir/$binary" "/usr/local/bin/$binary"
-}
-build_repo "MMDVM-Host" "$MMDVM_HOST_REPO" "$MMDVM_HOST_COMMIT" "MMDVM-Host"
-build_repo "DMRGateway" "$DMR_GATEWAY_REPO" "$DMR_GATEWAY_COMMIT" "DMRGateway"
+echo
+echo "------------------------------------------------------------"
+echo "Installing canonical pinned runtime binaries"
+echo "MMDVM-Host: pinned upstream + verified YWD passive DMR voice-tap patch"
+echo "DMRGateway : pinned upstream"
+YWD_RUNTIME_BUILD_CACHE=/var/cache/ywd-hotspot/runtime-build \
+YWD_BUILD_JOBS=1 \
+python3 "$SELF/lib/runtime_build.py" install
 
 echo; echo "Installing YWD-Hotspot application..."
 rm -rf /opt/ywd-hotspot/app

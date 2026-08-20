@@ -20,8 +20,8 @@ if [[ ! -x "$VENV/bin/python" ]]; then
 fi
 
 if ! "$VENV/bin/python" - <<'PY' >/dev/null 2>&1
-import textual
-assert textual.__version__ == '8.2.8'
+from importlib.metadata import version
+assert version('textual') == '8.2.8'
 PY
 then
   echo 'Preparing YWD-Hotspot Textual builder environment...'

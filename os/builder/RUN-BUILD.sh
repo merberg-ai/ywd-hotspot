@@ -10,10 +10,11 @@ GEN_DIR="$LOCAL_DIR/generated"
 HEADLESS_OVERLAY="$OS_DIR/pi-gen/stage2/10-ywd-headless/files/provision.env"
 CONFIG_OVERLAY="$OS_DIR/pi-gen/stage2/25-ywd-firstboot/files/factory-config.json"
 FIRSTBOOT_OVERLAY="$OS_DIR/pi-gen/stage2/25-ywd-firstboot/files/factory-provision.json"
+RESTORE_OVERLAY="$OS_DIR/pi-gen/stage2/25-ywd-firstboot/files/factory-restore.json"
 LEGACY_WIFI="$LOCAL_DIR/provision.env"
 
 cleanup() {
-  rm -f "$HEADLESS_OVERLAY" "$CONFIG_OVERLAY" "$FIRSTBOOT_OVERLAY"
+  rm -f "$HEADLESS_OVERLAY" "$CONFIG_OVERLAY" "$FIRSTBOOT_OVERLAY" "$RESTORE_OVERLAY"
 }
 trap cleanup EXIT INT TERM
 cleanup
@@ -25,7 +26,10 @@ python3 "$BUILDER_DIR/PREPARE-PROFILE.py"
 
 install -m 0600 "$GEN_DIR/factory-config.json" "$CONFIG_OVERLAY"
 
-if [[ -f "$GEN_DIR/factory-provision.json" ]]; then
+if [[ -f "$GEN_DIR/factory-restore.json" ]]; then
+  install -m 0600 "$GEN_DIR/factory-restore.json" "$RESTORE_OVERLAY"
+  echo '[INFO] Imported dashboard settings backup staged for native first-boot restore; secure hotspot setup wizard will be skipped after successful restore.'
+elif [[ -f "$GEN_DIR/factory-provision.json" ]]; then
   install -m 0600 "$GEN_DIR/factory-provision.json" "$FIRSTBOOT_OVERLAY"
   echo '[INFO] Fully preconfigured hotspot payload staged; secure hotspot setup wizard will be skipped after successful first-boot apply.'
 else

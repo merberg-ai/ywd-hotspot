@@ -7,7 +7,7 @@
 ---
 
 > [!IMPORTANT]
-> The current release-prep line is **0.1.0-rc1** on the temporary `dev-release-0.1.0` branch. RC1 must complete physical acceptance before promotion to `main`.
+> The current stable release is **0.1.0** on `main`. The `0.1.0-rc1` tree completed physical acceptance before promotion through `dev` to `main`.
 
 ## Documentation map
 
@@ -59,13 +59,12 @@
 
 | Branch | Purpose |
 |---|---|
-| `main` | promoted/conservative releases |
+| `main` | promoted/conservative releases; current stable 0.1.0 line |
 | `dev` | physically accepted integrated development baseline |
 | `dev-builder` | isolated OS builder/image work |
 | `dev-plugins` | plugin/framework development line |
-| `dev-release-0.1.0` | temporary 0.1.0 RC/release-hardening branch |
 
-The temporary release branch is not a persistent update channel. During RC testing an appliance may report branch `dev-release-0.1.0` while correctly retaining update channel `dev`.
+The completed `dev-release-0.1.0` branch and named `checkpoint-release-*` refs are release-history/rollback references rather than persistent update channels. Normal stable appliances should follow `main`.
 
 ## Useful first commands
 

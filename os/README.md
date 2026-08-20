@@ -6,9 +6,7 @@ This directory contains the Raspberry Pi image-building infrastructure for YWD-H
 
 The OS builder lives beside the normal application source. A build packages the application from the **same Git commit that runs the builder**; there is no separate stale application snapshot to maintain.
 
-The normal YWD-Hotspot install/update paths do not depend on `os/`. The `os/` subtree is only used when producing a fresh Raspberry Pi OS image.
-
-Key rule:
+Normal YWD-Hotspot installs and updates do not depend on `os/`. The `os/` subtree is used only to produce fresh Raspberry Pi OS images.
 
 > Build the image from the source revision you intend to ship. After first boot, normal application updates continue through the managed Git checkout and do not require rebuilding the image.
 
@@ -16,8 +14,7 @@ Key rule:
 
 - Raspberry Pi Zero W / Zero WH (`armhf`)
 - Raspberry Pi OS Lite / trixie
-- MMDVM HAT on `/dev/serial0`
-- simplex or duplex DMR configuration
+- simplex or duplex MMDVM HAT on `/dev/serial0`
 - SSD1306-style 128x64 OLED on I2C bus 1 / `0x3c`
 - setup/recovery AP when station Wi-Fi is unavailable
 - secure first-boot wizard for incomplete images
@@ -26,13 +23,15 @@ Key rule:
 
 ## Interactive builder
 
-The preferred development entry point on `dev-builder` is the Textual builder:
+The preferred `dev-builder` entry point is deliberately terminal-simple and SSH-safe:
 
 ```bash
 bash os/builder/YWD-BUILDER.sh
 ```
 
-The launcher creates a builder-only Python virtual environment under ignored `os/local/` state and pins the tested Textual version. The interface uses the same dark/cyan/blue visual language as the dashboard and exposes configuration pages for:
+The interface uses plain Bash prompts, ASCII separators and optional ANSI colors. It does **not** use mouse reporting, alternate-screen mode or Unicode-heavy terminal widgets, so it remains usable through PuTTY, phone SSH clients and serial-style terminals.
+
+The main menu exposes:
 
 - image identity and Wi-Fi;
 - station identity/location;
@@ -42,7 +41,21 @@ The launcher creates a builder-only Python virtual environment under ignored `os
 - OLED presentation;
 - instrumentation/meters;
 - web and maintenance settings, including explicit RF autostart;
-- profile validation, Builder Doctor and image build output.
+- redacted configuration review;
+- profile validation;
+- Builder Doctor;
+- full image build.
+
+The Bash frontend is intentionally thin. Profile normalization, validation, redaction and provisioning decisions live in the shared Python profile engine:
+
+```text
+os/builder/profile_model.py
+os/builder/PROFILE-CLI.py
+```
+
+That same engine is intended to back the future local web builder and desktop controller so every frontend produces the same image configuration.
+
+## Private builder state
 
 The builder profile is stored only at:
 
@@ -50,64 +63,57 @@ The builder profile is stored only at:
 os/local/builder-profile.json
 ```
 
-It may contain Wi-Fi and hotspot credentials and must never be committed or shared. Generated provisioning material also remains under ignored `os/local/generated/` state.
+It may contain Wi-Fi and hotspot credentials and must never be committed or shared. Generated provisioning material remains under ignored `os/local/generated/` state.
 
-### Blank/default values and first boot
+For optional fields, the shell UI lets the operator keep defaults or clear values. Secret fields are never shown by the Review page; they are reported only as `configured` or `blank`.
 
-The builder deliberately supports both partial and complete images.
+## Partial/default vs fully preconfigured images
 
-A **partial/default profile** writes canonical non-secret configuration hints into the image. Blank required identity/security values remain deferred. On boot:
+The builder deliberately supports both paths.
+
+A **partial/default profile** writes canonical non-secret configuration hints into the image. Missing required identity/security values remain deferred. On boot:
 
 1. configured Wi-Fi is tried automatically, or the normal YWD setup AP appears when Wi-Fi is blank/unavailable;
 2. the secure OLED-code HTTPS first-boot wizard remains enabled;
-3. the wizard starts with the builder-supplied canonical settings already available as its configuration baseline;
+3. the wizard starts from the builder-supplied canonical configuration baseline;
 4. RF remains disabled until setup is completed.
 
-A **fully preconfigured profile** requires a real callsign/base DMR ID, a dashboard password, and a BrandMeister Hotspot Security password when BrandMeister is enabled. The image carries a root-only one-shot provisioning payload. On first boot that payload is validated/applied through the same privileged `setup-finish` path used by the secure browser wizard. When it succeeds, the normal `setup-state.json` is created before the wizard starts, so the hotspot wizard is skipped.
+A **fully preconfigured profile** requires a real callsign/base DMR ID, a dashboard password, and a BrandMeister Hotspot Security password when BrandMeister is enabled. The image carries a root-only one-shot provisioning payload. On first boot that payload is validated/applied through the same privileged `setup-finish` path used by the secure browser wizard. When it succeeds, the normal `setup-state.json` exists before the wizard can start, so the hotspot wizard is skipped.
 
-Wi-Fi is independent from hotspot completion: a fully configured hotspot may still leave Wi-Fi blank. In that case the setup AP handles Wi-Fi onboarding, but the hotspot configuration wizard remains skipped after network handoff.
+Wi-Fi is independent from hotspot completion. A fully configured hotspot may leave Wi-Fi blank; the setup AP then performs Wi-Fi-only onboarding while the hotspot configuration wizard remains skipped after network handoff.
 
-If factory preconfiguration fails for any reason, reusable payload secrets are removed and the normal secure first-boot wizard remains available as the fallback.
+If factory preconfiguration fails, reusable payload secrets are removed and the normal secure first-boot wizard remains available as fallback.
 
-RF autostart is always an explicit builder option and defaults off.
+RF autostart is always explicit and defaults off.
 
-## Command-line builder paths
+## Command-line engine
 
-The original engine remains available for regression and low-level work:
+The lower-level builder paths remain available for regression and automation:
 
 ```bash
 bash os/builder/DOCTOR.sh
+python3 os/builder/PREPARE-PROFILE.py
+bash os/builder/RUN-BUILD.sh
 bash os/builder/BUILD.sh
 ```
 
-A saved Textual profile can be compiled and built without opening the UI:
+`RUN-BUILD.sh` compiles the saved profile, creates short-lived ignored overlays for pi-gen, invokes `BUILD.sh`, and removes those overlays when the build exits.
 
-```bash
-python3 os/builder/PREPARE-PROFILE.py
-bash os/builder/RUN-BUILD.sh
-```
-
-`RUN-BUILD.sh` creates short-lived ignored overlays for pi-gen, invokes the existing `BUILD.sh` engine, and removes those overlays when the build exits. This keeps credentials out of tracked source while leaving the proven build engine largely untouched.
-
-The historical `CONFIGURE-WIFI.sh` remains usable for the old Wi-Fi-only build path while `dev-builder` is under test.
+The historical `CONFIGURE-WIFI.sh` remains temporarily available for the older Wi-Fi-only build path while `dev-builder` is under test.
 
 ## Safety boundaries
 
-The image builder preserves the appliance rules proven during earlier OS testing:
-
 - MMDVM-Host remains the only modem/RF owner.
 - RF services are disabled in the factory image unless a completed profile explicitly requests RF autostart.
-- `ywd-headless-oled.service` is the sole physical OLED/I2C owner.
-- the OLED renderer is injected from the current root `lib/oled.py`.
+- `ywd-headless-oled.service` remains the sole physical OLED/I2C owner.
+- the OLED renderer is injected from current root `lib/oled.py`.
 - console branding/helpers are injected from current root source.
 - the runtime application is copied from the current repository revision.
-- complete factory provisioning uses the existing trusted setup finalizer instead of maintaining a second configuration implementation.
+- complete factory provisioning uses the existing trusted setup finalizer rather than a second configuration implementation.
 - failed or partial factory provisioning falls back to the existing setup AP + secure wizard flow.
 - normal GitHub application updates remain available after imaging.
 
-## Local/private builder state
-
-These paths are ignored by Git:
+## Ignored/local paths
 
 ```text
 os/.pi-gen/
@@ -118,9 +124,9 @@ os/build/
 os/cache/
 ```
 
-Temporary provisioning overlays inside the custom pi-gen stages are explicitly ignored as well and are deleted by `RUN-BUILD.sh` after the build.
+Temporary provisioning overlays inside the custom pi-gen stages are also ignored and deleted by `RUN-BUILD.sh` after the build.
 
-`os/local/ywd-os-dev_ed25519` is the builder-local development SSH key. Never commit or distribute it as project source.
+`os/local/ywd-os-dev_ed25519` is a builder-local development SSH key. Never commit or distribute it as project source.
 
 ## Build output
 
@@ -131,12 +137,12 @@ Successful builds are placed under `os/deploy/` together with `SHA256SUMS-YWD-HO
 ```text
 os/
 ├── builder/
-│   ├── YWD-BUILDER.sh       # Textual launcher
-│   ├── ywd_builder.py       # interactive UI
-│   ├── profile_model.py     # canonical profile compiler
-│   ├── PREPARE-PROFILE.py   # CLI profile preparation
+│   ├── YWD-BUILDER.sh       # SSH-safe interactive shell frontend
+│   ├── PROFILE-CLI.py       # frontend/profile adapter + redacted review
+│   ├── profile_model.py     # canonical builder profile compiler
+│   ├── PREPARE-PROFILE.py   # profile -> build overlay preparation
 │   ├── RUN-BUILD.sh         # profiled build wrapper
-│   ├── BUILD.sh             # existing image-build engine
+│   ├── BUILD.sh             # image-build engine
 │   ├── DOCTOR.sh
 │   └── CONFIGURE-WIFI.sh    # legacy Wi-Fi-only helper
 └── pi-gen/
@@ -149,11 +155,13 @@ os/
         └── 27-ywd-polish
 ```
 
-The pi-gen stages contain OS-specific boot/network/setup integration. Current application and presentation assets are injected by the builder from the repository root so those components do not drift independently.
+## Planned frontends
+
+Once the shell/profile engine is physically proven, the next frontend is a **local web builder** hosted by the Linux build machine. It will use the same profile model and build engine while visually matching the YWD-Hotspot dashboard. A later Windows/Linux desktop controller can use the same backend contract rather than implementing image logic again.
 
 ## Physical validation
 
-A candidate image is not a known-good checkpoint until it is physically tested on the target Pi Zero. For `dev-builder` we test both paths:
+A candidate image is not a known-good checkpoint until it is physically tested on the target Pi Zero. `dev-builder` must validate both paths.
 
 ### Partial/default image
 

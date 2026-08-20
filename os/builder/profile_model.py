@@ -1,31 +1,28 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import copy
-import importlib.util
+import hashlib
 import json
 import os
+import secrets
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
+LIB = ROOT / "lib"
 LOCAL = ROOT / "os" / "local"
 PROFILE_PATH = LOCAL / "builder-profile.json"
 GENERATED = LOCAL / "generated"
 
+if str(LIB) not in sys.path:
+    sys.path.insert(0, str(LIB))
 
-def _load_config_model():
-    path = ROOT / "lib" / "config_model.py"
-    spec = importlib.util.spec_from_file_location("ywd_config_model", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load {path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-config_model = _load_config_model()
+import config_model
+import settings_backup
 
 
 def default_profile() -> dict[str, Any]:
@@ -51,6 +48,7 @@ def default_profile() -> dict[str, Any]:
             "bm_api_key": "",
         },
         "config": cfg,
+        "imported_backup": None,
     }
 
 
@@ -85,6 +83,81 @@ def save_profile(profile: dict[str, Any], path: Path = PROFILE_PATH) -> None:
     atomic_write(path, json.dumps(profile, indent=2) + "\n", 0o600)
 
 
+def _valid_web_auth(record: Any) -> bool:
+    return (
+        isinstance(record, dict)
+        and record.get("scheme") == "scrypt"
+        and all(k in record for k in ("salt", "hash", "n", "r", "p"))
+    )
+
+
+def _make_web_auth(password: str) -> dict[str, Any]:
+    if not 8 <= len(password) <= 256:
+        raise ValueError("dashboard password must be 8-256 characters")
+    n = 1 << 14
+    r = 8
+    p = 1
+    dklen = 32
+    salt = os.urandom(16)
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p, dklen=dklen)
+    return {
+        "scheme": "scrypt",
+        "n": n,
+        "r": r,
+        "p": p,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "hash": base64.b64encode(digest).decode("ascii"),
+    }
+
+
+def imported_payload(profile: dict[str, Any]) -> dict[str, Any] | None:
+    info = profile.get("imported_backup")
+    if not isinstance(info, dict):
+        return None
+    payload = info.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    return settings_backup.validate_payload(payload)
+
+
+def import_dashboard_backup(
+    backup_path: Path,
+    passphrase: str,
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    backup_path = backup_path.expanduser().resolve()
+    blob = backup_path.read_bytes()
+    doc = settings_backup.decrypt_payload(blob, passphrase)
+
+    out = copy.deepcopy(profile if profile is not None else load_profile())
+    out["config"] = copy.deepcopy(doc["config"])
+
+    hotspot_password = str(out["config"].setdefault("brandmeister", {}).get("password") or "")
+    out["config"]["brandmeister"]["password"] = ""
+
+    creds = out.setdefault("credentials", {})
+    creds["dashboard_password"] = ""
+    creds["hotspot_password"] = hotspot_password
+    creds["bm_api_key"] = str(doc.get("secrets", {}).get("bm_api_key") or "")
+
+    wifi = doc.get("wifi")
+    if isinstance(wifi, dict) and wifi.get("ssid"):
+        out["wifi"] = {
+            "ssid": str(wifi.get("ssid") or ""),
+            "password": str(wifi.get("psk") or ""),
+            "hidden": False,
+        }
+
+    out["imported_backup"] = {
+        "source_file": backup_path.name,
+        "payload": doc,
+    }
+
+    compile_profile(out)
+    save_profile(out)
+    return out
+
+
 def compile_profile(profile: dict[str, Any]) -> dict[str, Any]:
     defaults = config_model.defaults()
     raw_cfg = deep_merge(defaults, profile.get("config") or {})
@@ -101,9 +174,11 @@ def compile_profile(profile: dict[str, Any]) -> dict[str, Any]:
     raw_cfg.setdefault("brandmeister", {})["password"] = ""
 
     canonical = config_model.normalize(raw_cfg)
+    imported = imported_payload(profile)
+    imported_web_auth = imported.get("secrets", {}).get("web_auth") if imported else None
 
     real_identity = canonical["station"]["callsign"] != "NOCALL" and canonical["station"]["base_dmr_id"] != "00000"
-    web_ready = 8 <= len(dashboard_password) <= 256
+    web_ready = 8 <= len(dashboard_password) <= 256 or _valid_web_auth(imported_web_auth)
     bm_enabled = bool(canonical["brandmeister"].get("enabled", True))
     bm_ready = (not bm_enabled) or bool(hotspot_password)
     complete = bool(real_identity and web_ready and bm_ready)
@@ -112,7 +187,7 @@ def compile_profile(profile: dict[str, Any]) -> dict[str, Any]:
     if not real_identity:
         reasons.append("callsign + base DMR ID")
     if not web_ready:
-        reasons.append("dashboard password (8+ chars)")
+        reasons.append("dashboard password or imported dashboard credential")
     if not bm_ready:
         reasons.append("BrandMeister Hotspot Security password")
 
@@ -138,7 +213,7 @@ def compile_profile(profile: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("OS version label is too long")
 
     provision = None
-    if complete:
+    if complete and imported is None:
         provision = {
             "config": canonical,
             "web_password": dashboard_password,
@@ -154,7 +229,40 @@ def compile_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "factory_provision": provision,
         "wifi": {"ssid": ssid, "password": wifi_password, "hidden": hidden},
         "image": {"image_name": image_name, "os_version": os_version},
+        "dashboard_password": dashboard_password,
+        "bm_api_key": bm_api_key,
+        "imported_backup": imported,
+        "imported_source_file": str((profile.get("imported_backup") or {}).get("source_file") or ""),
     }
+
+
+def _restore_document(compiled: dict[str, Any]) -> dict[str, Any]:
+    imported = compiled.get("imported_backup")
+    if not isinstance(imported, dict):
+        raise ValueError("no imported dashboard backup is available")
+    doc = copy.deepcopy(imported)
+    doc["config"] = copy.deepcopy(compiled["config"])
+
+    secrets_doc = doc.setdefault("secrets", {})
+    secrets_doc["bm_api_key"] = compiled.get("bm_api_key", "")
+    dashboard_password = str(compiled.get("dashboard_password") or "")
+    if dashboard_password:
+        secrets_doc["web_auth"] = _make_web_auth(dashboard_password)
+    elif not _valid_web_auth(secrets_doc.get("web_auth")):
+        raise ValueError("imported dashboard backup has no reusable dashboard credential")
+
+    wifi = compiled["wifi"]
+    if wifi["ssid"]:
+        doc["wifi"] = {
+            "ssid": wifi["ssid"],
+            "psk": wifi["password"],
+            "key_mgmt": "wpa-psk" if wifi["password"] else "",
+            "profile": "YWD Builder WiFi",
+        }
+    else:
+        doc["wifi"] = None
+
+    return settings_backup.validate_payload(doc)
 
 
 def write_generated(compiled: dict[str, Any]) -> dict[str, Path]:
@@ -169,7 +277,22 @@ def write_generated(compiled: dict[str, Any]) -> dict[str, Path]:
     atomic_write(cfg_path, json.dumps(compiled["config"], indent=2) + "\n")
     paths["config"] = cfg_path
 
-    if compiled.get("factory_provision") is not None:
+    imported = compiled.get("imported_backup")
+    if compiled["complete"] and isinstance(imported, dict):
+        restore_doc = _restore_document(compiled)
+        one_time_passphrase = secrets.token_urlsafe(36)
+        encrypted = settings_backup.encrypt_payload(restore_doc, one_time_passphrase)
+        request = {
+            "backup_b64": base64.b64encode(encrypted).decode("ascii"),
+            "passphrase": one_time_passphrase,
+            "start_rf": bool(compiled["config"]["maintenance"]["rf_autostart"]),
+            "restore_wifi": False,
+            "first_boot": True,
+        }
+        p = GENERATED / "factory-restore.json"
+        atomic_write(p, json.dumps(request, separators=(",", ":")) + "\n")
+        paths["restore"] = p
+    elif compiled.get("factory_provision") is not None:
         p = GENERATED / "factory-provision.json"
         atomic_write(p, json.dumps(compiled["factory_provision"], indent=2) + "\n")
         paths["provision"] = p
@@ -203,9 +326,17 @@ def write_generated(compiled: dict[str, Any]) -> dict[str, Path]:
         "hotspot_id": compiled["config"]["station"]["hotspot_id"],
         "radio_mode": compiled["config"]["radio"]["mode"],
         "brandmeister_enabled": compiled["config"]["brandmeister"]["enabled"],
-        "dashboard_password_preconfigured": compiled["complete"],
-        "bm_api_key_preconfigured": bool(compiled.get("factory_provision") and compiled["factory_provision"].get("bm_api_key")),
+        "dashboard_password_preconfigured": bool(
+            compiled.get("dashboard_password")
+            or (
+                isinstance(compiled.get("imported_backup"), dict)
+                and _valid_web_auth(compiled["imported_backup"].get("secrets", {}).get("web_auth"))
+            )
+        ),
+        "bm_api_key_preconfigured": bool(compiled.get("bm_api_key")),
         "rf_autostart": compiled["config"]["maintenance"]["rf_autostart"],
+        "dashboard_backup_imported": bool(compiled.get("imported_backup")),
+        "dashboard_backup_source": compiled.get("imported_source_file", ""),
         "image": compiled["image"],
     }
     summary_path = GENERATED / "summary.json"

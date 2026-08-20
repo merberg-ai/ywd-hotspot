@@ -18,7 +18,6 @@ from pathlib import Path
 PACKAGE_STATE = Path(os.environ.get("YWD_PLUGIN_PACKAGE_STATE", "/etc/ywd-hotspot/plugin-packages.json"))
 DATA_DIR = Path(os.environ.get("YWD_PLUGIN_DATA_DIR", "/var/lib/ywd-hotspot/plugins"))
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-LEGACY_INSTALLED_IDS = frozenset({"system-info", "service-heartbeat"})
 
 ALLOWED_DEPENDENCIES = frozenset({
     "python3", "systemd", "journalctl", "mmdvm-host", "mosquitto-broker", "mosquitto-client"
@@ -56,7 +55,7 @@ def _valid_id(value):
 
 def read_state():
     if not PACKAGE_STATE.exists():
-        return {"schema":1,"valid":True,"source":"legacy-default","installed":{ident:True for ident in sorted(LEGACY_INSTALLED_IDS)},"error":None}
+        return {"schema":1,"valid":True,"source":"default","installed":{},"error":None}
     raw = _read_json(PACKAGE_STATE)
     if not isinstance(raw, dict) or raw.get("schema") != 1 or not isinstance(raw.get("installed"), dict):
         return {"schema":1,"valid":False,"source":"invalid","installed":{},"error":"plugin package state is invalid; all packages are treated as uninstalled"}

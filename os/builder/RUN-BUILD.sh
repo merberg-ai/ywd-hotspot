@@ -19,6 +19,42 @@ cleanup() {
 trap cleanup EXIT INT TERM
 cleanup
 
+clean_previous_work() {
+  local work_dir work_root resolved root_resolved
+  work_dir="${YWD_OS_WORK_DIR:-$OS_DIR/work/unified}"
+  work_root="$OS_DIR/work"
+  resolved="$(realpath -m -- "$work_dir")"
+  root_resolved="$(realpath -m -- "$work_root")"
+
+  case "$resolved" in
+    "$root_resolved"/*) ;;
+    *)
+      printf 'ERROR: refusing privileged cleanup outside %s: %s\n' "$root_resolved" "$resolved" >&2
+      printf '       Remove the custom YWD_OS_WORK_DIR manually, then retry.\n' >&2
+      return 1
+      ;;
+  esac
+
+  [[ -e "$resolved" ]] || return 0
+
+  if command -v findmnt >/dev/null 2>&1; then
+    if findmnt -rn -R "$resolved" 2>/dev/null | grep -q .; then
+      printf 'ERROR: previous pi-gen work tree still contains mounted filesystems:\n' >&2
+      findmnt -R "$resolved" >&2 || true
+      printf '       Refusing to remove it. Unmount/clean the failed pi-gen run first.\n' >&2
+      return 1
+    fi
+  fi
+
+  if [[ "$EUID" -eq 0 ]]; then
+    printf '[INFO] Removing previous pi-gen work tree as root: %s\n' "$resolved"
+    rm -rf -- "$resolved"
+  else
+    printf '[INFO] Removing previous pi-gen work tree (pi-gen may have left root-owned files): %s\n' "$resolved"
+    sudo rm -rf -- "$resolved"
+  fi
+}
+
 mkdir -p "$LOCAL_DIR" "$GEN_DIR"
 chmod 0700 "$LOCAL_DIR" "$GEN_DIR"
 
@@ -75,6 +111,11 @@ else
   rm -f "$LEGACY_WIFI"
   echo '[INFO] Wi-Fi left blank; first boot will use the YWD setup AP.'
 fi
+
+# pi-gen itself runs under sudo and therefore failed/interrupted builds leave
+# root-owned files below os/work. Clean that tree safely before BUILD.sh reaches
+# its normal unprivileged rm -rf step so repeated builds are reliable.
+clean_previous_work
 
 # shellcheck disable=SC1090
 source "$GEN_DIR/build.env"

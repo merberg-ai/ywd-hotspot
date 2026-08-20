@@ -26,6 +26,16 @@ IMG_NAME="${YWD_IMG_NAME:-ywd-hotspot-os}"
 OS_VERSION="${YWD_OS_VERSION:-M4.2-unified-dev}"
 CHECKSUM_FILE="SHA256SUMS-YWD-HOTSPOT-OS"
 
+TARGET_HOSTNAME="${YWD_TARGET_HOSTNAME:-ywd-hotspot}"
+TIMEZONE_DEFAULT_VALUE="${YWD_TIMEZONE:-America/Los_Angeles}"
+LOCALE_DEFAULT_VALUE="${YWD_LOCALE:-en_US.UTF-8}"
+KEYBOARD_KEYMAP_VALUE="${YWD_KEYBOARD_KEYMAP:-us}"
+KEYBOARD_LAYOUT_VALUE="${YWD_KEYBOARD_LAYOUT:-English (US)}"
+WPA_COUNTRY_VALUE="${YWD_WIFI_COUNTRY:-US}"
+ENABLE_SSH_VALUE="${YWD_ENABLE_SSH:-1}"
+PUBKEY_ONLY_SSH_VALUE="${YWD_PUBKEY_ONLY_SSH:-1}"
+RF_AUTOSTART_VALUE="${YWD_RF_AUTOSTART:-0}"
+
 [[ -f "$PIN_FILE" ]] || { echo "ERROR: missing $PIN_FILE" >&2; exit 1; }
 PI_GEN_COMMIT="$(tr -d '[:space:]' < "$PIN_FILE")"
 [[ "$PI_GEN_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: invalid pi-gen commit in $PIN_FILE" >&2; exit 1; }
@@ -66,10 +76,21 @@ if ! git -C "$ROOT_DIR" diff --quiet --ignore-submodules -- || ! git -C "$ROOT_D
   exit 1
 fi
 
-case "$SOURCE_BRANCH" in
-  main|dev) UPDATE_CHANNEL="$SOURCE_BRANCH" ;;
-  *) UPDATE_CHANNEL="dev" ;;
-esac
+if [[ -n "${YWD_UPDATE_CHANNEL:-}" ]]; then
+  UPDATE_CHANNEL="$YWD_UPDATE_CHANNEL"
+else
+  case "$SOURCE_BRANCH" in
+    main|dev) UPDATE_CHANNEL="$SOURCE_BRANCH" ;;
+    *) UPDATE_CHANNEL="dev" ;;
+  esac
+fi
+case "$UPDATE_CHANNEL" in main|dev) ;; *) echo "ERROR: invalid update channel: $UPDATE_CHANNEL" >&2; exit 1 ;; esac
+
+[[ "$TARGET_HOSTNAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo "ERROR: invalid target hostname: $TARGET_HOSTNAME" >&2; exit 1; }
+[[ "$WPA_COUNTRY_VALUE" =~ ^[A-Z]{2}$ ]] || { echo "ERROR: invalid Wi-Fi country: $WPA_COUNTRY_VALUE" >&2; exit 1; }
+[[ "$ENABLE_SSH_VALUE" == "0" || "$ENABLE_SSH_VALUE" == "1" ]] || { echo 'ERROR: YWD_ENABLE_SSH must be 0 or 1' >&2; exit 1; }
+[[ "$PUBKEY_ONLY_SSH_VALUE" == "1" ]] || { echo 'ERROR: YWD-Hotspot builder currently permits only public-key-only SSH' >&2; exit 1; }
+[[ "$RF_AUTOSTART_VALUE" == "0" || "$RF_AUTOSTART_VALUE" == "1" ]] || { echo 'ERROR: YWD_RF_AUTOSTART must be 0 or 1' >&2; exit 1; }
 
 printf '==================================================\n'
 printf ' YWD-Hotspot OS Unified Image Builder\n'
@@ -80,6 +101,13 @@ printf 'Source branch:      %s\n' "$SOURCE_BRANCH"
 printf 'Source commit:      %s\n' "$SOURCE_COMMIT_SHORT"
 printf 'Update channel:     %s\n' "$UPDATE_CHANNEL"
 printf 'OS identity:        %s\n' "$OS_VERSION"
+printf 'Hostname:           %s (.local)\n' "$TARGET_HOSTNAME"
+printf 'Timezone:           %s\n' "$TIMEZONE_DEFAULT_VALUE"
+printf 'Locale:             %s\n' "$LOCALE_DEFAULT_VALUE"
+printf 'Keyboard:           %s / %s\n' "$KEYBOARD_KEYMAP_VALUE" "$KEYBOARD_LAYOUT_VALUE"
+printf 'Wi-Fi country:      %s\n' "$WPA_COUNTRY_VALUE"
+printf 'SSH:                 %s\n' "$([[ "$ENABLE_SSH_VALUE" == "1" ]] && printf 'enabled / key-only' || printf 'disabled')"
+printf 'RF autostart:       %s\n' "$([[ "$RF_AUTOSTART_VALUE" == "1" ]] && printf 'ON' || printf 'OFF')"
 printf 'Target:             Raspberry Pi Zero W / Zero WH\n'
 printf 'Architecture:       armhf\n'
 printf 'Base:               Raspberry Pi OS Lite / trixie\n'
@@ -89,7 +117,8 @@ printf 'Work directory:     %s\n' "$WORK_DIR"
 printf 'Deploy directory:   %s\n\n' "$DEPLOY_DIR"
 printf 'Safety model:\n'
 printf '  - current root application is packaged verbatim\n'
-printf '  - RF remains disabled until first-boot setup explicitly enables it\n'
+printf '  - RF startup follows the validated hotspot profile and is warned when enabled\n'
+printf '  - SSH, hostname, locale, timezone and regulatory domain follow the validated System / OS profile\n'
 printf '  - ywd-headless-oled remains the sole SSD1306 owner\n'
 printf '  - OLED/console presentation is injected from current canonical app source\n'
 printf '  - normal GitHub app updates remain available after imaging\n\n'
@@ -275,14 +304,14 @@ IMG_NAME='$IMG_NAME'
 PI_GEN_RELEASE='YWD-Hotspot OS unified development image'
 RELEASE='trixie'
 ARCH='armhf'
-TARGET_HOSTNAME='ywd-hotspot'
-LOCALE_DEFAULT='en_US.UTF-8'
-KEYBOARD_KEYMAP='us'
-KEYBOARD_LAYOUT='English (US)'
-TIMEZONE_DEFAULT='America/Los_Angeles'
-WPA_COUNTRY='US'
-ENABLE_SSH=1
-PUBKEY_ONLY_SSH=1
+TARGET_HOSTNAME='$TARGET_HOSTNAME'
+LOCALE_DEFAULT='$LOCALE_DEFAULT_VALUE'
+KEYBOARD_KEYMAP='$KEYBOARD_KEYMAP_VALUE'
+KEYBOARD_LAYOUT='$KEYBOARD_LAYOUT_VALUE'
+TIMEZONE_DEFAULT='$TIMEZONE_DEFAULT_VALUE'
+WPA_COUNTRY='$WPA_COUNTRY_VALUE'
+ENABLE_SSH=$ENABLE_SSH_VALUE
+PUBKEY_ONLY_SSH=$PUBKEY_ONLY_SSH_VALUE
 PUBKEY_SSH_FIRST_USER='$PUBKEY'
 FIRST_USER_NAME='ywd'
 FIRST_USER_PASS='$DEV_PASS'
@@ -329,11 +358,18 @@ printf '\n==================================================\n YWD-HOTSPOT OS BU
 printf 'Application: %s\n' "$APP_VERSION"
 printf 'Source:      %s @ %s\n' "$SOURCE_BRANCH" "$SOURCE_COMMIT_SHORT"
 printf 'OS:          %s\n' "$OS_VERSION"
+printf 'Hostname:    %s.local\n' "$TARGET_HOSTNAME"
+printf 'Update:      %s\n' "$UPDATE_CHANNEL"
+printf 'RF autostart:%s\n' "$([[ "$RF_AUTOSTART_VALUE" == "1" ]] && printf ' ON' || printf ' OFF')"
 find "$DEPLOY_DIR" -maxdepth 1 -type f \( -name "*${IMG_NAME}*" -o -name "$CHECKSUM_FILE" \) -printf '  %f\n' | sort
-printf '\nFirst boot flow:\n'
+printf '\nFirst boot flow when setup is still required:\n'
 printf '  1. No Wi-Fi -> open YWD-Hotspot-xxxx AP -> http://10.42.0.1/\n'
 printf '  2. Wi-Fi handoff -> OLED displays six-digit setup code\n'
-printf '  3. Browse https://ywd-hotspot.local:8443/\n'
-printf '  4. Finish wizard -> normal dashboard at http://ywd-hotspot.local:8080/\n'
-printf '\nSSH: ssh -i %s ywd@ywd-hotspot.local\n' "$DEV_KEY"
-printf 'RF remains off until explicitly enabled by setup.\n'
+printf '  3. Browse https://%s.local:8443/\n' "$TARGET_HOSTNAME"
+printf '  4. Finish wizard -> normal dashboard at http://%s.local:8080/\n' "$TARGET_HOSTNAME"
+if [[ "$ENABLE_SSH_VALUE" == "1" ]]; then
+  printf '\nSSH: ssh -i %s ywd@%s.local\n' "$DEV_KEY" "$TARGET_HOSTNAME"
+else
+  printf '\nSSH: disabled by System / OS profile (authorized client key is still baked for later enablement).\n'
+fi
+printf 'RF autostart is %s for this image profile.\n' "$([[ "$RF_AUTOSTART_VALUE" == "1" ]] && printf 'ENABLED' || printf 'disabled')"

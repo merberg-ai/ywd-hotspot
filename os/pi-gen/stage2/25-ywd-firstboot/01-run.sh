@@ -5,6 +5,9 @@ LIBEXEC="${ROOTFS_DIR}/usr/local/libexec"
 
 for f in \
   "${APP}/lib/setup_server.py" \
+  "${APP}/lib/setup_restore_server.py" \
+  "${APP}/lib/settings_backup.py" \
+  "${APP}/lib/settings_admin.py" \
   "${APP}/lib/setup_admin.py" \
   "${APP}/lib/setup_entry.sh" \
   "${APP}/lib/admin_dispatch.sh" \
@@ -26,7 +29,9 @@ install -m 0755 "${APP}/lib/update_admin.py" "${LIBEXEC}/ywd-hotspot-update-admi
 install -m 0755 "${APP}/lib/update_runner.py" "${LIBEXEC}/ywd-update-runner"
 install -m 0755 "${APP}/lib/admin_dispatch.sh" "${LIBEXEC}/ywd-hotspot-admin"
 chmod 0755 \
-  "${APP}/lib/setup_server.py" "${APP}/lib/setup_admin.py" "${APP}/lib/setup_entry.sh" \
+  "${APP}/lib/setup_server.py" "${APP}/lib/setup_restore_server.py" \
+  "${APP}/lib/settings_backup.py" "${APP}/lib/settings_admin.py" \
+  "${APP}/lib/setup_admin.py" "${APP}/lib/setup_entry.sh" \
   "${APP}/lib/admin_dispatch.sh" "${APP}/lib/update_admin.py" "${APP}/lib/update_runner.py"
 
 install -d -m 0700 "${ROOTFS_DIR}/var/lib/ywd-hotspot/setup-tls"
@@ -50,8 +55,9 @@ exists with state=complete.
 
 The network layer owns Wi-Fi onboarding first. After station Wi-Fi is online,
 the secure setup wizard starts on HTTPS port 8443 and requires the six-digit
-code shown on the OLED. RF services remain disabled until the final wizard page
-explicitly asks to enable them.
+code shown on the OLED. The operator may either complete normal setup or restore
+a verified encrypted .ywdsettings backup. RF services remain disabled until the
+final wizard/restore action explicitly asks to enable them.
 EOF
 
-printf 'Installed current YWD-Hotspot secure first-boot layer; RF remains disabled.\n'
+printf 'Installed current YWD-Hotspot secure first-boot + restore layer; RF remains disabled.\n'

@@ -34,6 +34,7 @@ REPO_URLS = {
     "https://github.com/merberg-ai/ywd-hotspot",
     "git@github.com:merberg-ai/ywd-hotspot.git",
 }
+CHANNELS = {"main", "dev", "dev-plugins"}
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
@@ -98,10 +99,10 @@ def channel_value():
         value = CHANNEL.read_text().strip()
     except Exception:
         pass
-    if value not in {"main", "dev"}:
+    if value not in CHANNELS:
         value = str(read_json(BUILD, {}).get("update_channel") or "")
-    if value not in {"main", "dev"}:
-        raise RuntimeError("saved update channel must be main or dev")
+    if value not in CHANNELS:
+        raise RuntimeError("saved update channel must be main, dev, or dev-plugins")
     return value
 
 
@@ -114,8 +115,8 @@ def ensure_source():
     dirty = git("status", "--porcelain")
     if dirty:
         raise RuntimeError("managed Git checkout has local modifications")
-    # Older OS images were cloned --single-branch dev-os. Widen the refspec so
-    # a saved main/dev application channel is always fetchable.
+    # Older OS images were cloned with narrow branch refspecs. Keep the managed
+    # checkout able to fetch all first-party channels, including dev-plugins.
     p = run(["git", "-C", str(REPO), "config", "--replace-all", "remote.origin.fetch",
              "+refs/heads/*:refs/remotes/origin/*"], timeout=10)
     if p.returncode != 0:

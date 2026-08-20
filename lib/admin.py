@@ -205,6 +205,36 @@ def active(unit):
     return run(["systemctl", "is-active", "--quiet", unit], 3).returncode == 0
 
 
+def unit_exists(unit):
+    return run(["systemctl", "cat", unit], 3).returncode == 0
+
+
+def oled_unit():
+    # YWD-Hotspot OS owns the physical SSD1306 with the headless unit. Generic
+    # installs have no such unit and continue using the application OLED unit.
+    return "ywd-headless-oled.service" if unit_exists("ywd-headless-oled.service") else "ywd-oled.service"
+
+
+def apply_oled_policy(enabled):
+    unit = oled_unit()
+    if unit == "ywd-headless-oled.service":
+        helper = APP / "lib" / "oled_owner.sh"
+        if not helper.is_file():
+            raise RuntimeError("authoritative OLED owner helper is missing")
+        # The helper installs the unified renderer drop-in, disables the legacy
+        # app unit, and mirrors canonical display.enabled into boot/runtime state.
+        run(["bash", str(helper), "install", str(APP)], 20, check=True)
+    elif enabled:
+        run(["systemctl", "enable", unit], 10, check=True)
+        if active(unit):
+            run(["systemctl", "restart", unit], 10, check=True)
+        else:
+            run(["systemctl", "start", unit], 10, check=True)
+    else:
+        run(["systemctl", "disable", "--now", unit], 10, check=True)
+    return unit
+
+
 def schedule_dashboard_restart(delay=2):
     # systemd-run lets the HTTP request finish before its own process is restarted.
     unit = f"ywd-dashboard-restart-{int(time.time())}"
@@ -235,16 +265,10 @@ def apply_runtime(old, new, hints):
             result["restarted"].append("DMRGateway")
 
     if hints["oled"]:
-        if new["display"].get("enabled", True):
-            run(["systemctl", "enable", "ywd-oled.service"], 10)
-            if active("ywd-oled.service"):
-                run(["systemctl", "restart", "ywd-oled.service"], 10)
-            else:
-                run(["systemctl", "start", "ywd-oled.service"], 10)
-            result["restarted"].append("OLED")
-        else:
-            run(["systemctl", "disable", "--now", "ywd-oled.service"], 10)
-            result["restarted"].append("OLED stopped")
+        enabled = bool(new["display"].get("enabled", True))
+        unit = apply_oled_policy(enabled)
+        result["restarted"].append("OLED" if enabled else "OLED stopped")
+        result["oled_unit"] = unit
 
     if hints["dashboard"]:
         schedule_dashboard_restart(2)
@@ -332,10 +356,17 @@ def rf_action(action):
 
 def service_action(payload):
     name = str(payload.get("service", ""))
-    allowed = {"oled":"ywd-oled.service", "activity":"ywd-activity.service"}
-    if name not in allowed: raise ValueError("unsupported service")
-    run(["systemctl", "restart", allowed[name]], 12, check=True); audit("service-restart", {"service": name})
-    return {"ok": True}
+    if name == "oled":
+        if not current()["display"].get("enabled", True):
+            raise ValueError("OLED is disabled in Settings")
+        unit = apply_oled_policy(True)
+    elif name == "activity":
+        unit = "ywd-activity.service"
+        run(["systemctl", "restart", unit], 12, check=True)
+    else:
+        raise ValueError("unsupported service")
+    audit("service-restart", {"service": name, "unit": unit})
+    return {"ok": True, "unit": unit}
 
 
 def reboot():
@@ -409,7 +440,7 @@ def diagnostics():
             if p.exists(): (root/(ini+".redacted")).write_text(sanitize_ini(p.read_text(errors="replace")))
         (root/"health.json").write_text(json.dumps(health.collect(), indent=2)+"\n")
         cmds = {
-            "system-status.txt": ["systemctl", "--no-pager", "--full", "status", "ywd-mmdvmhost.service", "ywd-dmrgateway.service", "ywd-dashboard.service", "ywd-oled.service", "ywd-activity.service"],
+            "system-status.txt": ["systemctl", "--no-pager", "--full", "status", "ywd-mmdvmhost.service", "ywd-dmrgateway.service", "ywd-dashboard.service", "ywd-headless-oled.service", "ywd-oled.service", "ywd-activity.service"],
             "mmdvm-journal.txt": ["journalctl", "-u", "ywd-mmdvmhost.service", "-n", "400", "--no-pager", "-o", "short-precise"],
             "gateway-journal.txt": ["journalctl", "-u", "ywd-dmrgateway.service", "-n", "300", "--no-pager", "-o", "short-precise"],
             "kernel-current.txt": ["journalctl", "-k", "-b", "0", "-n", "400", "--no-pager", "-o", "short-precise"],

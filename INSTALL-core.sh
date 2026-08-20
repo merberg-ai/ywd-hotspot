@@ -55,8 +55,9 @@ PY
 echo; echo "Installing build/runtime dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends build-essential git ca-certificates libmosquitto-dev libmosquitto1 nlohmann-json3-dev python3 python3-smbus i2c-tools iw sudo
+apt-get install -y --no-install-recommends build-essential git ca-certificates openssl libmosquitto-dev libmosquitto1 nlohmann-json3-dev python3 python3-smbus i2c-tools iw sudo
 [[ -r /usr/include/nlohmann/json.hpp ]] || { echo "[FAIL] nlohmann/json.hpp missing."; exit 1; }
+command -v openssl >/dev/null 2>&1 || { echo "[FAIL] openssl is required for YWD settings backups/plugin signatures."; exit 1; }
 
 if ! id ywd-hotspot >/dev/null 2>&1; then useradd --system --home /var/lib/ywd-hotspot --create-home --shell /usr/sbin/nologin ywd-hotspot; fi
 for g in dialout i2c systemd-journal; do getent group "$g" >/dev/null 2>&1 && usermod -a -G "$g" ywd-hotspot || true; done

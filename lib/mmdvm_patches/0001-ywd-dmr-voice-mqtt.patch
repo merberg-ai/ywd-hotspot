@@ -1,0 +1,129 @@
+diff --git a/Log.h b/Log.h
+index 7392164..1c1c0c0 100644
+--- a/Log.h
++++ b/Log.h
+@@ -39,5 +39,6 @@
+ extern void LogFinalise();
+ 
+ extern void WriteJSON(const std::string& topLevel, nlohmann::json& json);
++extern void WriteJSONToTopic(const std::string& topic, const std::string& topLevel, nlohmann::json& json);
+ 
+ #endif
+diff --git a/Log.cpp b/Log.cpp
+index 222d18e..64e71f1 100644
+--- a/Log.cpp
++++ b/Log.cpp
+@@ -108,3 +108,14 @@ void WriteJSON(const std::string& topLevel, nlohmann::json& json)
+ 		m_mqtt->publish("json", top.dump());
+ 	}
+ }
++
++void WriteJSONToTopic(const std::string& topic, const std::string& topLevel, nlohmann::json& json)
++{
++	if (m_mqtt != nullptr) {
++		nlohmann::json top;
++
++		top[topLevel] = json;
++
++		m_mqtt->publish(topic.c_str(), top.dump());
++	}
++}
+diff --git a/DMRSlot.h b/DMRSlot.h
+index dc338eb..3dfa33a 100644
+--- a/DMRSlot.h
++++ b/DMRSlot.h
+@@ -168,6 +168,7 @@ private:
+ 	void writeJSONRSSI();
+ 	void writeJSONBER();
+ 	void writeJSONText(const unsigned char* text);
++	void writeJSONVoice(const char* source, const CDMRData& data);
+ 
+ 	void writeJSONRF(const char* action);
+ 	void writeJSONRF(const char* action, unsigned int srcId, const std::string& srcInfo, bool grp, unsigned int dstId);
+diff --git a/DMRSlot.cpp b/DMRSlot.cpp
+index e29035f..b32fa91 100644
+--- a/DMRSlot.cpp
++++ b/DMRSlot.cpp
+@@ -1404,6 +1404,8 @@ void CDMRSlot::writeNetwork(const CDMRData& dmrData)
+ 		}
+ 
+ 		if (m_netState == RPT_NET_STATE::AUDIO) {
++			writeJSONVoice("network", dmrData);
++
+ 			unsigned char fid = m_netLC->getFID();
+ 			if (fid == FID_ETSI || fid == FID_DMRA)
+ 				m_netErrs += m_fec.regenerateDMR(data + 2U);
+@@ -1442,6 +1444,8 @@ void CDMRSlot::writeNetwork(const CDMRData& dmrData)
+ 		if (m_netState != RPT_NET_STATE::AUDIO)
+ 			return;
+ 
++		writeJSONVoice("network", dmrData);
++
+ 		unsigned char fid = m_netLC->getFID();
+ 		if (fid == FID_ETSI || fid == FID_DMRA)
+ 			m_netErrs += m_fec.regenerateDMR(data + 2U);
+@@ -2054,9 +2058,6 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
+ 	if (m_netState != RPT_NET_STATE::IDLE)
+ 		return;
+ 
+-	if (m_network == nullptr)
+-		return;
+-
+ 	CDMRData dmrData;
+ 	dmrData.setSlotNo(m_slotNo);
+ 	dmrData.setDataType(dataType);
+@@ -2072,7 +2073,11 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
+ 
+ 	dmrData.setData(data + 2U);
+ 
+-	m_network->write(dmrData);
++	if (dataType == DT_VOICE_SYNC || dataType == DT_VOICE)
++		writeJSONVoice("rf", dmrData);
++
++	if (m_network != nullptr)
++		m_network->write(dmrData);
+ }
+ 
+ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType, unsigned char errors)
+@@ -2491,6 +2496,41 @@ void CDMRSlot::writeJSONText(const unsigned char* text)
+ 	WriteJSON("Text", json);
+ }
+ 
++void CDMRSlot::writeJSONVoice(const char* source, const CDMRData& dmrData)
++{
++	assert(source != nullptr);
++
++	unsigned char payload[DMR_FRAME_LENGTH_BYTES];
++	dmrData.getData(payload);
++
++	static const char HEX[] = "0123456789abcdef";
++	std::string frameHex;
++	frameHex.reserve(DMR_FRAME_LENGTH_BYTES * 2U);
++	for (unsigned int i = 0U; i < DMR_FRAME_LENGTH_BYTES; i++) {
++		frameHex.push_back(HEX[(payload[i] >> 4) & 0x0FU]);
++		frameHex.push_back(HEX[payload[i] & 0x0FU]);
++	}
++
++	nlohmann::json json;
++	json["timestamp"]  = CUtils::createTimestamp();
++	json["source"]     = source;
++	json["slot"]       = int(dmrData.getSlotNo());
++	json["frame_kind"] = dmrData.getDataType() == DT_VOICE_SYNC ? "voice_sync" : "voice";
++	json["data_type"]  = int(dmrData.getDataType());
++	json["src_id"]     = int(dmrData.getSrcId());
++	json["dst_id"]     = int(dmrData.getDstId());
++	json["group"]      = dmrData.getFLCO() == FLCO::GROUP ? "yes" : "no";
++	json["seq_no"]     = int(dmrData.getSeqNo());
++	json["n"]          = int(dmrData.getN());
++	json["ber"]        = int(dmrData.getBER());
++	json["rssi"]       = int(dmrData.getRSSI());
++	json["frame_hex"]  = frameHex;
++
++	// Voice frames use a dedicated loopback MQTT topic so the existing
++	// low-rate telemetry snapshot never has to parse or rewrite per frame.
++	WriteJSONToTopic("voice", "DMRVoice", json);
++}
++
+ void CDMRSlot::writeJSONRF(const char* action)
+ {
+ 	assert(action != nullptr);

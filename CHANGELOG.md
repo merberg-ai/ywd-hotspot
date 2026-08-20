@@ -1,304 +1,200 @@
 # 🗒️ Changelog
 
-[Project README](README.md) · [Docs](docs/README.md) · [Development notes](docs/GITHUB-SETUP.md)
+[Project README](README.md) · [Docs](docs/README.md) · [Development](docs/GITHUB-SETUP.md)
 
-YWD-Hotspot is still alpha software. These are project checkpoints, not a promise of strict semantic-versioning stability.
+YWD-Hotspot is approaching its first 0.1.0 release. Release candidates remain subject to physical acceptance before promotion to `main`.
 
 ---
 
-## Promotion note — 2026-08-17
+## 0.1.0-rc1 — First Release Candidate
 
-The physically proven unified application + OS-builder Alpha12.2 commit was promoted to the conservative `main` branch:
+**Status:** release candidate prepared on `dev-release-0.1.0`; full acceptance testing is still required before promotion to `main`.
+
+Release hardening since the last Alpha development baseline includes:
+
+- staged candidate validation expanded to require the complete System/DMR-ID maintenance payload before deployment;
+- Git provenance hardened so temporary refs/branches cannot masquerade as the persistent update channel;
+- RadioID database manager added to the System page with due-check, forced update, record count, age, timer/service status, and explicit unhealthy handling for empty databases;
+- privileged shutdown and DMR-ID actions routed through the narrow split admin dispatcher;
+- updater fixed to install the split admin bridge coherently **before** dashboard restart, eliminating the transient `unsupported admin action` race during updates;
+- OLED status and CLI restart behavior now resolve the authoritative `ywd-headless-oled.service` on YWD-Hotspot OS while retaining generic-install fallback to `ywd-oled.service`;
+- Talkgroup Manager confirmation ownership simplified so duplex-aware TG actions receive one correct themed confirmation without timing-based de-duplication;
+- dashboard runtime identity now follows the canonical installed `VERSION` file, keeping API, journal, About, CLI, branch/ref, commit, and update-channel reporting consistent;
+- README/install/development/repository/image-builder documentation refreshed for RC1;
+- new `docs/BUILDING.md` added with simple source validation, fresh GitHub install/build, optional patched MMDVM voice-tap build, and full appliance-image build instructions;
+- README/build/DMR voice docs now explicitly document the YWD MMDVM-Host patch used for the optional RX Monitor/passive DMR voice path.
+
+Physically proven during release hardening before RC1 identity transition:
+
+- updater/provenance changes;
+- DMR ID manager normal/forced update and empty-database health handling;
+- canonical OLED owner reporting/restart behavior;
+- Talkgroup Manager confirmation cleanup;
+- version/provenance consistency;
+- coherent admin bridge through an application update with no transient dashboard admin error;
+- MMDVMHost, DMRGateway, Dashboard and Activity service survival plus BrandMeister reconnect.
+
+The RF baseline is intentionally unchanged by RC1 release prep:
 
 ```text
-0.1.0-alpha12.2-dev
-41f1cf9fcf94b3880d5cf11fb35e2cccb6fd3afd
+MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
 
-The same integrated baseline is preserved at `dev-alpha12.2-os-integrated-known-good`. Plain `dev` currently retains that tested runtime commit. `main` may carry later documentation-only commits above it without changing the Alpha12.2 runtime payload. Experimental plugin/MMDVM development remains separate on `dev-plugins` and is not part of the promoted `main` runtime.
-
-Main-line documentation was refreshed at promotion time to cover the integrated image builder, factory/setup-AP path, optional Wi-Fi-only build preseed, secure first-boot HTTPS wizard, single-owner OLED model and current schema-5 runtime.
-
-## 0.1.0-alpha12.2-dev — Unlock + Update Feedback Polish
-
-**Status:** physically proven integrated baseline and later promoted to `main`. Preserved at `dev-alpha12.2-os-integrated-known-good`; `0.1.0-alpha12.1-dev` also remains preserved at `dev-alpha12.1-known-good`. No MMDVM-Host or DMRGateway pin changes are included.
-
-Highlights:
-
-- wrong WebUI unlock passwords now report the failure inside the UNLOCK CONTROLS modal instead of behind it as a toast
-- failed unlock attempts clear the password field and refocus it for the next attempt
-- unlock submission shows a CSP-safe `CHECKING…` spinner/busy state while authentication is in flight
-- the final About-page `INSTALL UPDATE` button immediately changes to a CSP-safe `STARTING…` spinner state while `/api/update/start` launches the detached updater
-- update-start feedback hands off to the existing progress modal as soon as the detached update job becomes visible
-- modal error/busy presentation remains external-CSS based; strict `style-src 'self'` is unchanged
-- Alpha12.2 cache-busts the updated polish assets
-
-Integrated OS baseline subsequently validated on this commit includes:
-
-- canonical `os/builder/BUILD.sh` unified image builder
-- exact-current-root application packaging rather than stale OS app copies
-- Pi Zero W / armhf Raspberry Pi OS Lite image target
-- setup/recovery AP and secure HTTPS first-boot wizard
-- factory RF-off safety gate
-- unified headless OLED ownership
-- managed `main` / `dev` update channel after imaging
-
-## 0.1.0-alpha12.1-dev — Instrument Panel + CSP Polish
-
-**Status:** user-tested successfully on mobile and desktop browsers and preserved at `dev-alpha12.1-known-good`. No MMDVM-Host or DMRGateway pin changes are included.
-
-Highlights:
-
-- canonical configuration schema 5
-- RX and TX now use different instrument layouts based on measurements the hotspot can honestly provide
-- active RF receive shows `SAMPLING…` / `MEASURING…` until MMDVM-Host reports the completed-call RSSI/BER values
-- completed RX RSSI/BER can remain visible for a configurable measurement-hold period
-- network → RF TX hides meaningless RX signal/BER gauges and prioritizes configured TX Level / RF Level
-- TX network quality is `PENDING` during the call and displays completed packet-loss/BER data when available
-- history defaults to the last completed RF samples instead of losing useful values after a short quiet period
-- configurable sample count, maximum sample age, or time-window history mode
-- all instrument meter levels are rendered with bounded `data-*` states and same-origin CSS rather than JavaScript inline styles
-- Talkgroup Manager no longer injects a runtime `<style>` element
-- update progress bar no longer changes `style.width`; strict `style-src 'self'` remains unchanged
-- removed the explanatory “Progress is stage-driven…” line from the update modal
-- WebUI assets use Alpha12.1 cache-busting versions
-- `docs/DISPLAY.md` documents measurement timing, TX/RX semantics, schema 5, CSP behavior, and history modes
-
-Telemetry note:
-
-- the pinned MMDVM-Host internally accumulates RF RSSI/BER at roughly 1.08-second intervals
-- its live JSON RSSI/BER telemetry is published through the optional MQTT path rather than the journal stream YWD-Hotspot currently consumes
-- Alpha12.1 deliberately does not add an MQTT broker/client dependency to the original Pi Zero merely to animate gauges
-- the lightweight activity collector therefore continues using honest completed-call journal measurements
-
-## 0.1.0-alpha12-dev — Live DMR Instrument Panel + Unified OLED
-
-**Status:** superseded by Alpha12.1 after initial Pi/browser testing. No MMDVM-Host or DMRGateway pin changes are included.
-
-Highlights:
-
-- canonical configuration schema 4
-- existing schema-3 configs normalize forward with conservative display defaults
-- established Basic LIVE DMR status card remains the default/low-overhead mode
-- optional browser-side LIVE DMR instrument panel
-- segmented or smooth RSSI gauge with configurable dBm scale and segment count
-- BER quality gauge with configurable excellent/good/fair thresholds
-- configured TX/RF drive meters
-- peak hold and configurable hold duration
-- rolling RSSI/BER SVG history traces
-- configurable 5/10/20 fps browser rendering target
-- off/subtle/normal/high animation settings and reduced-motion policy
-- Basic, Balanced, Instrument, Maximum Shiny, and Custom presets
-- enhanced panel reuses the existing dashboard status payload; no second server polling loop
-- unavailable RSSI/BER remains unavailable rather than being synthesized
-- dynamic top status-strip RX/TX detail option
-
-OLED/runtime display:
-
-- one shared `lib/oled.py` renderer for generic installs and YWD-Hotspot OS
-- YWD-Hotspot OS keeps `ywd-headless-oled.service` as the sole physical SSD1306/I2C owner
-- `ywd-oled.service` remains disabled on the appliance OS
-- owner transition is serialized during OLED-affecting config apply/revert and manual restart
-- existing boot/network/setup/recovery/shutdown screens retained
-- Basic / Enhanced / Minimal runtime display modes
-- large auto-fit callsign rendering
-- group/private destination display
-- optional cached talkgroup name display
-- local RadioID callsign fallback without OLED-originated Internet requests
-- slot, elapsed, BER, RSSI, and packet-loss toggles
-- configurable post-call hold
-- optional idle-page cycling
-- SSD1306 hardware 0° / 180° rotation
-- update-progress display from the local sanitized update-status file
-- OLED remains a passive presentation service outside the RF-critical path
-
-Update/build safety:
-
-- dashboard explicitly serves instrumentation JS/CSS assets
-- GitHub candidate manifest requires instrumentation and unified-OLED payload
-- install/update wrappers preflight unified OLED and instrumentation files before live service work
-- uninstall restores the OS headless OLED command/drop-in state
-- display-only configuration changes do not touch the RF stack
-- instrumentation-only configuration changes are treated as dashboard presentation changes
-
-Documentation:
+Optional RX Monitor/passive voice observation continues to use:
 
-- `README.md` refreshed for Alpha12
-- `docs/DISPLAY.md` added
-- architecture and upgrading docs updated for single OLED ownership, display schema, and WebUI updater/progress behavior
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
 
-## 0.1.0-alpha11.2-dev — Stage-Driven Update Progress
+Normal application updates still do **not** recompile MMDVM-Host or DMRGateway.
 
-Added a WebUI software-update progress modal driven by real updater milestones rather than a fake elapsed timer. The detached updater publishes sanitized phase/progress/message state and the browser survives dashboard restart/reconnect during installation.
+## 0.1.0-alpha22.7.3-dev — Pre-main Runtime Cleanup
 
-## 0.1.0-alpha11-dev / alpha11.1-dev — About-Page Self Update
-
-Introduced authenticated About-page update checking/installation, a detached `ywd-update.service`, narrow update admin actions, pending-config/dirty-source guards, managed-refspec repair for legacy single-branch OS checkouts, and the first physically successful WebUI self-update test.
-
-## 0.1.0-alpha10-dev — GitHub + UX Polish
-
-Highlights:
-
-- README reorganized into a proper GitHub project front door
-- documentation index added under `docs/README.md`
-- installation/migration/update instructions refreshed and shortened
-- normal Git-clone install no longer tells users to chmod already-executable repository files
-- `main` / `dev` / checkpoint branch model documented consistently
-- stale Alpha6-era status text removed from Security/Contributing/development docs
-- GitHub-friendly callouts, tables, navigation links, icons, and collapsible CLI reference
-- same-origin `ui-polish.css` added so visual polish remains compatible with strict CSP
-- success/error toasts get clearer visual hierarchy
-- subtle modal open/close motion with `prefers-reduced-motion` support
-- async action buttons show a small spinner/working label while requests are pending
-- Talkgroup Manager helper styles moved into the CSP-approved external polish stylesheet path
-- updater candidate validation now requires the new polish stylesheet
+**Status:** physically validated on the Pi and promoted to `dev`.
 
-No MMDVM-Host or DMRGateway pin changes are included.
+- retires the bundled `system-info` and `service-heartbeat` proof packages now that the real plugin lifecycle is physically proven;
+- removes their historical implicit-installed defaults from package registration;
+- removes the retired MMDVM Live Telemetry plugin adapter, API panel, and polling implementation while retaining trusted core MMDVM telemetry infrastructure;
+- leaves a tiny `plugin-telemetry.js` compatibility shim temporarily so browsers with an older cached `app.js` do not request a missing asset during update turnover;
+- keeps RX Monitor, passive DMR voice, transactional package updates, BrandMeister routing, RF config generation, and MMDVM-Host/DMRGateway pins unchanged.
 
-## 0.1.0-alpha9.2-dev — Modal CSP Fix + Polish Checkpoint
+## 0.1.0-alpha22.7.2-dev — Pre-main Candidate Hardening
 
-**Status:** user-tested successfully on the Pi Zero/mobile WebUI; checkpointed at `dev-alpha9.2-known-good`.
+**Status:** physically validated on the Pi and promoted to `dev`.
 
-Highlights:
+- adds capability-based staged-candidate validation independent of branch name;
+- plugin UI/package-update, passive voice, and telemetry markers now require complete matching runtime sets;
+- incoming `UPDATE.sh` repeats candidate coherence checks before plugin quiesce or other live service work;
+- fresh installs run the same coherence check;
+- plugin candidate self-tests no longer depend on the historical `system-info` / `service-heartbeat` proof IDs;
+- reconciles `MANIFEST.txt` with the current voice bridge and Plugin UI/Wasm runtime;
+- documentation refreshed for simplex/duplex, plugin updates, passive RX audio, three update channels, and current branch policy;
+- no MMDVM-Host/DMRGateway pin, RF config-generation, BrandMeister routing, or RX audio algorithm changes.
 
-- custom YWD confirmation dialogs confirmed working on mobile
-- modal implementation reuses the dashboard's existing CSP-approved `.modal` / `.dialog` primitives
-- no `unsafe-inline` CSP weakening
-- Alpha9.1 fixed the missing `/ui-polish.js` HTTP route
-- Alpha9.1 also fixed deployment of the split installer/updater/CLI core files
-- Alpha9.2 fixed the remaining modal-style CSP conflict
-- console branding/color remained working through both hotfixes
+## 0.1.0-alpha22.7.1-dev — Talkgroup Modal Hotfix
 
-## 0.1.0-alpha9-dev — Console + UI Polish
+**Status:** physically accepted UI hotfix.
 
-Introduced:
-- shared lightweight terminal presentation helper in `bin/ywd-ui.sh`
-- ANSI cyan/blue/magenta/green/yellow/red output matching the WebUI palette
-- automatic plain output when stdout is redirected or `NO_COLOR` is set
-- RF-themed YWD-Hotspot / KJ6YWD ASCII banners for installer/updater/migration entry points
-- themed `ywd-hotspotctl` control-console menu
-- colorized status/source/health/calibration presentation
-- themed browser confirmation layer for RF/reboot/config/calibration/TG actions
-- existing browser `beforeunload` warning intentionally left native
+- converts remaining Talkgroup Manager browser `confirm()` paths to YWD themed dialogs;
+- includes Status-page static-TG removal, Drop QSO, Drop Dynamic, saved-set deletion/replacement, and planned TG apply confirmation;
+- no BrandMeister API/routing semantics changed.
 
-## 0.1.0-alpha8-dev — Talkgroup Manager
+## 0.1.0-alpha22.7-dev — Transactional Plugin Updates
 
-**Status:** user-tested successfully before Alpha9 work; checkpoint retained as `dev-alpha8-known-good`.
+**Status:** physically validated on the Pi using an older RX Monitor package updated in place to the current candidate.
 
-Highlights:
+- upload/review distinguishes new install from update/reinstall/downgrade/replacement;
+- same-ID plugin updates preserve config/data and prior valid installed/enabled intent;
+- re-verifies package/signature before apply;
+- blocks built-in ID replacement and incompatible kind/provenance changes;
+- atomic package swap with rollback on apply failure;
+- plugin update review shows current/candidate metadata and capability changes.
 
-- dedicated **TALKGROUPS** WebUI page
-- live BrandMeister static/dynamic subscription display
-- BrandMeister v2 TG directory search by ID/name
-- normalized Pi-side directory cache with 24-hour normal lifetime
-- stale-cache fallback
-- manual directory refresh from unlocked control mode
-- desired static-TG plan separate from live BM state
-- explicit add/remove preview and confirmation
-- additions applied before removals
-- browser-local favorites and saved static sets
-- existing authenticated BrandMeister API controls reused
-- `docs/TALKGROUPS.md` added
+## 0.1.0-alpha22.6.1-dev — WebUI / Plugin Polish Proven
 
-## 0.1.0-alpha7-dev — Dev Channel + Guided RX Calibration
+**Status:** physically validated.
 
-**Status:** user-tested successfully before Alpha8; checkpoint retained as `dev-alpha7-known-good`.
+- themed confirmation coverage expanded across dashboard/plugin/TG controls;
+- `.ywdplugin` upload gained real progress, verification/review modal, and explicit install confirmation;
+- redundant MMDVM Live Telemetry plugin retired while trusted core telemetry remained;
+- RX Monitor presentation cleaned up with single Start/Stop Audio toggle and collapsed diagnostics;
+- 22.6.1 fixed retired-plugin references left in install/update source validation;
+- RX Monitor 0.4.0-alpha6.1 fixed presentation cleanup that had removed DOM nodes still used by the proven base engine.
 
-Highlights:
+## 0.1.0-alpha22.5-dev — Passive Voice Transport Stabilization
 
-- persistent `main` / `dev` update channels
-- successful explicit `--branch main|dev` updates remember the selected channel
-- channel displayed in CLI/WebUI provenance
-- terminal calibration summary + JSON/CSV export
-- repeated RXOffset samples grouped by offset
-- average BER, best BER, average RSSI, and sample count
-- three samples per offset required before supported recommendation
-- provisional best shown below the sample threshold
-- confirmation-gated **USE BEST RX OFFSET**
-- ±500 Hz quick adjustment controls
+**Status:** physically validated; foundation for proven live RX audio.
 
-The recommendation uses average BER and does not silently change modem settings.
+- separates passive voice ingestion from whole-ring JSON snapshot writing using a lower-priority writer process;
+- removes the large shared delivery stalls seen on the original Pi Zero;
+- preserves MMDVM-Host as sole modem owner and does not rebuild the radio stack during normal updates;
+- paired RX Monitor development introduced AUTO call locking, 100 ms PCM chunks, maintained jitter reservoir, non-destructive handoff, and browser timestamp-based call decisions;
+- network and RF browser audio were both physically heard working; busy Worldwide TG91 AUTO playback reached useful/stable quality.
 
-## 0.1.0-alpha6 — GitHub Integration + About
+## 0.1.0-alpha22.4-dev — Adaptive RX Polling
 
-At the time Alpha6 was introduced, `main` remained on the Alpha6 line while later work was exercised on `dev`. This historical note no longer describes the current `main` head; see the promotion note at the top of this file.
+- RX Monitor live audio polling drops from the normal 250 ms UI cadence to 100 ms while audio is active;
+- manual single-timeslot monitoring proved materially better than mixing simultaneous TS1/TS2 traffic.
 
-Highlights:
+## 0.1.0-alpha22.3-dev — Voice Bridge Pacing Fix
 
-- WebUI About page with project branding/links/author credit
-- branch/ref/commit/source provenance
-- `/etc/ywd-hotspot/build-info.json`
-- managed source checkout at `/opt/ywd-hotspot/repo`
-- deployed runtime at `/opt/ywd-hotspot/app`
-- `ywd-hotspotctl source`
-- `update --check`, `--dry-run`, branch/tag support
-- staged candidate validation
-- protected app/config backup + rollback attempt
-- archive-install migration without RF-stack rebuild
-- installer existing-install detection
+- replaces selector + buffered `TextIOWrapper.readline()` consumption with nonblocking unbuffered pipe draining;
+- drains all available MQTT lines on readiness instead of stranding prefetched records;
+- corrected live voice cadence from roughly 30 seconds of bridge time for 10 seconds of AMBE payload toward real-time delivery.
 
-### Alpha6 migration executable-bit hotfix
+## 0.1.0-alpha22.2-dev — Live Browser Wasm Support
 
-The first migration implementation chmod'd tracked files inside `/opt/ywd-hotspot/repo`; Git correctly reported mode changes as a dirty tree and the safety guard stopped the update.
+- scoped Plugin UI CSP support for browser Wasm only on `read:dmr-voice` frames;
+- no broad same-origin/network permission added;
+- first live RX browser audio candidate installed and produced audio, exposing transport/playout jitter that later Alpha22 builds corrected.
 
-The fix:
+## 0.1.0-alpha22.1-dev — Duplex BrandMeister TG Routing Fix
 
-- preserves tracked executable modes
-- avoids chmod mutation inside the managed checkout
-- ignores mode-only drift while still refusing content changes
-- invokes staged scripts through Bash
+**Status:** physically proven.
 
-Recovery notes remain documented in `docs/UPGRADING.md`.
+- BrandMeister controls became mode/timeslot aware instead of hard-coding simplex slot 0;
+- duplex static TG add/remove works independently on TS1 and TS2;
+- route identity is `(slot,tg)` and saved TG sets preserve slot;
+- Drop QSO / Drop Dynamic operate across valid duplex slots;
+- multiple static TGs and update persistence were physically validated.
 
-## 0.1.0-alpha5 — Calibration Prep + UI Polish
+## 0.1.0-alpha22-dev — RX Monitor Phase 3B
 
-**Status:** superseded before promotion.
+- browser-side DMR A/B/C deinterleave, Golay/FEC correction, AMBE+2 descrambling, 49-bit vocoder-frame recovery, continuity counters, and bounded capture export;
+- golden captures proved 500 recovered frames = 10 seconds nominal AMBE with zero gaps/unrecoverable frames on clean traffic.
 
-Added:
+## 0.1.0-alpha21.x-dev — Duplex + RX Phase 3A
 
-- directional RX/TX animation
-- collapsible Last Heard
-- approximate location lookup/cache
-- unsaved-settings warning
-- calibration baseline save/restore
-- calibration sessions/results
-- mobile layout polish
+- canonical config schema 6 added explicit `simplex` / `duplex` radio modes;
+- duplex uses separate hotspot RX/TX frequencies and TS1 + TS2;
+- update/migration preserves older simplex behavior unless explicitly changed;
+- duplex RF TS1 and TS2 were physically validated;
+- RX Monitor Phase 3A proved three AMBE coded blocks recovered per DMR voice burst.
 
-## 0.1.0-alpha4.1 — Stability + Web Config Hotfix
+## Alpha20.x — Passive DMR Voice Tap
 
-Fixed the Alpha4 updater/admin `init-applied` stdin bug while retaining:
+- introduced a passive MMDVM-Host voice-frame copy to a separate loopback MQTT topic;
+- kept MMDVM-Host as sole serial/RF owner;
+- moved expensive MMDVM patch preparation out of normal service startup/update dependencies;
+- background build/guarded activation/rollback behavior was developed specifically around the original Pi Zero compile budget.
 
-- transactional browser configuration
-- config history/rollback
-- advanced RF settings
-- RF/service controls
-- health/diagnostics
-- persistent journaling
-- service recovery hardening
-- sanitized diagnostic export
-- Wi-Fi/power/SD/kernel health visibility
+## Alpha19 — Plugin UI v1
 
-## 0.1.0-alpha4 — Stability + Web Config
+**Status:** physically validated.
 
-Introduced transactional WebUI configuration and expanded diagnostics/stability controls.
+- signed browser UI packages;
+- isolated iframe execution with restrictive CSP/Permissions Policy;
+- narrow MessageChannel bridge instead of trusted-dashboard DOM injection;
+- UI smoke-test lifecycle physically proven before RX Monitor work began.
 
-Known issue: updater called `ywd-hotspot-admin init-applied` in a way that waited for EOF on stdin. Fixed by Alpha4.1 and must not be reintroduced.
+## Alpha16–18 — Package / Telemetry / Backup Foundations
 
-## 0.1.0-alpha3 — BM Controls + Live DMR
+- persistent uploaded `.ywdplugin` package source and AVAILABLE / INSTALLED / ENABLED / ACTIVE separation;
+- dependency/hardware checks;
+- signed service-package lifecycle;
+- loopback MMDVM telemetry and normalized DMR sessions;
+- encrypted/protected settings backup/restore integration;
+- plugin update-safety capture/quiesce/restore across application updates.
 
-Added:
+## Alpha13–15 — Plugin Framework / Service Sandbox
 
-- BrandMeister API integration
-- Drop QSO / Drop All Dynamic
-- static/dynamic TG display and management
-- authenticated control mode
-- live RF receive/transmit activity
-- source callsign/DMR ID and destination info
-- BER/RSSI / packet-loss context
-- richer Last Heard
-- OLED live activity
-- RadioID callsign lookup/update
+- global Plugin Support master switch;
+- declarative package/config framework;
+- shared `ywd-plugin@.service` sandbox for service plugins;
+- service lifecycle/health/log controls;
+- application-update plugin quiesce/restore and rollback safety.
 
-## 0.1.0-alpha2 — Initial custom stack
+## Alpha11–12 — Self-update / Instrumentation / OLED Integration
 
-Initial YWD-Hotspot stack with MMDVM-Host, DMRGateway, dashboard, OLED, CLI, and BrandMeister connectivity.
+- About-page software update controls and detached `ywd-update.service`;
+- stage-driven update progress surviving dashboard restart;
+- responsive live DMR instrumentation;
+- unified OLED renderer and single-owner policy on YWD-Hotspot OS;
+- GitHub-managed source/runtime separation and protected rollback backups.
+
+## Earlier Alpha history
+
+Earlier builds established the basic Raspberry Pi + MMDVM appliance, canonical configuration, MMDVM-Host/DMRGateway pinning, BrandMeister controls, dashboard/OLED/diagnostics, calibration, GitHub update management, and RF-state-preserving installer/updater behavior.
+
+Detailed Alpha21/22 implementation notes are archived in [`docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md`](docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md); earlier detail remains available in Git history and checkpoint refs.

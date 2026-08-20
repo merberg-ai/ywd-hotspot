@@ -1,8 +1,6 @@
 # 🌿 GitHub / Development Notes
 
-[← Docs index](README.md) · [Project README](../README.md) · [Contributing](../CONTRIBUTING.md) · [OS image build](OS-IMAGE-BUILD.md) · [Upgrading](UPGRADING.md)
-
----
+[← Docs index](README.md) · [Project README](../README.md) · [Building](BUILDING.md) · [Repository Policy](REPOSITORY.md) · [Upgrading](UPGRADING.md)
 
 Canonical repository:
 
@@ -10,119 +8,93 @@ Canonical repository:
 https://github.com/merberg-ai/ywd-hotspot
 ```
 
-## 🌳 Branch model
+## Current branch model
 
-| Branch / checkpoint | Purpose |
+| Branch | Purpose |
 |---|---|
-| `main` | promoted/conservative appliance line carrying the Alpha12.2 integrated runtime baseline plus any later main-only docs/metadata commits |
-| `dev` | normal core/application + OS development line; currently retains the same Alpha12.2 runtime baseline |
-| `dev-alpha12.2-os-integrated-known-good` | physically proven unified application + OS-builder checkpoint |
-| `dev-plugins` | separate experimental plugin/MMDVM line; intentionally not included in `main` |
-| `dev-plugins-alpha18.1-known-good` | current physically proven plugin/MMDVM framework checkpoint |
-| temporary feature / `dev-os-*` branches | isolated work before deliberate integration/promotion |
+| `main` | promoted/conservative release line |
+| `dev` | physically accepted integrated development baseline |
+| `dev-builder` | isolated OS image/builder work |
+| `dev-plugins` | plugin/framework development line |
+| `dev-release-0.1.0` | temporary 0.1.0 release hardening / RC branch |
 
-Current promoted **runtime baseline**:
+The release branch is temporary. During RC testing it may be installed directly while the appliance's persistent update channel remains `dev`. After acceptance, release work flows back through `dev` and then to `main`. Builder/image work remains isolated until intentionally synchronized.
 
-```text
-0.1.0-alpha12.2-dev
-41f1cf9fcf94b3880d5cf11fb35e2cccb6fd3afd
-```
+Historical `checkpoint-*` branches are rollback/history references, not active development lines.
 
-Documentation-only commits may sit above that runtime commit on `main` without changing the installed application version or RF/runtime payload. Plain `dev` currently remains at the tested runtime baseline itself.
-
-During normal core development, new non-plugin work lands on `dev` first. A build is promoted to `main` only after deliberate hardware validation. Experimental plugin work remains isolated on `dev-plugins` until there is an explicit decision to promote any of it into core.
-
-The historical long-lived `dev-os` branch is reference/history; do not merge it wholesale into current development.
-
-## 📥 Clone
+## Clone
 
 Promoted line:
-
-```bash
-git clone --branch main https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-```
-
-The branch argument is optional because `main` is the repository default:
 
 ```bash
 git clone https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
-Normal development line:
+Current 0.1.0 RC line:
+
+```bash
+git clone --branch dev-release-0.1.0 https://github.com/merberg-ai/ywd-hotspot.git
+cd ywd-hotspot
+```
+
+Accepted development line:
 
 ```bash
 git clone --branch dev https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
-Normal Git clones preserve executable modes. If source came through a ZIP/Windows copy and modes were lost, running entry scripts through Bash is sufficient for recovery, for example:
+Builder/image line:
 
 ```bash
-sudo bash ./INSTALL.sh
+git clone --branch dev-builder https://github.com/merberg-ai/ywd-hotspot.git
+cd ywd-hotspot
 ```
 
-`.gitattributes` keeps important text/source on LF endings.
-
-## 🧱 Source vs deployed runtime
-
-A hotspot does not run directly from a mutable Git tree:
+## Source vs deployed runtime
 
 ```text
-/opt/ywd-hotspot/repo    managed Git source checkout
-/opt/ywd-hotspot/app     deployed runtime copy
+/opt/ywd-hotspot/repo    managed Git source
+/opt/ywd-hotspot/app     deployed runtime; no .git
 ```
 
-This separation lets YWD-Hotspot fetch and validate a candidate before touching the running application.
+Do not use the managed appliance checkout as a casual development tree. Develop in a normal clone and let the updater keep its dirty-tree safety guard.
 
-Non-secret source provenance is recorded in:
+Non-secret source provenance is recorded in `/etc/ywd-hotspot/build-info.json` and exposed by `ywd-hotspotctl source` plus the WebUI.
+
+Important provenance distinction:
 
 ```text
-/etc/ywd-hotspot/build-info.json
+branch/ref       where this exact candidate came from
+update channel   persistent operator-selected update line
 ```
 
-and displayed by:
+A release candidate may therefore correctly report:
 
-```bash
-ywd-hotspotctl source
+```text
+Branch  : dev-release-0.1.0
+Channel : dev
 ```
 
-as well as the WebUI header/About page.
+## Never commit runtime secrets
 
-## 🥧 Application + OS source relationship
+Do not commit or attach real appliance credentials/config/private state, including:
 
-The unified image builder under `os/` packages the root application from the **same Git commit that runs the builder**. Normal application development must therefore treat root runtime files and image-builder expectations as one source tree rather than maintaining duplicate app snapshots.
-
-For the supported build flow:
-
-```bash
-bash os/builder/DOCTOR.sh
-bash os/builder/BUILD.sh
+```text
+/etc/ywd-hotspot/config.json
+/etc/ywd-hotspot/bm-api.key
+/etc/ywd-hotspot/web-auth.json
+/var/lib/ywd-hotspot/private/
+/var/backups/ywd-hotspot/
+plugin signing private keys
+SSH private keys
+unsanitized diagnostics
 ```
 
-See **[OS-IMAGE-BUILD.md](OS-IMAGE-BUILD.md)** for host requirements, factory/Wi-Fi-preseed image modes, output and first-boot validation.
+## Basic validation before pushing
 
-Images built from `main` follow the `main` application update channel. Images built from `dev` follow `dev`. Experimental build branches fall back to `dev` rather than becoming permanent appliance channels.
-
-## 🔐 Never commit runtime or builder secrets
-
-Do not commit or attach:
-
-- real `/etc/ywd-hotspot/config.json`
-- `/etc/ywd-hotspot/bm-api.key`
-- `/etc/ywd-hotspot/web-auth.json`
-- `/var/lib/ywd-hotspot/private/`
-- protected `/var/backups/ywd-hotspot/` archives
-- arbitrary unsanitized diagnostics
-- `os/local/provision.env`
-- `os/local/ywd-os-dev_ed25519`
-
-Runtime configuration belongs outside the repository under `/etc/ywd-hotspot` and `/var/lib/ywd-hotspot`. Builder-local credentials/keys belong only in ignored `os/local/` state.
-
-## ✅ Basic validation before pushing
-
-Shell entry points:
+Shell:
 
 ```bash
 bash -n \
@@ -132,107 +104,131 @@ bash -n \
   MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh \
   UNINSTALL.sh \
   bin/ywd-hotspotctl bin/ywd-hotspotctl-core bin/ywd-ui.sh \
-  lib/admin_dispatch.sh lib/setup_entry.sh lib/oled_owner.sh \
-  lab/mmdvm-diag.sh \
-  os/builder/BUILD.sh os/builder/DOCTOR.sh os/builder/CONFIGURE-WIFI.sh
+  lab/mmdvm-diag.sh
 ```
 
 Python:
 
 ```bash
 python3 -m py_compile lib/*.py
+python3 lib/candidate_validate.py .
 ```
 
-If Node.js is available in the development environment:
+If Node.js is available:
 
 ```bash
-for f in web/*.js; do node --check "$f"; done
+for js in web/*.js; do
+  node --check "$js"
+done
 ```
 
-Image-builder changes should also run:
+OS-builder preflight:
 
 ```bash
 bash os/builder/DOCTOR.sh
 ```
 
-Changes touching systemd, sudoers, config generation, install/update, image first boot, RF behavior, or OLED ownership still require a real Pi test before being considered known-good.
+See **[BUILDING.md](BUILDING.md)** for the complete easy-to-follow build paths.
 
-## 🧪 Test-build workflow
+Changes touching systemd, sudoers, config generation, updater/install behavior, plugin lifecycle, OLED ownership, passive voice/telemetry, or RF behavior still require a real Pi test before being called known-good.
 
-A practical normal-development cycle is:
+## Pinned RF and RX Monitor patch
+
+Current pins live in `pins.env`:
 
 ```text
-dev change
-   ↓
-static validation
-   ↓
-update --check / --dry-run where relevant
-   ↓
-Pi Zero hardware test
-   ↓
-checkpoint branch when confirmed
-   ↓
-promote to main only when deliberately approved
+MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
 
-For image work, insert `DOCTOR.sh` + a real image build/flash/first-boot test before the checkpoint/promotion step.
+The optional RX Monitor/passive voice path uses:
 
-Do not use `/opt/ywd-hotspot/repo` as a casual hacking tree. Work in a normal clone and let the managed updater keep its dirty-tree safety guard.
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
 
-## 🛡️ Update trust boundary
+Do not combine a radio-stack pin or patch move with unrelated UI/docs/plugin work. The voice patch mirrors accepted DMR voice frames to the trusted loopback observation path; it does not transfer modem ownership to the plugin.
+
+Normal application updates do **not** recompile MMDVM-Host or DMRGateway. The optional patched voice binary is prepared through `ywd-mmdvm-voice-build.service` and its guarded helper.
+
+## Development workflow
+
+```text
+choose exact verified parent
+   ↓
+make one scoped change on the appropriate development/release branch
+   ↓
+static + capability validation
+   ↓
+compare exact changed-file scope
+   ↓
+Pi Zero hardware test when runtime behavior changed
+   ↓
+freeze a rollback checkpoint after acceptance
+   ↓
+promote intentionally
+   ↓
+clean temporary history only after preservation
+```
+
+## Release workflow
+
+The 0.1.0 release-hardening pattern is:
+
+```text
+main
+  ↑
+dev
+  └── dev-release-0.1.0
+          release hardening / RC only
+          ↓
+       physical RC acceptance
+          ↓
+       merge → dev
+          ↓
+       promote → main
+
+
+dev-builder
+  stays isolated during release hardening
+```
+
+Release candidate work should not absorb new feature development merely because a temporary release branch exists.
+
+## Update trust boundary
 
 Keep these protections unless a stronger replacement is demonstrated:
 
-- canonical-origin verification
-- dirty-content refusal
-- candidate staging outside the live app
-- required-file/syntax validation
-- protected pre-update backup
-- RF-state preservation
-- managed checkout advanced only after successful deploy
+- canonical-origin verification;
+- dirty-content refusal;
+- candidate staging outside the live app;
+- capability-based required-file validation;
+- shell/Python syntax validation;
+- protected pre-update backup;
+- RF/service-state preservation;
+- coherent privileged admin-dispatch generation before dashboard restart;
+- plugin quiesce/restore safety;
+- managed checkout advanced only after successful deployment.
 
-Convenience is not a good reason to make update failures destructive.
+Convenience is not a reason to make update failures destructive.
 
-## 📌 Upstream RF pins
-
-Do not casually combine an MMDVM-Host/DMRGateway pin move with unrelated UI/docs work. A radio-stack pin change changes the calibration baseline and should be isolated and regression-tested.
-
-Current pins live in:
-
-```text
-pins.env
-```
-
-The OS image builder also consumes those exact pins when compiling the RF stack inside the image.
-
-## 🏷️ Checkpoints, tags and releases
-
-A checkpoint branch is useful while alpha builds are moving quickly because it preserves the exact hardware-tested commit before the next experiment starts.
-
-The updater also supports explicit tags, for example:
-
-```bash
-sudo ywd-hotspotctl update --tag <tag>
-```
-
-A release/tag should only be described as known-good after actual hardware testing.
-
-Do not move/rewrite a named known-good checkpoint after it has been used as a rollback anchor.
-
-## 🧾 Repository metadata
-
-Suggested description:
+## Repository layout
 
 ```text
-Lightweight Raspberry Pi + MMDVM DMR hotspot stack with BrandMeister controls, responsive WebUI, calibration, diagnostics, safe GitHub updates and an integrated appliance-image builder.
+assets/     branding source/derivatives
+bin/        operator CLI
+docs/       operator/developer documentation
+lab/        diagnostics
+lib/        trusted application core
+os/         image builder
+sudoers/    privilege policy
+systemd/    units/sandbox templates
+tools/      package/development utilities
+web/        static WebUI
 ```
 
-Suggested topics:
+Root `INSTALL.sh`, `UPDATE.sh`, `GITHUB-UPDATE.sh`, migration, and uninstall wrappers are stable public entry points and intentionally remain at repository root.
 
-```text
-ham-radio dmr mmdvm raspberry-pi raspberry-pi-zero brandmeister hotspot amateur-radio
-```
-
-## 📄 License
+## License
 
 The repository uses the **[Unlicense](../LICENSE)** / public-domain dedication.

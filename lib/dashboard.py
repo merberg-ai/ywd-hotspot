@@ -10,6 +10,19 @@ from urllib.parse import parse_qs, urlparse
 import dashboard_core as core
 import dashboard_update
 
+
+def _load_installed_version():
+    """Make the installed VERSION file authoritative for the live dashboard."""
+    try:
+        value = (core.WEB.parent / "VERSION").read_text(encoding="utf-8").strip()
+        if value:
+            core.VERSION = value
+    except Exception:
+        pass
+
+
+_load_installed_version()
+
 TG_CACHE = core.VAR / "talkgroup-directory.json"
 SETUP_STATE = core.VAR / "setup-state.json"
 M4_GATE = core.Path("/etc/ywd-hotspot/m4-safety.txt")
@@ -193,6 +206,30 @@ def search_talkgroups(query="", ids=None, limit=40, force=False):
     }
 
 
+def _bm_mode_and_slots():
+    """Return the configured RF mode and the BrandMeister slots valid for it."""
+    mode = str(core.canonical_cfg().get("radio", {}).get("mode", "simplex")).strip().lower()
+    if mode == "duplex":
+        return "duplex", {1, 2}
+    return "simplex", {0}
+
+
+def _bm_request_slot(body):
+    mode, allowed = _bm_mode_and_slots()
+    if "slot" not in body:
+        if mode == "simplex":
+            return 0
+        raise ValueError("timeslot is required in duplex mode (use slot 1 or 2)")
+    try:
+        slot = int(body.get("slot"))
+    except Exception as exc:
+        raise ValueError("invalid timeslot") from exc
+    if slot not in allowed:
+        expected = "0" if mode == "simplex" else "1 or 2"
+        raise ValueError(f"invalid timeslot for {mode} mode; expected {expected}")
+    return slot
+
+
 class H(core.H):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -214,6 +251,24 @@ class H(core.H):
             return
         if path == "/ui-polish.css":
             self.serve_static("ui-polish.css", "text/css; charset=utf-8")
+            return
+        if path == "/system-ui.js":
+            self.serve_static("system-ui.js", "application/javascript; charset=utf-8")
+            return
+        if path == "/system-ui.css":
+            self.serve_static("system-ui.css", "text/css; charset=utf-8")
+            return
+        if path == "/hero-layout.css":
+            self.serve_static("hero-layout.css", "text/css; charset=utf-8")
+            return
+        if path == "/ywd-hotspot-banner.webp":
+            self.serve_asset(core.BRANDING / "ywd-hotspot-banner-webui.webp", "image/webp")
+            return
+        if path == "/api/system/dmrid":
+            try:
+                self.send_json(core.admin_call("dmrid-status", {}, 12))
+            except Exception as exc:
+                self.send_json({"error": str(exc)[:800]}, 502)
             return
         if path == "/api/talkgroups/search":
             qs = parse_qs(parsed.query, keep_blank_values=False)
@@ -237,6 +292,64 @@ class H(core.H):
                 self.send_json({"error": str(exc)[:500]}, 502)
             return
         super().do_GET()
+
+    def do_POST(self):
+        """Add System actions and keep BrandMeister operations timeslot-aware."""
+        path = urlparse(self.path).path
+
+        if path in {"/api/runtime/shutdown", "/api/system/dmrid/check", "/api/system/dmrid/update"}:
+            if not self.require_control():
+                return
+            try:
+                body = self.body_json()
+                if path == "/api/runtime/shutdown":
+                    out = core.admin_call("shutdown", body)
+                elif path == "/api/system/dmrid/check":
+                    out = core.admin_call("dmrid-check", body, 95)
+                else:
+                    out = core.admin_call("dmrid-update", body, 95)
+                self.send_json(out)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                self.send_json({"error": str(exc)[:800]}, 502)
+            return
+
+        if not path.startswith("/api/bm/"):
+            super().do_POST()
+            return
+        if not self.require_bm():
+            return
+        try:
+            body = self.body_json()
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, 400)
+            return
+        try:
+            slot = _bm_request_slot(body)
+            if path == "/api/bm/drop-qso":
+                out = core.brandmeister.drop_qso(slot)
+            elif path == "/api/bm/drop-dynamic":
+                out = core.brandmeister.drop_dynamic(slot)
+            elif path == "/api/bm/static/add":
+                tg = _tg_id(body.get("talkgroup"))
+                if tg is None:
+                    raise ValueError("invalid talkgroup")
+                out = core.brandmeister.add_static(tg, slot)
+            elif path == "/api/bm/static/remove":
+                tg = _tg_id(body.get("talkgroup"))
+                if tg is None:
+                    raise ValueError("invalid talkgroup")
+                out = core.brandmeister.remove_static(tg, slot)
+            else:
+                self.send_json({"error": "not found"}, 404)
+                return
+            core.invalidate_bm()
+            self.send_json({"ok": True, "result": out, "slot": slot})
+        except ValueError as exc:
+            self.send_json({"error": str(exc)[:500]}, 400)
+        except Exception as exc:
+            self.send_json({"error": str(exc)[:500]}, 502)
 
 
 def main():

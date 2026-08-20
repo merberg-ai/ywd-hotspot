@@ -1,0 +1,73 @@
+.plugin-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center}
+.plugin-system-state{font-size:18px;font-weight:800;letter-spacing:.08em;color:var(--muted);margin:5px 0}
+.plugin-system-state.good{color:var(--good)}
+.plugin-system-state.disabled{color:var(--warn)}
+.plugin-summary{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.plugin-summary .badge{font-size:10px;color:var(--text)}
+.plugin-warning{border-color:#806b2f;color:var(--warn)}
+.plugin-good{border-color:#2b7f54;color:var(--good)}
+.plugin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.plugin-card{position:relative;overflow:hidden}
+.plugin-card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--line2)}
+.plugin-card.available:before{background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.plugin-card.active:before{background:var(--good);box-shadow:0 0 12px var(--good)}
+.plugin-card.error:before{background:var(--bad);box-shadow:0 0 12px var(--bad)}
+.plugin-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.plugin-title h3{margin:0;color:var(--text);font-size:15px;letter-spacing:.03em}
+.plugin-title small{display:block;color:var(--muted);font-size:9px;margin-top:4px}
+.plugin-description{color:var(--muted);font-size:11px;line-height:1.55;margin:10px 0}
+.plugin-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px;margin:10px 0}
+.plugin-meta div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #17333d;padding:5px 0;font-size:10px;color:var(--muted)}
+.plugin-meta b{color:var(--text);font-weight:600;text-align:right}
+.plugin-package-meta{border:1px solid #17333d;border-radius:8px;padding:6px 9px;background:#06151c}
+.plugin-check-pass{color:var(--good)!important}
+.plugin-check-missing{color:var(--bad)!important}
+.plugin-check-na{color:var(--muted)!important}
+.plugin-caps{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}
+.plugin-cap{border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:var(--cyan);font-size:9px}
+.plugin-package-actions{border-top:1px solid #17333d;padding-top:10px;margin-top:10px}
+.plugin-runtime-actions{border-top:1px solid #17333d;padding-top:10px}
+.plugin-config{border-top:1px solid #17333d;margin-top:12px;padding-top:10px}
+.plugin-config summary{margin-bottom:10px}
+.plugin-config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.plugin-config .field.check{justify-content:center;padding-bottom:0}
+.plugin-help{font-size:9px;color:var(--muted);line-height:1.4}
+.plugin-result{margin-top:9px;border:1px solid var(--line);border-radius:8px;background:#041017;padding:8px;font-size:10px;color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto}
+.plugin-result.good{border-color:#2b7f54;color:var(--good)}
+.plugin-result.bad{border-color:#7d3340;color:var(--bad)}
+.plugin-empty{text-align:center;padding:30px;color:var(--muted)}
+.plugin-api-note{font-size:10px;color:var(--muted);line-height:1.55;margin-top:8px}
+.plugin-upload-progress{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:center;gap:10px;margin:11px 0 8px}
+.plugin-upload-track{height:8px;border:1px solid var(--line);border-radius:999px;background:#031016;overflow:hidden;box-shadow:inset 0 0 10px #0008}
+.plugin-upload-track span{display:block;width:0;height:100%;background:linear-gradient(90deg,#1ba7c8,var(--cyan));box-shadow:0 0 12px #62e9ff88;transition:width .12s linear}
+.plugin-upload-progress>span{font-size:10px;color:var(--cyan);text-align:right}
+.plugin-install-dialog{width:min(680px,calc(100vw - 28px));max-height:min(82vh,760px);overflow:auto}
+.plugin-install-steps{display:grid;gap:6px;margin:14px 0}
+.plugin-install-steps>div{display:flex;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#061219;color:var(--muted);font-size:10px}
+.plugin-install-steps b{color:var(--muted)}
+.plugin-install-steps .good{border-color:#285d43}.plugin-install-steps .good b{color:var(--good)}
+.plugin-install-steps .bad{border-color:#6e303c}.plugin-install-steps .bad b{color:var(--bad)}
+.plugin-install-steps .working b{color:var(--cyan);animation:ywdPluginPulse 1s ease-in-out infinite}
+.plugin-install-details{margin:12px 0;border:1px solid var(--line);border-radius:10px;background:#041219;padding:12px}
+.plugin-install-name{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.plugin-install-name strong{color:var(--text);font-size:15px}.plugin-install-name span{color:var(--muted);font-size:9px}
+.plugin-install-details p{color:var(--muted);font-size:10px;line-height:1.55;margin:10px 0}
+.plugin-install-review-actions{justify-content:flex-end;margin-top:14px}
+.plugin-version-flow{display:flex;align-items:center;gap:9px;margin:10px 0 2px;font-size:11px;color:var(--muted)}
+.plugin-version-flow b{color:var(--cyan)}
+.plugin-version-flow .candidate{color:var(--good);font-weight:700}
+.plugin-update-caps{margin:12px 0;border:1px solid var(--line);border-radius:10px;background:#041219;padding:12px}
+.plugin-update-section-title{color:var(--cyan);font-size:10px;letter-spacing:.08em;font-weight:700;margin-bottom:8px}
+.plugin-update-cap-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.plugin-update-cap-columns>div>span{font-size:9px;color:var(--muted)}
+.plugin-update-delta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid #17333d}
+.plugin-cap-added{border-color:#2b7f54;color:var(--good)}
+.plugin-cap-removed{border-color:#7d3340;color:var(--bad)}
+.plugin-update-warnings{display:grid;gap:7px;margin:10px 0}
+.plugin-update-warnings .notice{margin:0}
+.ywd-working{position:relative}
+.ywd-working:before{content:"";display:inline-block;width:10px;height:10px;margin-right:7px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-1px;animation:ywdPluginSpin .7s linear infinite}
+@keyframes ywdPluginSpin{to{transform:rotate(360deg)}}
+@keyframes ywdPluginPulse{50%{opacity:.45}}
+@media(max-width:760px){.plugin-grid{grid-template-columns:1fr}.plugin-hero{grid-template-columns:1fr}.plugin-hero .buttonrow{margin-top:0}.plugin-meta{grid-template-columns:1fr}.plugin-install-name{flex-direction:column}.plugin-update-cap-columns{grid-template-columns:1fr}}
+@media(max-width:440px){.plugin-config-grid{grid-template-columns:1fr}.plugin-title{flex-direction:column}.plugin-card .buttonrow .btn{flex:1 1 100%}.plugin-install-review-actions .btn{flex:1 1 100%}}

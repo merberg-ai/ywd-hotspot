@@ -19,7 +19,7 @@ Usage: GITHUB-UPDATE.sh [--check|--dry-run] [--branch NAME|--tag TAG]
 
   --check       Fetch metadata and report whether an update is available.
   --dry-run     Fetch and validate the candidate without changing the live install.
-  --branch NAME Update from a branch. A successful main/dev update becomes the saved channel.
+  --branch NAME Update from a branch. A successful main/dev/dev-plugins update becomes the saved channel.
   --tag TAG     Update to a specific tag without changing the saved update channel.
 
 With no --branch/--tag, the saved update channel is used. If no channel file
@@ -67,10 +67,10 @@ fi
 saved_channel=""
 if [[ -r "$CHANNEL_FILE" ]]; then
   saved_channel="$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null || true)"
-  case "$saved_channel" in main|dev) ;; *) saved_channel="";; esac
+  case "$saved_channel" in main|dev|dev-plugins) ;; *) saved_channel="";; esac
 fi
 checkout_branch="$(git -C "$REPO_DIR" branch --show-current 2>/dev/null || true)"
-case "$checkout_branch" in main|dev) ;; *) checkout_branch="";; esac
+case "$checkout_branch" in main|dev|dev-plugins) ;; *) checkout_branch="";; esac
 if [[ -z "$TAG" && "$BRANCH_EXPLICIT" == 0 ]]; then
   BRANCH="${saved_channel:-${checkout_branch:-main}}"
 fi
@@ -126,19 +126,46 @@ trap cleanup EXIT
 
 git -C "$REPO_DIR" archive "$target_sha" | tar -x -C "$stage"
 
+# Every promoted line uses the same capability-based coherence gate. Prefer the
+# candidate's validator, but retain the currently installed validator for an
+# explicit rollback/tag target created before this helper existed.
+validator="$stage/lib/candidate_validate.py"
+[[ -f "$validator" ]] || validator="$SELF/lib/candidate_validate.py"
+[[ -f "$validator" ]] || { echo "[FAIL] No candidate capability validator is available"; exit 1; }
+python3 "$validator" "$stage"
+
 required=(
   VERSION INSTALL.sh INSTALL-core.sh UPDATE.sh UPDATE-core.sh UNINSTALL.sh
   GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh
   bin/ywd-hotspotctl bin/ywd-hotspotctl-core bin/ywd-ui.sh lab/mmdvm-diag.sh
   lib/dashboard.py lib/dashboard_core.py lib/dashboard_update.py lib/admin.py lib/update_admin.py lib/update_runner.py
   lib/build_info.py lib/generate-config.py lib/migrate.py lib/config_model.py lib/oled.py lib/oled_owner.sh
+  lib/system_admin.py lib/id-update.py
   web/index.html web/app.js web/app-core.js web/talkgroups.js web/ui-polish.js web/ui-polish.css web/style.css
   web/update.js web/update.css web/update-progress.js
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css
+  web/system-ui.js web/system-ui.css
   sudoers/ywd-hotspot systemd/ywd-mmdvmhost.service systemd/ywd-dmrgateway.service
   systemd/ywd-dashboard.service systemd/ywd-activity.service systemd/ywd-oled.service systemd/ywd-update.service
+  systemd/ywd-dmrid-update.service systemd/ywd-dmrid-update.timer
   assets/branding/ywd-hotspot-badge-256.webp
 )
+
+plugin_target=0
+if [[ -f "$stage/lib/plugin_ui_manager.py" || -f "$stage/lib/plugin_package_update.py" || -f "$stage/web/plugin-ui-host.js" || -f "$stage/systemd/ywd-plugin@.service" ]]; then
+  plugin_target=1
+  required+=(
+    lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py
+    lib/plugin_admin.py lib/plugin_admin_common.py lib/plugin_admin_packages.py lib/plugin_admin_state.py lib/plugin_admin_upload.py lib/admin_dispatch.sh
+    lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_archive.py lib/plugin_package_update.py
+    lib/plugin_catalog_overlay.py lib/plugin_service_manager.py lib/plugin_service_runner.py lib/plugin_ui_manager.py lib/plugin_update_safety.py
+    lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh
+    web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js
+    web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js
+    web/plugin-ui-host.js web/plugin-ui-runtime.js web/plugin-ui.css
+    web/backup-restore.js web/backup-restore.css systemd/ywd-plugin@.service
+  )
+fi
 for f in "${required[@]}"; do
   [[ -e "$stage/$f" ]] || { echo "[FAIL] Candidate is missing required file: $f"; exit 1; }
 done
@@ -146,7 +173,39 @@ done
 for f in UPDATE.sh UPDATE-core.sh INSTALL.sh INSTALL-core.sh GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh UNINSTALL.sh bin/ywd-hotspotctl bin/ywd-hotspotctl-core bin/ywd-ui.sh lab/mmdvm-diag.sh lib/oled_owner.sh; do
   [[ -f "$stage/$f" ]] && bash -n "$stage/$f"
 done
+if (( plugin_target )); then
+  bash -n "$stage/lib/admin_dispatch.sh" "$stage/lib/setup_entry.sh"
+fi
 python3 -m py_compile "$stage"/lib/*.py
+
+plugin_runtime_target=0
+if [[ -f "$stage/lib/plugin_update_safety.py" && -f "$stage/lib/plugin_service_manager.py" && -f "$stage/systemd/ywd-plugin@.service" ]]; then
+  plugin_runtime_target=1
+fi
+if (( plugin_target )); then
+  (( plugin_runtime_target )) || { echo "[FAIL] Plugin-capable candidate lacks service/update safety runtime"; exit 1; }
+  PYTHONPATH="$stage/lib" \
+  YWD_PLUGIN_CATALOG="$stage/lib/plugin_packages" \
+  YWD_SERVICE_PLUGIN_CATALOG="$stage/lib/service_plugin_packages" \
+  YWD_LOCAL_PLUGIN_ROOT="$stage/.plugin-local-does-not-exist" \
+  YWD_PLUGIN_TRUST_DIR="$stage/.plugin-trust-does-not-exist" \
+  YWD_PLUGIN_STATE="$stage/.plugin-state-does-not-exist" \
+  YWD_PLUGIN_PACKAGE_STATE="$stage/.plugin-package-state-does-not-exist" \
+  YWD_PLUGIN_CONFIG_DIR="$stage/.plugin-config-does-not-exist" \
+  YWD_PLUGIN_DATA_DIR="$stage/.plugin-data-does-not-exist" \
+  python3 - <<'PY'
+import dashboard_backup, dashboard_plugin_upload, dashboard_update
+import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
+import plugin_manager, plugin_service_manager, settings_backup, settings_admin
+snapshot = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
+assert snapshot["api"] == 1
+assert snapshot["system"].get("enabled") is False
+assert all(p.get("valid") is True for p in snapshot.get("plugins", [])), snapshot.get("plugins", [])
+services = plugin_service_manager.discover()
+assert all(e.get("valid") is True for e in services), services
+assert all(not e.get("manifest", {}).get("rf_mode") for e in services if e.get("valid")), services
+PY
+fi
 
 echo "Candidate validation: OK"
 if [[ "$MODE" == "dry-run" ]]; then
@@ -158,9 +217,40 @@ echo
 read -r -p "Apply $target_version from $label @ $target_short? [y/N]: " answer
 [[ "$answer" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
 
+repair_live_admin_bridge(){
+  local live=/opt/ywd-hotspot/app
+  [[ -f "$live/lib/admin_dispatch.sh" && -f "$live/lib/admin.py" ]] || return 0
+  install -o root -g root -m 0755 "$live/lib/admin.py" /usr/local/libexec/ywd-hotspot-admin-core
+  [[ -f "$live/lib/setup_admin.py" ]] && install -o root -g root -m 0755 "$live/lib/setup_admin.py" /usr/local/libexec/ywd-hotspot-setup-admin
+  [[ -f "$live/lib/update_admin.py" ]] && install -o root -g root -m 0755 "$live/lib/update_admin.py" /usr/local/libexec/ywd-hotspot-update-admin
+  [[ -f "$live/lib/update_runner.py" ]] && install -o root -g root -m 0755 "$live/lib/update_runner.py" /usr/local/libexec/ywd-update-runner
+  install -o root -g root -m 0755 "$live/lib/admin_dispatch.sh" /usr/local/libexec/ywd-hotspot-admin
+  [[ -f "$live/sudoers/ywd-hotspot" ]] && install -o root -g root -m 0440 "$live/sudoers/ywd-hotspot" /etc/sudoers.d/ywd-hotspot
+  if command -v visudo >/dev/null 2>&1 && [[ -f /etc/sudoers.d/ywd-hotspot ]]; then
+    visudo -cf /etc/sudoers.d/ywd-hotspot >/dev/null
+  fi
+  systemctl daemon-reload
+}
+
+# When leaving a plugin-aware runtime for a target that has no plugin runtime,
+# the currently installed updater owns the transition. The stable target stays
+# plugin-unaware while plugin services are stopped before handoff.
+transition_helper=""
+transition_snapshot=""
+if (( ! plugin_runtime_target )) && [[ -f /opt/ywd-hotspot/app/lib/plugin_update_safety.py ]]; then
+  transition_helper="$stage/.ywd-plugin-update-safety.py"
+  transition_snapshot="$stage/.ywd-plugin-transition.json"
+  cp /opt/ywd-hotspot/app/lib/plugin_update_safety.py "$transition_helper"
+  chmod 0700 "$transition_helper"
+  python3 "$transition_helper" capture --snapshot "$transition_snapshot" --lib /opt/ywd-hotspot/app/lib >/dev/null
+  python3 "$transition_helper" quiesce --snapshot "$transition_snapshot" --lib /opt/ywd-hotspot/app/lib >/dev/null
+  echo "Plugin services quiesced before leaving the plugin runtime."
+fi
+
 echo "Applying validated candidate. UPDATE.sh will preserve the current RF/service policy..."
 next_channel="$channel_display"
 [[ -z "$TAG" ]] && next_channel="$BRANCH"
+set +e
 YWD_SOURCE_TYPE=github \
 YWD_SOURCE_STATE=clean \
 YWD_GIT_BRANCH="$label" \
@@ -168,13 +258,31 @@ YWD_GIT_COMMIT="$target_sha" \
 YWD_GIT_COMMIT_DATE="$target_date" \
 YWD_UPDATE_CHANNEL="$next_channel" \
   bash "$stage/UPDATE.sh"
+update_rc=$?
+set -e
+
+if (( update_rc != 0 )); then
+  if [[ -n "$transition_helper" && -f "$transition_snapshot" ]]; then
+    echo "Repairing restored admin bridge after target rollback..."
+    repair_live_admin_bridge || echo "[WARN] Restored admin bridge needs manual review."
+    echo "Restoring plugin runtime after target rollback..."
+    python3 "$transition_helper" restore --snapshot "$transition_snapshot" --lib /opt/ywd-hotspot/app/lib || \
+      echo "[WARN] Plugin runtime restore needs manual review."
+  fi
+  exit "$update_rc"
+fi
+
+if [[ -n "$transition_helper" && -f "$transition_snapshot" ]]; then
+  echo "Finalizing transition to plugin-free target..."
+  python3 "$transition_helper" stable-cleanup --snapshot "$transition_snapshot" --lib /opt/ywd-hotspot/app/lib
+fi
 
 if [[ -n "$TAG" ]]; then
   git -C "$REPO_DIR" checkout --quiet --detach "$target_sha"
 else
   git -C "$REPO_DIR" checkout --quiet -B "$BRANCH" "$target_sha"
   git -C "$REPO_DIR" branch --set-upstream-to="origin/$BRANCH" "$BRANCH" >/dev/null 2>&1 || true
-  if [[ "$BRANCH" == "main" || "$BRANCH" == "dev" ]]; then
+  if [[ "$BRANCH" == "main" || "$BRANCH" == "dev" || "$BRANCH" == "dev-plugins" ]]; then
     tmp_channel="${CHANNEL_FILE}.tmp"
     printf '%s\n' "$BRANCH" > "$tmp_channel"
     chmod 0644 "$tmp_channel"

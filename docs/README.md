@@ -6,74 +6,68 @@
 
 ---
 
-## 🧭 Documentation map
+> [!IMPORTANT]
+> The current release-prep line is **0.1.0-rc1** on the temporary `dev-release-0.1.0` branch. RC1 must complete physical acceptance before promotion to `main`.
+
+## Documentation map
 
 | I want to… | Guide |
 |---|---|
-| 🚀 Install YWD-Hotspot from the promoted `main` branch | **[Installation](INSTALL.md)** |
-| 🥧 Build a complete flashable YWD-Hotspot OS image | **[OS Image Build Guide](OS-IMAGE-BUILD.md)** |
-| 🧱 Work on or validate the image-builder source | **[OS Development](OS-DEVELOPMENT.md)** |
-| 🔁 Move an older archive install to GitHub | **[Installation](INSTALL.md#-existing-install--github-management)** |
-| 🔄 Check/apply updates or switch `main` / `dev` | **[Upgrading](UPGRADING.md)** |
-| 🛠️ Recover from an update/migration problem | **[Upgrading](UPGRADING.md#-recovery-and-rollback)** |
+| 🚀 Install a new hotspot | **[Installation](INSTALL.md)** |
+| 🛠️ Build/validate source or compile the patched RX voice MMDVM | **[Building](BUILDING.md)** |
+| 🔄 Check/apply updates or switch channels | **[Upgrading](UPGRADING.md)** |
+| 🔐 Export/restore `.ywdsettings` | **[Backup / Restore](BACKUP-RESTORE.md)** |
 | 📻 Manage BrandMeister static/dynamic talkgroups | **[Talkgroup Manager](TALKGROUPS.md)** |
-| 📟 Configure LIVE DMR gauges and OLED runtime display | **[Display + Instrumentation](DISPLAY.md)** |
+| 📟 Configure live gauges and OLED | **[Display + Instrumentation](DISPLAY.md)** |
 | 🧪 Calibrate RXOffset with BER measurements | **[Calibration](CALIBRATION.md)** |
-| 🧱 Understand the RF/runtime architecture | **[Architecture](ARCHITECTURE.md)** |
-| 🌿 Understand branches, source layout, and dev checks | **[GitHub / Development](GITHUB-SETUP.md)** |
+| 🧩 Understand the plugin framework | **[Plugins](PLUGINS.md)** |
+| 📦 Build/upload/sign/update `.ywdplugin` packages | **[Plugin Packages](PLUGIN-PACKAGES.md)** |
+| 🖥️ Understand isolated browser plugin sections | **[Plugin UI](PLUGIN-UI.md)** |
+| 🎧 Understand passive DMR voice / RX Monitor and its patched MMDVM | **[Passive DMR Voice](DMR-VOICE.md)** |
+| 📡 Understand trusted MMDVM telemetry | **[MMDVM Telemetry](TELEMETRY.md)** |
+| 📞 Understand normalized DMR sessions | **[MMDVM Sessions](MMDVM-SESSIONS.md)** |
+| 🧱 Understand RF/runtime boundaries | **[Architecture](ARCHITECTURE.md)** |
+| 🥧 Build a complete appliance image | **[OS Development](OS-DEVELOPMENT.md)** |
+| 🌿 Understand branches/checkpoints/releases | **[Repository Policy](REPOSITORY.md)** |
+| 🧰 Clone, validate, and develop safely | **[GitHub / Development](GITHUB-SETUP.md)** |
+| 🗃️ Review Alpha21/22 implementation archaeology | **[Archived Alpha21–22 notes](history/ALPHA21-22-DEVELOPMENT-NOTES.md)** |
 | 🔐 Review secrets/network exposure rules | **[Security](../SECURITY.md)** |
-| 🤝 Contribute a change | **[Contributing](../CONTRIBUTING.md)** |
-| 🗒️ See project checkpoints | **[Changelog](../CHANGELOG.md)** |
+| 🤝 Contribute | **[Contributing](../CONTRIBUTING.md)** |
+| 🗒️ Review project release history | **[Changelog](../CHANGELOG.md)** |
 
-## 📌 Current promoted baseline
+## Core operating rules
 
-The promoted `main` line and plain `dev` line currently share the physically proven integrated application/OS baseline:
-
-```text
-0.1.0-alpha12.2-dev
-41f1cf9fcf94b3880d5cf11fb35e2cccb6fd3afd
-```
-
-The unified OS-builder integration is preserved at `dev-alpha12.2-os-integrated-known-good`.
-
-Experimental plugin/MMDVM work continues separately on `dev-plugins` and is **not** part of the `main` runtime documented here.
-
-## 📡 Core operating rules
-
-A few project rules show up everywhere because they are intentional design constraints:
-
-- **RF never starts merely because an install/update happened.**
-- `/etc/ywd-hotspot/config.json` is canonical; generated INI files are outputs.
+- **RF never starts merely because install/update/restore/plugin work happened.**
+- `/etc/ywd-hotspot/config.json` is canonical; generated radio INIs are outputs.
+- MMDVM-Host remains the only modem/RF owner.
+- Simplex and duplex are explicit radio modes; duplex uses separate hotspot RX/TX frequencies and TS1/TS2.
 - `/opt/ywd-hotspot/repo` is managed source; `/opt/ywd-hotspot/app` is deployed runtime.
-- reusable credentials stay out of browser-readable data and public diagnostics.
-- the dashboard/OLED/activity services stay outside the DMR-critical path.
-- on YWD-Hotspot OS, one authoritative OLED daemon owns the SSD1306/I2C device.
-- enhanced WebUI instrumentation is optional; Basic mode preserves the lightweight status UI.
+- reusable credentials stay out of browser-readable state and public diagnostics.
+- portable `.ywdsettings` backups are protected and must be handled as sensitive data.
+- dashboard/OLED/activity/telemetry/plugin/voice-observer failures stay outside the DMR-critical path.
+- YWD-Hotspot OS keeps one authoritative OLED owner.
 - the original Raspberry Pi Zero W remains the performance budget.
-- the OS builder packages the application from the same repository commit; normal app updates do not require rebuilding an image.
+- plugin support is globally disableable and no current plugin gets independent RF ownership or TX authority.
+- uploaded executable service/UI plugins require trusted Ed25519 signatures.
+- UI plugins execute in an isolated iframe and receive only declared capability methods.
+- passive RX Monitor audio decoding runs in the browser, not on the Pi.
+- the optional RX Monitor voice path uses a **patched copy of the pinned MMDVM-Host**, prepared outside normal startup/update; normal application updates do not recompile the radio stack.
+- candidate update validation follows runtime capabilities present in the candidate, not only the branch name.
+- Git branch/ref and persistent update channel are distinct provenance fields.
 
-## 🥧 Image-builder behavior at a glance
-
-Current `main` supports two documented image-build workflows:
-
-- **factory image:** no Wi-Fi preseed; first boot creates the setup AP and then launches the secure setup wizard
-- **Wi-Fi-preseeded image:** optional builder-local Wi-Fi credentials are embedded, but callsign/DMR/radio/BrandMeister/control configuration still goes through the secure first-boot wizard
-
-The current builder does **not** provide a supported full radio/BrandMeister configuration preseed. See **[OS Image Build Guide](OS-IMAGE-BUILD.md)** for the exact supported workflow.
-
-## 🌿 Branch model
+## Current branch model
 
 | Branch | Purpose |
 |---|---|
-| `main` | promoted/conservative appliance line; currently Alpha12.2 integrated baseline |
-| `dev` | normal application/OS development line; currently aligned with promoted Alpha12.2 |
-| `dev-alpha12.2-os-integrated-known-good` | physically proven unified app + OS-builder checkpoint |
-| `dev-plugins` | separate experimental plugin/MMDVM line; not included in `main` |
-| temporary `dev-os-*` / feature branches | isolated integration work before deliberate promotion |
+| `main` | promoted/conservative releases |
+| `dev` | physically accepted integrated development baseline |
+| `dev-builder` | isolated OS builder/image work |
+| `dev-plugins` | plugin/framework development line |
+| `dev-release-0.1.0` | temporary 0.1.0 RC/release-hardening branch |
 
-The historical long-lived `dev-os` branch is retained as reference; do not merge it wholesale into current development. Installed non-plugin appliances follow their selected `main`/`dev` application update channel.
+The temporary release branch is not a persistent update channel. During RC testing an appliance may report branch `dev-release-0.1.0` while correctly retaining update channel `dev`.
 
-## 🆘 Useful first commands
+## Useful first commands
 
 ```bash
 ywd-hotspotctl status
@@ -87,4 +81,10 @@ For a sanitized support bundle:
 sudo ywd-hotspotctl diagnostics
 ```
 
-Never post protected backups, raw credential files, builder-local private keys, or reusable BrandMeister/WebUI secrets.
+For the optional patched MMDVM voice tap:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
+```
+
+Never post protected backups, raw credential files, signing private keys, `.ywdsettings` passphrases, or unsanitized appliance state.

@@ -9,7 +9,7 @@ import json
 import re
 from pathlib import Path
 
-SCHEMA = 5
+SCHEMA = 6
 CALL_RE = re.compile(r"^[A-Z0-9]{3,10}(?:-[A-Z0-9]{1,2})?$")
 HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$")
 
@@ -30,7 +30,10 @@ def defaults() -> dict:
             "url": "",
         },
         "radio": {
+            "mode": "simplex",
             "frequency_hz": 446525000,
+            "rx_frequency_hz": 446525000,
+            "tx_frequency_hz": 446525000,
             "color_code": 1,
             "rx_offset": 0,
             "tx_offset": 0,
@@ -164,7 +167,7 @@ def _text(v, name, maxlen=160, allow_empty=True):
 
 
 def normalize(raw: dict, preserve_password: str | None = None) -> dict:
-    """Migrate old schemas, fill defaults, validate, and return canonical schema 5."""
+    """Migrate old schemas, fill defaults, validate, and return canonical schema 6."""
     if not isinstance(raw, dict):
         raise ValueError("configuration must be a JSON object")
     try:
@@ -197,7 +200,17 @@ def normalize(raw: dict, preserve_password: str | None = None) -> dict:
     st["url"] = _text(st.get("url"), "station URL", 124)
 
     r = c["radio"]
-    r["frequency_hz"] = _int(r.get("frequency_hz"), "frequency", 1000000, 1300000000)
+    # Schema 6 introduces explicit simplex/duplex HAT mode and separate duplex
+    # RX/TX frequencies. Existing appliances must remain simplex after update.
+    if source_schema < 6:
+        legacy_frequency = r.get("frequency_hz", 446525000)
+        r["mode"] = "simplex"
+        r["rx_frequency_hz"] = legacy_frequency
+        r["tx_frequency_hz"] = legacy_frequency
+    r["mode"] = _choice(r.get("mode", "simplex"), "HAT mode", {"simplex", "duplex"})
+    r["frequency_hz"] = _int(r.get("frequency_hz"), "simplex frequency", 1000000, 1300000000)
+    r["rx_frequency_hz"] = _int(r.get("rx_frequency_hz", r["frequency_hz"]), "duplex RX frequency", 1000000, 1300000000)
+    r["tx_frequency_hz"] = _int(r.get("tx_frequency_hz", r["frequency_hz"]), "duplex TX frequency", 1000000, 1300000000)
     r["color_code"] = _int(r.get("color_code", 1), "color code", 0, 15)
     r["rx_offset"] = _int(r.get("rx_offset", 0), "RX offset", -10000, 10000)
     r["tx_offset"] = _int(r.get("tx_offset", 0), "TX offset", -10000, 10000)
@@ -303,7 +316,7 @@ def normalize(raw: dict, preserve_password: str | None = None) -> dict:
     ins["idle_animation"] = bool(ins.get("idle_animation", True))
     ins["live_status_strip"] = bool(ins.get("live_status_strip", True))
     ins["show_numeric_values"] = bool(ins.get("show_numeric_values", True))
-    ins["meter_labels"] = _choice(ins.get("meter_labels", "full"), "meter labels", {"compact", "full"})
+    ins["meter_labels"] = _choice(ins.get("meter_labels", "full"), "instrument meter labels", {"compact", "full"})
     ins["reduced_motion"] = _choice(ins.get("reduced_motion", "system"), "reduced motion mode", {"system", "reduce", "full"})
 
     w = c["web"]

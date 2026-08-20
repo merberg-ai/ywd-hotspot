@@ -8,6 +8,21 @@ case "${1:-}" in
   update-check|update-start|set-hotspot-password|config-apply|config-revert|service-restart)
     exec /usr/local/libexec/ywd-hotspot-update-admin "$@"
     ;;
+  settings-export|settings-preview|settings-import)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/settings_admin.py "$@"
+    ;;
+  ssh-keys-export|ssh-client-key-create)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_keys_admin.py "$@"
+    ;;
+  shutdown)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/system_admin.py "$@"
+    ;;
+  dmrid-status|dmrid-check|dmrid-update)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/dmrid_admin.py "$@"
+    ;;
+  plugin-system-set|plugin-set|plugin-config-save|plugin-runtime|plugin-package-install|plugin-package-uninstall|plugin-data-remove|plugin-package-upload|plugin-package-review|plugin-package-apply|plugin-package-remove)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/plugin_admin.py "$@"
+    ;;
   *)
     exec /usr/local/libexec/ywd-hotspot-admin-core "$@"
     ;;

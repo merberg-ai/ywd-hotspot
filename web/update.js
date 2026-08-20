@@ -39,7 +39,7 @@
     card.id = 'softwareUpdateCard';
     card.innerHTML = `
       <div class="card-title title-row"><span>SOFTWARE UPDATE</span><span id="updateBadge" class="badge">READY</span></div>
-      <p class="hint">Updates follow the saved <b>main</b> or <b>dev</b> channel. Candidates are fetched and validated before the live hotspot is touched.</p>
+      <p class="hint">Updates follow the saved first-party <b>main</b>, <b>dev</b>, or <b>dev-plugins</b> channel. Candidates are fetched and validated before the live hotspot is touched.</p>
       <div id="updateRows" class="update-rows"></div>
       <div id="updateMessage" class="notice update-message">Unlock controls, then check GitHub for an update.</div>
       <div class="buttonrow wrap">

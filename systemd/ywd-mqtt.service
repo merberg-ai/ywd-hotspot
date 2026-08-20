@@ -1,0 +1,33 @@
+[Unit]
+Description=YWD-Hotspot loopback MQTT telemetry broker
+After=network.target
+Before=ywd-mmdvmhost.service ywd-mmdvm-telemetry.service
+ConditionPathExists=/opt/ywd-hotspot/app/lib/ywd-mosquitto.conf
+
+[Service]
+Type=simple
+User=mosquitto
+Group=mosquitto
+ExecStart=/usr/sbin/mosquitto -c /opt/ywd-hotspot/app/lib/ywd-mosquitto.conf
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

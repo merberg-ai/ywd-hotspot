@@ -10,6 +10,9 @@ if declare -F ywd_banner >/dev/null; then
   ywd_info "RF never starts without explicit confirmation."
 fi
 
+[[ -f "$SELF/lib/candidate_validate.py" ]] || { echo "[FAIL] Install source missing lib/candidate_validate.py" >&2; exit 1; }
+python3 "$SELF/lib/candidate_validate.py" "$SELF"
+
 if [[ -d "$SELF/lib/console" ]]; then
   python3 -m py_compile "$SELF/lib/console/ywd-system-info.py"
   for f in ywd-info-wrapper.sh ywd-logs.sh ywd-env.sh ywd-prompt.sh ywd-motd.sh; do
@@ -17,13 +20,50 @@ if [[ -d "$SELF/lib/console" ]]; then
   done
 fi
 for f in \
+  lib/candidate_validate.py \
   lib/update_runner.py lib/update_admin.py lib/oled.py lib/oled_owner.sh \
+  lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_update.py lib/plugin_service_manager.py lib/plugin_ui_manager.py \
+  lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py \
+  lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin_upload.py lib/plugin_admin.py \
+  lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py \
+  lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
+  lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/mmdvm_session.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
+  lib/mmdvm_voice.py lib/mmdvm_voice_bridge.py lib/mmdvm_voice_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
+  web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js \
+  web/plugin-ui-host.js web/plugin-ui-runtime.js web/plugin-ui.css \
+  web/backup-restore.js web/backup-restore.css \
+  systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service systemd/ywd-mmdvm-voice.service systemd/ywd-mmdvm-voice-build.service \
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css; do
   [[ -f "$SELF/$f" ]] || { echo "[FAIL] Install source missing $f" >&2; exit 1; }
 done
-python3 -m py_compile "$SELF/lib/update_runner.py" "$SELF/lib/update_admin.py" "$SELF/lib/oled.py"
+
+mapfile -t py_sources < <(find "$SELF/lib" -type f -name '*.py' -print | sort)
+((${#py_sources[@]})) || { echo "[FAIL] No Python runtime sources found" >&2; exit 1; }
+python3 -m py_compile "${py_sources[@]}"
 [[ -f "$SELF/lib/system_branding.sh" ]] && bash -n "$SELF/lib/system_branding.sh"
-bash -n "$SELF/lib/oled_owner.sh"
+bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh"
+
+PYTHONPATH="$SELF/lib" \
+YWD_PLUGIN_CATALOG="$SELF/lib/plugin_packages" \
+YWD_SERVICE_PLUGIN_CATALOG="$SELF/lib/service_plugin_packages" \
+YWD_LOCAL_PLUGIN_ROOT="$SELF/.plugin-local-does-not-exist" \
+YWD_PLUGIN_TRUST_DIR="$SELF/.plugin-trust-does-not-exist" \
+YWD_PLUGIN_STATE="$SELF/.plugin-state-does-not-exist" \
+YWD_PLUGIN_PACKAGE_STATE="$SELF/.plugin-package-state-does-not-exist" \
+YWD_PLUGIN_CONFIG_DIR="$SELF/.plugin-config-does-not-exist" \
+YWD_PLUGIN_DATA_DIR="$SELF/.plugin-data-does-not-exist" \
+YWD_MMDVM_TELEMETRY="$SELF/.telemetry-does-not-exist" \
+python3 - <<'PY'
+import dashboard_backup, dashboard_plugin_upload
+import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
+import plugin_manager, plugin_service_manager, settings_backup
+base = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
+assert base["system"]["enabled"] is False
+assert all(p.get("valid") is True for p in base.get("plugins", [])), base.get("plugins", [])
+services = plugin_service_manager.discover()
+assert all(p.get("valid") is True for p in services), services
+assert all(not p.get("manifest", {}).get("rf_mode") for p in services if p.get("valid")), services
+PY
 
 CORE="$SELF/INSTALL-core.sh"
 [[ -f "$CORE" ]] || CORE="/opt/ywd-hotspot/repo/INSTALL-core.sh"
@@ -55,4 +95,10 @@ fi
 # using the same renderer as generic installs. On non-OS installs this is a no-op.
 if [[ -f "$SELF/lib/oled_owner.sh" ]]; then
   sudo bash "$SELF/lib/oled_owner.sh" install "$SELF"
+fi
+
+# Telemetry is passive core infrastructure. Failure here never turns a successful
+# DMR install into an RF outage; dashboard diagnostics can report the bridge state.
+if ! sudo python3 /opt/ywd-hotspot/app/lib/telemetry_runtime.py ensure; then
+  echo "[WARN] Passive MMDVM telemetry runtime was not activated. Core hotspot operation is unaffected."
 fi

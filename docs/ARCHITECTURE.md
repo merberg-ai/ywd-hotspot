@@ -1,12 +1,12 @@
 # 🧱 YWD-Hotspot Architecture
 
-[← Docs index](README.md) · [Project README](../README.md) · [Display](DISPLAY.md) · [OS Image Build](OS-IMAGE-BUILD.md) · [Security](../SECURITY.md) · [Development notes](GITHUB-SETUP.md)
+[← Docs index](README.md) · [Project README](../README.md) · [Plugins](PLUGINS.md) · [Passive Voice](DMR-VOICE.md) · [Security](../SECURITY.md)
 
 ---
 
-YWD-Hotspot keeps the actual DMR transport path deliberately small and separates presentation/admin features from RF operation.
+YWD-Hotspot keeps the actual DMR transport path deliberately small and separates presentation/admin/plugin work from RF ownership.
 
-## 📡 RF path
+## RF path
 
 ```text
 DMR radio
@@ -15,7 +15,7 @@ DMR radio
 MMDVM HAT
    │
    ▼
-MMDVM-Host
+MMDVM-Host  ───── passive copies only ─────► YWD telemetry / voice observers
    │
    ▼
 DMRGateway
@@ -24,43 +24,122 @@ DMRGateway
 BrandMeister
 ```
 
-The core RF path does not depend on the dashboard, OLED, or activity presentation continuing to run.
+**MMDVM-Host remains the sole modem/RF owner.** Dashboard, OLED, telemetry, plugin, browser audio, and update code do not independently open the modem serial device or gain RF TX authority.
 
-## 🧩 Side services
+## Simplex and duplex configuration
+
+Canonical config schema 6 models radio mode explicitly:
+
+```text
+radio.mode
+radio.frequency_hz
+radio.rx_frequency_hz
+radio.tx_frequency_hz
+```
+
+Simplex uses one RF frequency and the hotspot's simplex slot behavior. Duplex uses separate hotspot RX/TX frequencies and supports TS1 + TS2.
+
+Generated MMDVM-Host/DMRGateway INIs are outputs, never the source of truth. Older configs migrate conservatively and do not silently switch modes.
+
+## Core side services
+
+Representative services:
 
 | Service | Role |
 |---|---|
-| `ywd-activity.service` | Parses MMDVM-Host activity into bounded cached state / Last Heard data |
-| `ywd-dashboard.service` | Python stdlib HTTP dashboard/API; reads cached state and routes validated writes through the admin helper |
-| `ywd-headless-oled.service` | YWD-Hotspot OS authoritative SSD1306/I2C owner using the unified renderer |
-| `ywd-oled.service` | Generic/non-OS OLED unit; kept disabled on YWD-Hotspot OS |
-| `ywd-update.service` | Detached one-shot software update job started only through authenticated update control |
-| `ywd-setup.service` | YWD-Hotspot OS secure first-boot setup server; disabled/irrelevant after setup completes |
-| `ywd-dmrid-update.timer` | Periodically refreshes lightweight RadioID data when due |
+| `ywd-activity.service` | bounded activity / Last Heard state |
+| `ywd-dashboard.service` | stdlib HTTP dashboard/API; routes validated writes through trusted admin helpers |
+| `ywd-headless-oled.service` | authoritative OLED owner on YWD-Hotspot OS |
+| `ywd-oled.service` | generic/non-OS OLED unit; disabled on YWD-Hotspot OS |
+| `ywd-update.service` | detached one-shot application update job |
+| `ywd-dmrid-update.timer` | periodic RadioID refresh |
+| `ywd-mqtt.service` | loopback-only Mosquitto used by trusted MMDVM observation paths |
+| `ywd-mmdvm-telemetry.service` | passive structured telemetry snapshot bridge |
+| `ywd-mmdvm-voice.service` | bounded passive DMR voice-frame bridge |
+| `ywd-mmdvm-voice-build.service` | separately scheduled/low-priority preparation of the optional patched MMDVM binary |
+| `ywd-plugin@.service` | shared restricted runner for installed service plugins |
 
-## 📟 OLED ownership invariant
+Side-service failure must not become permission to change RF state.
 
-YWD-Hotspot OS must have **exactly one process owning the physical OLED**.
+## Passive telemetry
 
 ```text
-YWD-Hotspot OS
-  ywd-headless-oled.service
-           │
-           └── /opt/ywd-hotspot/app/lib/oled.py --os-owner
-
-Generic install
-  ywd-oled.service
-           │
-           └── /opt/ywd-hotspot/app/lib/oled.py
+MMDVM-Host structured MQTT
+        │
+        ▼
+loopback YWD Mosquitto
+        │
+        ▼
+trusted telemetry bridge
+        │
+        ▼
+/run/ywd-hotspot-telemetry/telemetry.json
+        │
+        ├─ dashboard instrumentation
+        ├─ normalized session state
+        └─ capability-gated plugin consumers
 ```
 
-`lib/oled_owner.sh` installs a systemd drop-in on YWD-Hotspot OS so the existing headless daemon remains the sole owner while using the shared runtime renderer. The duplicate app OLED service is disabled there.
+The old MMDVM Live Telemetry **plugin** is retired; telemetry itself remains trusted core infrastructure.
 
-Config apply/revert and manual OLED restart paths serialize ownership so the two services are never intentionally active against the same I2C device at once.
+## Passive DMR voice
 
-The OLED renderer is a passive consumer. It may read local config/activity/network/update files and write the display. It must not control RF, networking, BrandMeister, or canonical configuration. OLED failure must not interrupt DMR.
+The optional MMDVM voice patch mirrors accepted DMR voice frames to a separate loopback-only topic while normal MMDVM processing continues unchanged.
 
-## 🔐 Privilege boundary
+```text
+MMDVM-Host
+   │ accepted voice-frame copy
+   ▼
+ywd-mmdvm/voice
+   │
+   ▼
+trusted voice bridge
+   │ bounded ring / sanitized frame API
+   ▼
+read:dmr-voice Plugin UI capability
+   │
+   ▼
+RX Monitor browser iframe
+   └─ FEC / AMBE recovery / PCM playback on browser device
+```
+
+The Pi does not perform AMBE-to-PCM playback. Browser decoding keeps the original Pi Zero as the performance budget.
+
+See **[DMR-VOICE.md](DMR-VOICE.md)**.
+
+## Plugin architecture
+
+Plugin package source, installation, activation, and runtime are separate concepts:
+
+```text
+AVAILABLE → INSTALLED → ENABLED → ACTIVE
+```
+
+Plugin kinds:
+
+```text
+declarative   trusted core interprets metadata/config; no plugin executable code
+service       signed Python entrypoint through ywd-plugin@.service sandbox
+ui            signed JS/CSS inside isolated dashboard iframe
+```
+
+Uploaded executable service/UI packages require a trusted Ed25519 signature. A valid signature proves publisher provenance; it does not grant arbitrary system privilege.
+
+Current plugin rules prohibit direct modem serial ownership, independent MMDVM instances, arbitrary sudo, broad device access, arbitrary network sockets, and RF TX authority.
+
+### Plugin UI isolation
+
+UI plugin code is never injected into the trusted dashboard DOM. Core creates a sandboxed iframe with a restrictive CSP/Permissions Policy and exposes only declared capability methods through a trusted MessageChannel bridge.
+
+RX Monitor's `read:dmr-voice` access is one such explicit capability.
+
+### Transactional plugin package updates
+
+Uploading a same-ID `.ywdplugin` can be classified as update/reinstall/downgrade/replacement. Review is non-mutating. A confirmed replacement re-verifies the archive, preserves configuration/data and prior installed/enabled intent where valid, performs an atomic package swap, and rolls back the prior package/state on failure.
+
+Plugin kind and signing provenance cannot silently change under an ordinary update.
+
+## Privilege boundary
 
 The dashboard runs as the restricted `ywd-hotspot` user.
 
@@ -70,17 +149,15 @@ Privileged browser operations are funneled through:
 /usr/local/libexec/ywd-hotspot-admin
 ```
 
-with the restricted sudo policy:
+and the restricted policy:
 
 ```text
 /etc/sudoers.d/ywd-hotspot
 ```
 
-The dispatcher routes only named actions to dedicated helpers. Software update, first-boot finalization and OS OLED-owner transitions do not expose arbitrary branch names, shell commands, URLs, or paths to browser input.
+The dispatcher accepts named operations rather than arbitrary shell text, branch names, URLs, or filesystem paths supplied by browser code.
 
-The browser must never directly execute arbitrary shell text or directly edit generated MMDVM-Host/DMRGateway INI files.
-
-## ⚙️ Canonical configuration
+## Canonical configuration
 
 Source of truth:
 
@@ -113,44 +190,21 @@ regenerate temporary INIs
 atomic apply / scoped service action
 ```
 
-Current canonical configuration schema is **5**. Schema 5 includes the unified OLED runtime-presentation controls plus the LIVE DMR instrumentation/history/measurement-hold settings introduced in the Alpha12.x line. Older configurations normalize forward with conservative defaults.
-
 Normal configuration history is retained separately for rollback.
 
-## 🔑 Credential separation
+## Credential separation
 
-YWD-Hotspot treats these as different secrets:
+YWD-Hotspot treats these as separate security domains:
 
-1. BrandMeister Hotspot Security password — used by DMRGateway
-2. BrandMeister API v2 key — server-side BM control actions
-3. local WebUI control password — unlocks LAN write/admin controls
+1. BrandMeister Hotspot Security password
+2. BrandMeister API v2 key
+3. local WebUI control password
+4. plugin publisher public trust keys
+5. plugin publisher **private signing key** — development machine only; never hotspot state
 
-Reusable secret material must not appear in browser-readable config, support summaries, or public diagnostic bundles.
+Reusable secrets must not appear in browser-readable config or sanitized support bundles.
 
-## 🥧 YWD-Hotspot OS factory/setup path
-
-A generated YWD-Hotspot OS image intentionally starts from a factory placeholder rather than pretending to be a configured transmitter:
-
-```text
-image build
-  ↓
-NOCALL / 00000 / BrandMeister disabled
-RF services disabled
-  ↓
-network onboarding
-  ↓
-secure HTTPS first-boot wizard
-  ↓
-validated canonical config + dashboard credential
-  ↓
-optional explicit RF enable
-```
-
-Without station Wi-Fi, the OS network manager uses the single Pi Zero Wi-Fi interface to create `YWD-Hotspot-XXXX` at `10.42.0.1`. Once station Wi-Fi is online, the OLED supplies a short-lived six-digit setup code for `https://ywd-hotspot.local:8443/`.
-
-The current builder can optionally preseed Wi-Fi, but it does not provide a supported full radio/BrandMeister credential preseed. See **[OS-IMAGE-BUILD.md](OS-IMAGE-BUILD.md)**.
-
-## 📁 Runtime/state layout
+## Runtime/state layout
 
 ```text
 /etc/ywd-hotspot/
@@ -161,30 +215,37 @@ The current builder can optionally preseed Wi-Fi, but it does not provide a supp
   web-auth.json
   build-info.json
   update-channel
+  plugin-state.json
+  plugin-packages.json
+  plugins/
+  plugin-trust.d/
 
 /var/lib/ywd-hotspot/
   DMRIds.dat
   lastheard.json
   calibration.json
-  calibration-baseline.json
   geocode-cache.json
   talkgroup-directory.json
   update-status.json
-  setup-state.json          # YWD-Hotspot OS after first-boot completion
   config-history.json
   audit.json
+  plugin-packages/
+  plugins/
   private/
 
 /run/ywd-hotspot/
   activity.json
-  setup.json                # temporary YWD-Hotspot OS setup state/code
+
+/run/ywd-hotspot-telemetry/
+  telemetry.json
+
+/run/ywd-hotspot-voice/
+  voice.json
 
 /var/backups/ywd-hotspot/
 ```
 
-Private runtime/config backups can contain credentials and must not be published.
-
-## 🌿 GitHub source vs live runtime
+## GitHub source vs deployed runtime
 
 ```text
 /opt/ywd-hotspot/repo    root-owned managed Git checkout
@@ -195,73 +256,61 @@ Update flow:
 
 ```text
 GitHub fetch
-   │
-   ▼
+   ↓
 resolve target commit
-   │
-   ▼
-stage + validate candidate
-   │
-   ▼
-protected app/config backup
-   │
-   ▼
+   ↓
+stage candidate outside live app
+   ↓
+capability + syntax validation
+   ↓
+protected backup / plugin quiesce
+   ↓
 transactional UPDATE.sh
-   │
-   ▼
-restore prior RF/service policy
-   │
-   ▼
+   ↓
+restore prior RF + valid plugin intent
+   ↓
 advance managed checkout after success
 ```
 
-WebUI installs start a detached `ywd-update.service`, allowing the dashboard to restart without killing its own updater. A sanitized status file provides stage/progress information to the browser and optionally to the OLED.
+Candidate validation is based on runtime markers in the candidate itself, not only its branch name. A promoted plugin-capable `dev`/`main` therefore receives the same plugin/voice coherence checks as `dev-plugins`.
 
-Network failure, dirty source, or candidate-validation failure occurs before the live application is touched.
+## WebUI layers
 
-## 🌐 WebUI layers
-
-The browser side intentionally stays small:
+The browser remains plain same-origin HTML/CSS/JS:
 
 ```text
-style.css                    base dashboard theme
+style.css                    base theme
 app-core.js                  established dashboard behavior
-talkgroups.js                Talkgroup Manager layer
-ui-polish.css/js             lightweight UX/polish
-update.css/js                About-page software update controls
-update-progress.js           stage-driven update progress modal
-instrumentation.css/js       optional LIVE DMR gauges/traces/settings
-instrumentation-bootstrap.js initialization hook; no poll loop
-app.js                       tiny loader
+talkgroups.js                TS-aware Talkgroup Manager
+ui-polish.css/js             common modal / interaction polish
+update.css/js                software update controls
+update-progress.js           stage-driven progress modal
+instrumentation.css/js       optional live RF gauges/traces
+plugin-manager*.js/css       trusted package/lifecycle UI
+plugin-ui-host.js            trusted iframe/capability host
+plugin-ui-runtime.js         isolated plugin-side bridge runtime
+app.js                       loader/integration layer
 ```
 
-The enhanced LIVE DMR panel reuses the dashboard's existing status payload. It does not add a new daemon or a second server polling loop. When enhanced instrumentation is disabled, the established Basic LIVE DMR renderer remains in use.
+No Node.js runtime or SPA framework is required on the hotspot.
 
-The UI uses same-origin external assets so the dashboard can retain a restrictive Content-Security-Policy without `unsafe-inline` styling in the normal dashboard.
+## OLED ownership invariant
 
-## 🥧 Pi Zero performance budget
+YWD-Hotspot OS must have exactly one process owning the physical SSD1306:
 
-Prefer:
+```text
+YWD-Hotspot OS   → ywd-headless-oled.service
+Generic install  → ywd-oled.service
+```
 
-- Python standard library
-- small long-running collectors
-- cached/event state over repeated expensive shelling
-- plain HTML/CSS/JS
-- CSS/SVG animation in the browser
-- bounded local files
-- explicit Basic/low-power modes
+OLED failure is passive presentation failure and must not interrupt DMR.
 
-Avoid turning a Pi Zero into infrastructure cosplay:
+## Pi Zero performance budget
 
-- no Node.js runtime
-- no React/Vue requirement
-- no SQL server
-- no Redis
-- no Docker dependency
-- no heavyweight graphing framework without a real need
+Prefer Python stdlib, bounded cached state, small long-running services, plain browser JS/CSS/SVG, and browser-side expensive rendering/decoding.
 
-## 📡 RF safety invariant
+Avoid turning a Pi Zero into infrastructure cosplay: no required Docker, Redis, SQL server, Node runtime, or heavyweight frontend framework.
 
-Install, image first boot, update, config-apply, runtime-control, display, and UI paths must preserve explicit operator intent.
+## RF safety invariant
 
-A UI change, OLED restart, Git pull, dashboard restart, software update, Wi-Fi handoff, or completed setup wizard page is **never** permission to unexpectedly start a transmitter. RF begins only when the operator deliberately requests it through the supported RF-enable path.
+Install, update, config apply/revert, plugin lifecycle, dashboard/OLED restart, passive telemetry, passive voice monitoring, and browser audio are **never permission to unexpectedly start or retune the transmitter**.

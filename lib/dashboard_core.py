@@ -45,9 +45,9 @@ GEOCODE_LAST = 0.0
 CACHE_LOCK = threading.Lock()
 CACHE = {"services_at": 0.0, "services": {}, "gw_at": 0.0, "gw": [], "bm_at": 0.0,
          "bm_profile": None, "bm_error": None, "health_at": 0.0, "health": None, "brief_at": 0.0, "brief": None}
-UNITS = ["ywd-mmdvmhost.service", "ywd-dmrgateway.service", "ywd-dashboard.service",
-         "ywd-oled.service", "ywd-activity.service"]
+UNITS = ["ywd-mmdvmhost.service", "ywd-dmrgateway.service", "ywd-dashboard.service", "ywd-activity.service"]
 KNOWN_TG = {91:"Worldwide", 93:"North America", 3100:"USA Nationwide", 9990:"Parrot"}
+OLED_UNIT = None
 
 
 def run(args, timeout=3):
@@ -55,6 +55,17 @@ def run(args, timeout=3):
         p=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=timeout,check=False)
         return p.stdout.strip()
     except Exception: return ""
+
+
+def unit_exists(unit):
+    return bool(run(["systemctl", "cat", unit], 2))
+
+
+def oled_unit():
+    global OLED_UNIT
+    if OLED_UNIT is None:
+        OLED_UNIT = "ywd-headless-oled.service" if unit_exists("ywd-headless-oled.service") else "ywd-oled.service"
+    return OLED_UNIT
 
 
 def raw_cfg():
@@ -76,8 +87,9 @@ def service_states(force=False):
     t=time.monotonic()
     with CACHE_LOCK:
         if not force and t-CACHE["services_at"]<5: return dict(CACHE["services"])
-    out=run(["systemctl","is-active",*UNITS],2).splitlines(); states={}
-    for i,u in enumerate(UNITS): states[u]=out[i].strip() if i<len(out) and out[i].strip() else "unknown"
+    units=UNITS+[oled_unit()]
+    out=run(["systemctl","is-active",*units],2).splitlines(); states={}
+    for i,u in enumerate(units): states[u]=out[i].strip() if i<len(out) and out[i].strip() else "unknown"
     with CACHE_LOCK: CACHE["services_at"]=t; CACHE["services"]=states
     return states
 
@@ -270,14 +282,15 @@ def authenticated(headers):
 
 
 def snapshot(headers=None):
-    states=service_states(); bstate,detail=bm_login_state(states)
+    states=service_states(); ou=oled_unit(); bstate,detail=bm_login_state(states)
     prof,perr=(bm_profile() if states.get("ywd-dmrgateway.service")=="active" else (None,"DMRGateway is offline"))
     static,dynamic=subscriptions(prof); c=canonical_cfg(); h=brief_health()
     return {
         "version":VERSION,
         "build":file_json(BUILD_INFO,{"version":VERSION,"repository":"https://github.com/merberg-ai/ywd-hotspot","branch":"unknown","commit":"unknown","commit_short":"unknown","commit_date":"unknown","source":"unknown","source_state":"unknown"}),
         "services":{"mmdvmhost":states.get("ywd-mmdvmhost.service","unknown"),"dmrgateway":states.get("ywd-dmrgateway.service","unknown"),
-                    "dashboard":states.get("ywd-dashboard.service","unknown"),"oled":states.get("ywd-oled.service","unknown"),"activity":states.get("ywd-activity.service","unknown")},
+                    "dashboard":states.get("ywd-dashboard.service","unknown"),"oled":states.get(ou,"unknown"),"oled_unit":ou,
+                    "activity":states.get("ywd-activity.service","unknown")},
         "brandmeister":{"state":bstate,"detail":detail,"profile_error":perr,"static":static,"dynamic":dynamic,"api_key_configured":brandmeister.key_configured()},
         "controls":{"auth_configured":web_auth.configured(),"authenticated":authenticated(headers) if headers else False},
         "config":config_model.public(c), "pending":pending_state(c), "activity":activity_state(),

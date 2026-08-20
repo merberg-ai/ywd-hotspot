@@ -1,6 +1,6 @@
 # 🔐 Security Policy
 
-[Project README](README.md) · [Installation](docs/INSTALL.md) · [OS Image Build](docs/OS-IMAGE-BUILD.md) · [Upgrading](docs/UPGRADING.md) · [Contributing](CONTRIBUTING.md)
+[Project README](README.md) · [Installation](docs/INSTALL.md) · [Upgrading](docs/UPGRADING.md) · [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -8,12 +8,11 @@ YWD-Hotspot controls radio/network services and stores reusable credentials. Tre
 
 ## 🧭 Current development state
 
-- promoted line: `main` / `0.1.0-alpha12.2-dev`
-- normal core/application development line: `dev`, currently aligned with promoted Alpha12.2
-- proven integrated checkpoint: `dev-alpha12.2-os-integrated-known-good`
-- experimental plugin/MMDVM work remains separate on `dev-plugins`
+- active development line: `dev` / `0.1.0-alpha10-dev`
+- latest user-tested checkpoint: `dev-alpha9.2-known-good`
+- promoted line: `main`
 
-Security fixes may land on an active development line before a later promotion, but `main` documentation describes only capabilities actually present on the promoted non-plugin runtime.
+Security fixes may land on the active development line before a later promotion.
 
 ## 🌐 Network exposure
 
@@ -23,8 +22,6 @@ The built-in dashboard uses plain HTTP and is intended for a trusted LAN.
 > **Do not directly expose the dashboard TCP port to the public Internet.**
 
 If remote administration is required, place the hotspot behind an appropriate authenticated/encrypted access layer rather than forwarding the YWD dashboard port itself.
-
-YWD-Hotspot OS uses a separate HTTPS service on port `8443` only during secure first-boot setup. It uses a locally generated self-signed certificate and a short-lived six-digit code shown on the OLED.
 
 ## 🔑 Secrets
 
@@ -38,7 +35,7 @@ The API key stays server-side. Browser JavaScript does not receive it back.
 
 Never post real credentials in GitHub issues, screenshots, terminal pastes, logs, or support conversations.
 
-## 📁 Sensitive runtime paths
+## 📁 Sensitive paths
 
 Treat these as sensitive on a real installation:
 
@@ -53,23 +50,6 @@ Treat these as sensitive on a real installation:
 `/etc/ywd-hotspot/build-info.json` is intentionally non-secret provenance containing source/version/commit information only.
 
 Protected backups can contain reusable configuration credentials and are intentionally restricted on disk.
-
-## 🥧 Sensitive builder-local paths
-
-The OS image builder keeps private/local build state under ignored `os/local/`.
-
-Treat at least these as secrets:
-
-```text
-os/local/provision.env
-os/local/ywd-os-dev_ed25519
-```
-
-`provision.env` can contain a Wi-Fi password. `ywd-os-dev_ed25519` is the builder-local SSH private key whose public key is embedded for development access to generated images.
-
-Do not commit, publish, archive with release artifacts, or casually distribute those private files.
-
-Current `main` intentionally does **not** support preseeding the full hotspot/BrandMeister credential set into an image. Factory images use placeholder identity, clear control/API credentials and keep RF disabled until secure first-boot setup completes.
 
 ## 🔄 GitHub update trust boundary
 
@@ -104,21 +84,11 @@ Root-required browser actions are constrained through:
 
 The browser must not gain arbitrary shell execution or direct write access to generated MMDVM-Host/DMRGateway INI files.
 
-The YWD-Hotspot OS first-boot server also runs unprivileged and delegates only its narrow setup-finalization action through the same restricted privilege boundary.
-
 ## 🛡️ Browser policy
 
-The normal dashboard uses a restrictive Content-Security-Policy. UI polish should use same-origin external CSS/JS rather than weakening CSP with broad `unsafe-inline` allowances.
+The dashboard uses a restrictive Content-Security-Policy. UI polish should use same-origin external CSS/JS rather than weakening CSP with broad `unsafe-inline` allowances.
 
 The custom confirmation/toast layer is browser-side presentation only; it does not create a new privileged backend path.
-
-The first-boot setup page is a separate short-lived appliance onboarding service and should not be treated as the normal dashboard security model.
-
-## 📡 RF safety
-
-Install, update, image build/first boot, configuration, Wi-Fi onboarding and WebUI activity must not unexpectedly enable the transmitter.
-
-Factory OS images explicitly disable MMDVM-Host and DMRGateway. Secure first-boot setup requires real station identity/config and only enables RF when the operator explicitly requests it on the final setup path.
 
 ## 🩺 Diagnostics
 
@@ -130,7 +100,7 @@ sudo ywd-hotspotctl diagnostics
 
 It is designed to exclude/redact reusable passwords and API keys. Still review any bundle before publishing it.
 
-Do not upload raw protected config/update backups or builder-local private keys.
+Do not upload raw protected config/update backups.
 
 ## 🚨 Reporting a security issue
 
@@ -149,6 +119,4 @@ Treat these as security-sensitive:
 - bypassed dirty-tree/update validation
 - browser direct edits to generated INIs
 - public-Internet exposure features
-- image-builder changes that embed new secrets by default
-- setup changes that can unexpectedly enable RF
-- changes that can unexpectedly enable RF anywhere else
+- changes that can unexpectedly enable RF

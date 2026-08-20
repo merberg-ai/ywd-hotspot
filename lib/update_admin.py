@@ -21,8 +21,6 @@ APPLIED_STATE = Path("/var/lib/ywd-hotspot/applied-state.json")
 UPDATE_STATUS = Path("/var/lib/ywd-hotspot/update-status.json")
 RUNNER = Path("/usr/local/libexec/ywd-update-runner")
 SERVICE = "ywd-update.service"
-HEADLESS_OLED = "ywd-headless-oled.service"
-APP_OLED = "ywd-oled.service"
 
 
 def run(args, timeout=30):
@@ -54,10 +52,6 @@ def pending_config():
 
 def service_active(name=SERVICE):
     return run(["systemctl", "is-active", "--quiet", name], 5).returncode == 0
-
-
-def unit_exists(name):
-    return run(["systemctl", "cat", name], 5).returncode == 0
 
 
 def runner_check():
@@ -142,57 +136,22 @@ def set_hotspot_password(data):
     return core_admin.set_hotspot_password(data)
 
 
-def headless_owner():
-    return unit_exists(HEADLESS_OLED)
-
-
-def switch_back_to_headless():
-    # Never let both services own /dev/i2c-* at once.  The headless OS service
-    # remains running even when display.enabled=false; the renderer simply powers
-    # the panel off while continuing to own the device safely.
-    run(["systemctl", "disable", "--now", APP_OLED], 12)
-    p = run(["systemctl", "restart", HEADLESS_OLED], 15)
-    if p.returncode != 0:
-        raise RuntimeError((p.stderr or p.stdout or "could not restore authoritative OLED service").strip()[:800])
-
-
-def with_headless_transition(fn):
-    if not headless_owner():
-        return fn()
-    run(["systemctl", "stop", HEADLESS_OLED], 12)
-    try:
-        return fn()
-    finally:
-        switch_back_to_headless()
-
-
 def config_apply(data):
-    if not headless_owner():
-        return core_admin.config_apply(data)
-    current = core_admin.current()
-    applied = core_admin.load_applied() or current
-    hints = config_model.classify_changes(config_model.diff_paths(applied, current))
-    if hints.get("oled"):
-        return with_headless_transition(lambda: core_admin.config_apply(data))
+    # Alpha18.2.3: core_admin owns OLED arbitration. Its oled_owner.sh helper
+    # writes the canonical live renderer, retires the legacy unit non-blocking,
+    # and starts/stops the sole OS owner. Do not wrap it in a second stop/restart
+    # transition here; the old wrapper could time out after a successful apply
+    # and strand the WebUI in saved-but-not-applied state.
     return core_admin.config_apply(data)
 
 
 def config_revert(data):
-    if headless_owner() and bool(data.get("apply", False)):
-        # We do not know the restored display diff until the core has loaded the
-        # snapshot, so serialize ownership for the whole revert+apply transaction.
-        return with_headless_transition(lambda: core_admin.config_revert(data))
     return core_admin.config_revert(data)
 
 
 def service_restart(data):
-    name = str(data.get("service", ""))
-    if name == "oled" and headless_owner():
-        p = run(["systemctl", "restart", HEADLESS_OLED], 15)
-        if p.returncode != 0:
-            raise RuntimeError((p.stderr or p.stdout or "OLED restart failed").strip()[:800])
-        core_admin.audit("service-restart", {"service": "oled", "owner": HEADLESS_OLED})
-        return {"ok": True, "service": HEADLESS_OLED}
+    # The core service action uses the same owner helper and therefore preserves
+    # the single-owner rule without a separate blocking headless transition.
     return core_admin.service_action(data)
 
 

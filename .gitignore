@@ -31,6 +31,9 @@ os/work/
 os/deploy/
 os/.pi-gen/
 os/local/
+os/pi-gen/stage2/10-ywd-headless/files/provision.env
+os/pi-gen/stage2/25-ywd-firstboot/files/factory-config.json
+os/pi-gen/stage2/25-ywd-firstboot/files/factory-provision.json
 *.img
 *.img.xz
 *.img.zst

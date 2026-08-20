@@ -26,7 +26,7 @@ bin/ywd-hotspotctl-core
 bin/ywd-ui.sh
 docs/README.md
 docs/ARCHITECTURE.md
-docs/ALPHA22.7-PLUGIN-UPDATES.md
+docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
 docs/BACKUP-RESTORE.md
 docs/CALIBRATION.md
 docs/DISPLAY.md

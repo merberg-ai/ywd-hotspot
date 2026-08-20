@@ -239,6 +239,12 @@ class H(core.H):
         if path == "/ui-polish.css":
             self.serve_static("ui-polish.css", "text/css; charset=utf-8")
             return
+        if path == "/system-ui.js":
+            self.serve_static("system-ui.js", "application/javascript; charset=utf-8")
+            return
+        if path == "/system-ui.css":
+            self.serve_static("system-ui.css", "text/css; charset=utf-8")
+            return
         if path == "/hero-layout.css":
             self.serve_static("hero-layout.css", "text/css; charset=utf-8")
             return
@@ -269,13 +275,21 @@ class H(core.H):
         super().do_GET()
 
     def do_POST(self):
-        """Make BrandMeister control operations aware of simplex vs duplex slots.
-
-        dashboard_core still carries the legacy simplex-slot-0 handlers.  Intercept
-        only the BM routes here so the rest of the proven dashboard/RF path stays
-        untouched.
-        """
+        """Add System actions and keep BrandMeister operations timeslot-aware."""
         path = urlparse(self.path).path
+
+        if path == "/api/runtime/shutdown":
+            if not self.require_control():
+                return
+            try:
+                body = self.body_json()
+                self.send_json(core.admin_call("shutdown", body))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                self.send_json({"error": str(exc)[:800]}, 502)
+            return
+
         if not path.startswith("/api/bm/"):
             super().do_POST()
             return

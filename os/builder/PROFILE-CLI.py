@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from typing import Any
 
@@ -36,6 +35,14 @@ def typed(value: str, kind: str) -> Any:
     if kind == "bool":
         return parse_bool(value)
     raise ValueError(f"unsupported type: {kind}")
+
+
+def store(profile: dict[str, Any], path: str, kind: str, value: str) -> None:
+    set_path(profile, path, typed(value, kind))
+    # Validate the whole profile before saving. A rejected edit never replaces
+    # the last usable persistent builder profile.
+    compile_profile(profile)
+    save_profile(profile)
 
 
 def redacted_review(profile: dict[str, Any]) -> str:
@@ -106,6 +113,10 @@ def main() -> None:
     s.add_argument("kind", choices=["str", "int", "float", "bool"])
     s.add_argument("value")
 
+    ss = sp.add_parser("set-stdin")
+    ss.add_argument("path")
+    ss.add_argument("kind", choices=["str", "int", "float", "bool"])
+
     sp.add_parser("validate")
     sp.add_parser("review")
     sp.add_parser("status")
@@ -126,11 +137,14 @@ def main() -> None:
         return
 
     if args.cmd == "set":
-        set_path(profile, args.path, typed(args.value, args.kind))
-        # Validate the entire profile before saving, so one bad field cannot
-        # leave persistent builder state in an unusable form.
-        compile_profile(profile)
-        save_profile(profile)
+        store(profile, args.path, args.kind, args.value)
+        return
+
+    if args.cmd == "set-stdin":
+        # Intended for passwords/API keys so the secret never appears in argv
+        # or a process listing. The shell frontend writes exactly the entered
+        # bytes to stdin without a trailing newline.
+        store(profile, args.path, args.kind, sys.stdin.read())
         return
 
     if args.cmd == "validate":

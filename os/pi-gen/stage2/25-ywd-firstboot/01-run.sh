@@ -5,6 +5,7 @@ APP="${ROOTFS_DIR}/opt/ywd-hotspot/app"
 LIBEXEC="${ROOTFS_DIR}/usr/local/libexec"
 FACTORY_CONFIG="${THIS_STAGE}/files/factory-config.json"
 FACTORY_PAYLOAD="${THIS_STAGE}/files/factory-provision.json"
+FACTORY_RESTORE="${THIS_STAGE}/files/factory-restore.json"
 FACTORY_HELPER="${THIS_STAGE}/files/ywd-factory-provision.py"
 FACTORY_UNIT="${THIS_STAGE}/files/ywd-factory-provision.service"
 
@@ -28,8 +29,6 @@ for f in \
   fi
 done
 
-# Install the same narrow helper layout used by current INSTALL/UPDATE. The
-# browser never receives a general-purpose root shell path.
 install -m 0755 "${APP}/lib/admin.py" "${LIBEXEC}/ywd-hotspot-admin-core"
 install -m 0755 "${APP}/lib/setup_admin.py" "${LIBEXEC}/ywd-hotspot-setup-admin"
 install -m 0755 "${APP}/lib/update_admin.py" "${LIBEXEC}/ywd-hotspot-update-admin"
@@ -43,11 +42,6 @@ chmod 0755 \
   "${APP}/lib/setup_admin.py" "${APP}/lib/setup_entry.sh" \
   "${APP}/lib/admin_dispatch.sh" "${APP}/lib/update_admin.py" "${APP}/lib/update_runner.py"
 
-# Builder profiles always carry a canonical non-secret config overlay. Partial
-# profiles use the normal NOCALL/00000 placeholders for deferred identity and
-# simply pre-fill the secure first-boot wizard. A complete profile additionally
-# carries a one-shot root-only payload that finishes setup before the wizard can
-# start.
 if [ -f "${FACTORY_CONFIG}" ]; then
   install -m 0640 "${FACTORY_CONFIG}" "${ROOTFS_DIR}/etc/ywd-hotspot/config.json"
   chown root:ywd-hotspot "${ROOTFS_DIR}/etc/ywd-hotspot/config.json"
@@ -59,6 +53,11 @@ if [ -f "${FACTORY_PAYLOAD}" ]; then
   install -m 0600 "${FACTORY_PAYLOAD}" "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-provision.json"
   chown root:root "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-provision.json"
   printf 'Installed sealed factory preconfiguration payload.\n'
+fi
+if [ -f "${FACTORY_RESTORE}" ]; then
+  install -m 0600 "${FACTORY_RESTORE}" "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-restore.json"
+  chown root:root "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-restore.json"
+  printf 'Installed sealed dashboard settings restore payload.\n'
 fi
 
 install -d -m 0755 "${ROOTFS_DIR}/etc/systemd/system/ywd-setup.service.d"
@@ -89,10 +88,11 @@ The appliance is factory-unconfigured until:
   /var/lib/ywd-hotspot/setup-state.json
 exists with state=complete.
 
-If the image contains a complete builder preconfiguration, the root-only
-factory finalizer validates/applies it through the same setup-finish path used
-by the secure browser wizard. Successful factory provisioning creates the same
-setup-state.json and the wizard is skipped.
+A complete builder profile is finalized before the secure setup wizard starts.
+If the builder imported a dashboard .ywdsettings backup, the first-boot
+finalizer uses the same authenticated settings-import implementation as the
+live dashboard restore flow. This preserves the imported dashboard credential,
+BrandMeister/API state, calibration baseline and compatible plugin state/config.
 
 If the builder profile is partial, invalid, or the factory finalizer fails, the
 normal flow remains authoritative: network onboarding owns Wi-Fi first, then the

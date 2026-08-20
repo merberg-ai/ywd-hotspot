@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PIN_FILE="$ROOT_DIR/os/pi-gen/PI-GEN-COMMIT"
+RUNTIME_PINS="$ROOT_DIR/pins.env"
+RUNTIME_CACHE="$ROOT_DIR/os/local/build-cache/runtime"
 fail=0
 
 check_cmd() {
@@ -26,7 +28,7 @@ printf 'Source:            %s @ %s\n' "$BRANCH" "$COMMIT"
 printf 'Application:       %s\n' "$VERSION"
 printf 'Free space:        %s\n\n' "$(df -h "$ROOT_DIR" | awk 'NR==2 {print $4}')"
 
-for cmd in git curl rsync xz openssl debootstrap qemu-arm parted losetup mount umount sha256sum ssh-keygen; do check_cmd "$cmd"; done
+for cmd in git curl rsync xz openssl debootstrap qemu-arm parted losetup mount umount sha256sum ssh-keygen file; do check_cmd "$cmd"; done
 
 if [[ "$PAGE_SIZE" != "4096" ]]; then
   printf '[MISS] armhf builder requires a 4096-byte kernel page size (current: %s).\n' "$PAGE_SIZE"
@@ -51,10 +53,47 @@ for path in \
   os/pi-gen/stage2/20-ywd-runtime \
   os/pi-gen/stage2/25-ywd-firstboot \
   os/pi-gen/stage2/27-ywd-polish \
+  lib/runtime_build.py lib/mmdvm_voice_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
   lib/oled.py lib/config_model.py lib/settings_backup.py lib/settings_admin.py lib/update_runner.py lib/update_admin.py \
   systemd/ywd-update.service web/update.js web/instrumentation.js; do
   if [[ -e "$ROOT_DIR/$path" ]]; then printf '[OK]   source %s\n' "$path"; else printf '[MISS] source %s\n' "$path"; fail=1; fi
 done
+
+if [[ -f "$RUNTIME_PINS" ]]; then
+  # shellcheck disable=SC1090
+  source "$RUNTIME_PINS"
+  PATCH_PATH="$ROOT_DIR/${MMDVM_YWD_PATCH:-}"
+  if [[ -n "${MMDVM_HOST_COMMIT:-}" && "$MMDVM_HOST_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    printf '[OK]   MMDVM upstream pin: %s\n' "$MMDVM_HOST_COMMIT"
+  else
+    printf '[MISS] invalid MMDVM upstream pin in pins.env\n'; fail=1
+  fi
+  if [[ -n "${DMR_GATEWAY_COMMIT:-}" && "$DMR_GATEWAY_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    printf '[OK]   DMRGateway upstream pin: %s\n' "$DMR_GATEWAY_COMMIT"
+  else
+    printf '[MISS] invalid DMRGateway upstream pin in pins.env\n'; fail=1
+  fi
+  if [[ -f "$PATCH_PATH" && "${MMDVM_YWD_PATCH_SHA256:-}" =~ ^[0-9a-f]{64}$ ]]; then
+    ACTUAL_PATCH_SHA="$(sha256sum "$PATCH_PATH" | awk '{print $1}')"
+    if [[ "$ACTUAL_PATCH_SHA" == "$MMDVM_YWD_PATCH_SHA256" ]]; then
+      printf '[OK]   canonical YWD MMDVM patch SHA-256: %s\n' "$ACTUAL_PATCH_SHA"
+    else
+      printf '[MISS] canonical YWD MMDVM patch hash mismatch\n'
+      printf '       expected: %s\n' "$MMDVM_YWD_PATCH_SHA256"
+      printf '       actual:   %s\n' "$ACTUAL_PATCH_SHA"
+      fail=1
+    fi
+  else
+    printf '[MISS] canonical YWD MMDVM patch metadata/path is invalid\n'; fail=1
+  fi
+  if [[ "${MMDVM_YWD_PATCH_API:-}" =~ ^[0-9]+$ ]]; then
+    printf '[OK]   canonical YWD MMDVM patch API: %s\n' "$MMDVM_YWD_PATCH_API"
+  else
+    printf '[MISS] canonical YWD MMDVM patch API is invalid\n'; fail=1
+  fi
+else
+  printf '[MISS] runtime pins file: %s\n' "$RUNTIME_PINS"; fail=1
+fi
 
 if python3 "$ROOT_DIR/os/builder/SYSTEM-CLI.py" validate >/dev/null 2>&1; then
   printf '[OK]   System / OS builder profile\n'
@@ -62,6 +101,14 @@ else
   printf '[MISS] System / OS builder profile is invalid\n'
   python3 "$ROOT_DIR/os/builder/SYSTEM-CLI.py" validate || true
   fail=1
+fi
+
+if [[ -d "$RUNTIME_CACHE" ]]; then
+  CACHE_BYTES="$(du -sh "$RUNTIME_CACHE" 2>/dev/null | awk '{print $1}')"
+  CACHE_FILES="$(find "$RUNTIME_CACHE" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  printf '[INFO] Persistent runtime cache: %s (%s files)\n' "${CACHE_BYTES:-0}" "$CACHE_FILES"
+else
+  printf '[INFO] Persistent runtime cache: empty (first canonical build will populate it)\n'
 fi
 
 if ! git -C "$ROOT_DIR" diff --quiet --ignore-submodules -- || ! git -C "$ROOT_DIR" diff --cached --quiet --ignore-submodules --; then

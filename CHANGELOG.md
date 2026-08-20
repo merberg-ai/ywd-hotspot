@@ -2,9 +2,52 @@
 
 [Project README](README.md) · [Docs](docs/README.md) · [Development](docs/GITHUB-SETUP.md)
 
-YWD-Hotspot remains alpha software. Entries describe tested development milestones rather than a promise of strict semantic-versioning stability.
+YWD-Hotspot is approaching its first 0.1.0 release. Release candidates remain subject to physical acceptance before promotion to `main`.
 
 ---
+
+## 0.1.0-rc1 — First Release Candidate
+
+**Status:** release candidate prepared on `dev-release-0.1.0`; full acceptance testing is still required before promotion to `main`.
+
+Release hardening since the last Alpha development baseline includes:
+
+- staged candidate validation expanded to require the complete System/DMR-ID maintenance payload before deployment;
+- Git provenance hardened so temporary refs/branches cannot masquerade as the persistent update channel;
+- RadioID database manager added to the System page with due-check, forced update, record count, age, timer/service status, and explicit unhealthy handling for empty databases;
+- privileged shutdown and DMR-ID actions routed through the narrow split admin dispatcher;
+- updater fixed to install the split admin bridge coherently **before** dashboard restart, eliminating the transient `unsupported admin action` race during updates;
+- OLED status and CLI restart behavior now resolve the authoritative `ywd-headless-oled.service` on YWD-Hotspot OS while retaining generic-install fallback to `ywd-oled.service`;
+- Talkgroup Manager confirmation ownership simplified so duplex-aware TG actions receive one correct themed confirmation without timing-based de-duplication;
+- dashboard runtime identity now follows the canonical installed `VERSION` file, keeping API, journal, About, CLI, branch/ref, commit, and update-channel reporting consistent;
+- README/install/development/repository/image-builder documentation refreshed for RC1;
+- new `docs/BUILDING.md` added with simple source validation, fresh GitHub install/build, optional patched MMDVM voice-tap build, and full appliance-image build instructions;
+- README/build/DMR voice docs now explicitly document the YWD MMDVM-Host patch used for the optional RX Monitor/passive DMR voice path.
+
+Physically proven during release hardening before RC1 identity transition:
+
+- updater/provenance changes;
+- DMR ID manager normal/forced update and empty-database health handling;
+- canonical OLED owner reporting/restart behavior;
+- Talkgroup Manager confirmation cleanup;
+- version/provenance consistency;
+- coherent admin bridge through an application update with no transient dashboard admin error;
+- MMDVMHost, DMRGateway, Dashboard and Activity service survival plus BrandMeister reconnect.
+
+The RF baseline is intentionally unchanged by RC1 release prep:
+
+```text
+MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
+Optional RX Monitor/passive voice observation continues to use:
+
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
+
+Normal application updates still do **not** recompile MMDVM-Host or DMRGateway.
 
 ## 0.1.0-alpha22.7.3-dev — Pre-main Runtime Cleanup
 

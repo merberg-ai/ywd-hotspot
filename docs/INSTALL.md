@@ -1,11 +1,14 @@
 # 🚀 Installing YWD-Hotspot
 
-[← Docs index](README.md) · [Project README](../README.md) · [Upgrading](UPGRADING.md) · [Security](../SECURITY.md)
+[← Docs index](README.md) · [Project README](../README.md) · [Building](BUILDING.md) · [Upgrading](UPGRADING.md) · [Security](../SECURITY.md)
 
 ---
 
 > [!WARNING]
 > YWD-Hotspot can control a radio transmitter. Attach a suitable antenna and verify the configured frequencies before enabling RF.
+
+> [!IMPORTANT]
+> The current release-prep build is **0.1.0-rc1**. Until it is promoted to `main`, install the exact RC with the explicit `dev-release-0.1.0` clone shown below.
 
 ## Supported development baseline
 
@@ -31,9 +34,11 @@ ls -l /dev/serial0 2>/dev/null || true
 readlink -f /dev/serial0 2>/dev/null || true
 ```
 
-## Fresh install
+## Fresh install from GitHub
 
-### Promoted `main`
+### Promoted release line (`main`)
+
+After RC1 is promoted, normal users should install from `main`:
 
 ```bash
 sudo apt update
@@ -44,7 +49,22 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-### Tested development `dev`
+### Current 0.1.0 RC test branch
+
+During RC acceptance:
+
+```bash
+sudo apt update
+sudo apt install -y git
+cd ~
+git clone --branch dev-release-0.1.0 https://github.com/merberg-ai/ywd-hotspot.git
+cd ywd-hotspot
+sudo ./INSTALL.sh
+```
+
+### Development line
+
+For intentionally testing the accepted development baseline instead of a release candidate:
 
 ```bash
 sudo apt update
@@ -55,28 +75,74 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-### Next-development `dev-plugins`
-
-```bash
-sudo apt update
-sudo apt install -y git
-cd ~
-git clone --branch dev-plugins https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-sudo ./INSTALL.sh
-```
-
-A normal Git clone preserves executable bits. If source came through a ZIP/Windows copy and modes were lost, invoking the script through Bash is sufficient:
+A normal Git clone preserves executable bits. If source came through a ZIP/Windows copy and modes were lost, invoke the installer through Bash:
 
 ```bash
 sudo bash ./INSTALL.sh
 ```
 
+## What a fresh install builds
+
+A genuinely fresh install does the following:
+
+1. validates the YWD-Hotspot candidate/source tree;
+2. verifies Raspberry Pi/UART prerequisites;
+3. performs a read-only MMDVM version probe;
+4. installs build/runtime dependencies;
+5. creates the restricted `ywd-hotspot` service account;
+6. clones the exact MMDVM-Host and DMRGateway repositories from `pins.env`;
+7. checks out their pinned commits;
+8. compiles the normal radio stack conservatively for the Pi;
+9. deploys YWD-Hotspot under `/opt/ywd-hotspot/app`;
+10. installs systemd units, CLI, split privileged admin bridge, and restricted sudo policy;
+11. records non-secret Git/version provenance;
+12. creates/adopts the managed `/opt/ywd-hotspot/repo` checkout when appropriate;
+13. creates/migrates canonical configuration;
+14. updates or due-checks the DMR ID database;
+15. configures persistent journaling when enabled;
+16. starts lightweight side services and the authoritative OLED owner when applicable;
+17. asks for explicit RF-enable confirmation.
+
+The original Pi Zero W is not a compile monster. The first radio-stack build can take a while. **Normal YWD application updates do not repeat it.**
+
+For more detail, including manual validation and image builds, see **[BUILDING.md](BUILDING.md)**.
+
+## Optional patched MMDVM for RX Monitor
+
+Normal hotspot operation uses the pinned upstream MMDVM-Host baseline. The optional **RX Monitor / passive DMR voice** path needs a small YWD patch that mirrors accepted DMR voice frames to a loopback-only observation topic while MMDVM-Host remains the only modem/RF owner.
+
+Current pin:
+
+```text
+MMDVM-Host commit dea6e9b2c35857fe6f904c5092bebadb86cbf079
+```
+
+Patch:
+
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
+
+The patched binary is prepared separately from normal RF startup and ordinary app updates:
+
+```bash
+sudo systemctl start ywd-mmdvm-voice-build.service
+sudo journalctl -fu ywd-mmdvm-voice-build.service
+```
+
+Status:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
+```
+
+On a Pi Zero this optional compile can take a long time. The service is intentionally low-priority and outside the RF-critical path. You do **not** need to manually trigger it just to run a normal DMR hotspot without RX Monitor/passive voice.
+
+See **[BUILDING.md](BUILDING.md)** and **[DMR-VOICE.md](DMR-VOICE.md)**.
+
 ## Existing install → GitHub management
 
-If `/etc/ywd-hotspot/config.json` and `/opt/ywd-hotspot/app` already exist, the installer can adopt the existing appliance rather than recompiling the RF stack.
-
-Direct migration:
+If `/etc/ywd-hotspot/config.json` and `/opt/ywd-hotspot/app` already exist, the migration path can adopt the existing appliance rather than recompiling the RF stack.
 
 ```bash
 sudo apt update
@@ -89,11 +155,7 @@ sudo ./MIGRATE-TO-GITHUB.sh
 
 Migration preserves canonical configuration, BrandMeister credentials, local WebUI control password, calibration/history/runtime data, plugin state/data, and current RF active/enabled policy. It does **not** rebuild MMDVM-Host or DMRGateway.
 
-Migration adopts the promoted `main` line first. Opt into `dev` afterward only if desired:
-
-```bash
-sudo ywd-hotspotctl update --branch dev
-```
+Migration adopts the promoted `main` line first. Opt into another development/ref only deliberately.
 
 ## UART / modem preflight
 
@@ -111,34 +173,6 @@ Expected after reboot:
 ```text
 /dev/serial0 -> /dev/ttyAMA0
 ```
-
-## Source validation before install
-
-Current source runs the same capability-coherence checks used by the updater. If the tree contains the plugin UI/package runtime, passive voice runtime, or MMDVM telemetry runtime, the matching companion files must also be present. Python/shell source is syntax-checked before the installer proceeds to hardware/build/service work.
-
-This protects fresh installs from an incomplete promoted branch just as the managed updater protects existing appliances.
-
-## What a genuinely fresh install does
-
-1. verifies Raspberry Pi/UART prerequisites;
-2. performs a read-only MMDVM version probe;
-3. installs build/runtime dependencies;
-4. creates the restricted `ywd-hotspot` service account;
-5. clones the pinned MMDVM-Host and DMRGateway sources;
-6. checks out the exact commits from `pins.env`;
-7. compiles both with `make -j1`;
-8. deploys YWD-Hotspot under `/opt/ywd-hotspot/app`;
-9. installs systemd units, CLI, admin helper, and restricted sudo rules;
-10. writes non-secret build provenance;
-11. creates/adopts the managed `/opt/ywd-hotspot/repo` checkout when appropriate;
-12. creates/migrates canonical configuration;
-13. updates the DMR ID database when possible;
-14. configures persistent journaling when enabled;
-15. starts lightweight side services;
-16. starts OLED only when configured/detected;
-17. asks for explicit RF-enable confirmation.
-
-The original Pi Zero W is not a compile monster. The first upstream build can take a while. Normal application updates do not repeat it.
 
 ## Canonical radio configuration
 
@@ -169,7 +203,7 @@ duplex
   TS1 + TS2 operation
 ```
 
-The WebUI/CLI configuration layer generates matching MMDVM-Host and DMRGateway settings. Existing older configs migrate conservatively rather than silently switching radio mode.
+Older configs migrate conservatively rather than silently switching radio mode.
 
 ## RF enable confirmation
 
@@ -214,7 +248,13 @@ ywd-hotspotctl status
 ywd-hotspotctl source
 ```
 
-Core managed services include the RF stack plus dashboard/activity/update/RadioID services. Plugin, telemetry, passive voice, and OLED services are present/active according to the installed feature set and operator configuration.
+Core managed services include the RF stack plus dashboard/activity/update/RadioID services. Plugin, telemetry, passive voice, and OLED services are present/active according to installed feature set and operator configuration.
+
+Useful local API sanity check:
+
+```bash
+curl -fsS http://127.0.0.1:8080/api/status | python3 -m json.tool | head -80
+```
 
 ## Open the dashboard
 
@@ -226,6 +266,7 @@ Browse to the configured WebUI port on the hotspot's trusted LAN. Do not expose 
 
 ## Next steps
 
+- **[Building](BUILDING.md)** — source validation, pinned RF builds, patched RX voice MMDVM, image builder
 - **[Upgrading](UPGRADING.md)** — update channels, validation, rollback
 - **[Talkgroups](TALKGROUPS.md)** — simplex/duplex BrandMeister controls
 - **[Plugins](PLUGINS.md)** — plugin lifecycle/security model

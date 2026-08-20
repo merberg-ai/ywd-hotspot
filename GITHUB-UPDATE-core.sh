@@ -140,11 +140,14 @@ required=(
   bin/ywd-hotspotctl bin/ywd-hotspotctl-core bin/ywd-ui.sh lab/mmdvm-diag.sh
   lib/dashboard.py lib/dashboard_core.py lib/dashboard_update.py lib/admin.py lib/update_admin.py lib/update_runner.py
   lib/build_info.py lib/generate-config.py lib/migrate.py lib/config_model.py lib/oled.py lib/oled_owner.sh
+  lib/system_admin.py lib/id-update.py
   web/index.html web/app.js web/app-core.js web/talkgroups.js web/ui-polish.js web/ui-polish.css web/style.css
   web/update.js web/update.css web/update-progress.js
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css
+  web/system-ui.js web/system-ui.css
   sudoers/ywd-hotspot systemd/ywd-mmdvmhost.service systemd/ywd-dmrgateway.service
   systemd/ywd-dashboard.service systemd/ywd-activity.service systemd/ywd-oled.service systemd/ywd-update.service
+  systemd/ywd-dmrid-update.service systemd/ywd-dmrid-update.timer
   assets/branding/ywd-hotspot-badge-256.webp
 )
 

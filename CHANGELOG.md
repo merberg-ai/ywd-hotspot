@@ -6,9 +6,19 @@ YWD-Hotspot remains alpha software. Entries describe tested development mileston
 
 ---
 
+## 0.1.0-alpha22.7.3-dev — Pre-main Runtime Cleanup
+
+**Status:** cleanup candidate on `dev-plugins`; requires one Pi update/smoke test before promotion.
+
+- retires the bundled `system-info` and `service-heartbeat` proof packages now that the real plugin lifecycle is physically proven;
+- removes their historical implicit-installed defaults from package registration;
+- removes the retired MMDVM Live Telemetry plugin adapter, API panel, and polling implementation while retaining trusted core MMDVM telemetry infrastructure;
+- leaves a tiny `plugin-telemetry.js` compatibility shim temporarily so browsers with an older cached `app.js` do not request a missing asset during update turnover;
+- keeps RX Monitor, passive DMR voice, transactional package updates, BrandMeister routing, RF config generation, and MMDVM-Host/DMRGateway pins unchanged.
+
 ## 0.1.0-alpha22.7.2-dev — Pre-main Candidate Hardening
 
-**Status:** next-development candidate; requires Pi update validation before promotion.
+**Status:** physically validated on the Pi and promoted to `dev`.
 
 - adds capability-based staged-candidate validation independent of branch name;
 - plugin UI/package-update, passive voice, and telemetry markers now require complete matching runtime sets;

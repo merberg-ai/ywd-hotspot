@@ -128,6 +128,7 @@ def wrap_handler(base):
             static = {
                 "/plugin-manager-render.js": ("plugin-manager-render.js", "application/javascript; charset=utf-8"),
                 "/plugin-package-actions.js": ("plugin-package-actions.js", "application/javascript; charset=utf-8"),
+                "/plugin-telemetry.js": ("plugin-telemetry.js", "application/javascript; charset=utf-8"),
                 "/plugin-manager.js": ("plugin-manager.js", "application/javascript; charset=utf-8"),
                 "/plugin-config-actions.js": ("plugin-config-actions.js", "application/javascript; charset=utf-8"),
                 "/plugin-manager.css": ("plugin-manager.css", "text/css; charset=utf-8"),

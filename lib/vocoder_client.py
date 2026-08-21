@@ -61,7 +61,8 @@ def _request(opcode: int, payload: bytes = b"", timeout: float = DEFAULT_TIMEOUT
     return response
 
 
-def status(timeout: float = 0.20) -> dict:
+def status(timeout: float = 1.0) -> dict:
+    """Probe the backend, allowing extra time for a cold socket activation."""
     try:
         doc = proto.parse_json_payload(_request(proto.OP_STATUS, timeout=timeout))
         return {"available": True, "socket": str(SOCKET_PATH), **doc}

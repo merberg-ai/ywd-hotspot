@@ -2,10 +2,15 @@
 """Canonical YWD runtime binary build/install helper.
 
 Both the Raspberry Pi OS image builder and normal GitHub full/fresh installation
-use this entry point.  MMDVM-Host is always the exact pinned upstream revision
-plus the pinned YWD passive DMR voice-tap patch.  DMRGateway remains pinned
-upstream.  Both expensive binaries use the same conservative persistent cache
-scheme.
+use this entry point. MMDVM-Host supports two explicit runtime variants:
+
+- ``ywd-extended`` (default/recommended): exact pinned upstream revision plus
+  the verified YWD extension patch used by RX Monitor and future compatible
+  plugins.
+- ``upstream``: exact pinned upstream revision with no YWD MMDVM extensions.
+
+The selected variant is persisted on the appliance, and each variant has a
+strictly separate compile-cache identity. DMRGateway remains pinned upstream.
 """
 from __future__ import annotations
 
@@ -25,10 +30,12 @@ APP = LIB.parent
 PINS = APP / "pins.env"
 SOURCE_ROOT = Path(os.environ.get("YWD_RUNTIME_SOURCE_ROOT", "/opt/ywd-hotspot/src"))
 CACHE_ROOT = Path(os.environ.get("YWD_RUNTIME_BUILD_CACHE", "/var/cache/ywd-hotspot/runtime-build"))
+RUNTIME_STATE = Path(os.environ.get("YWD_MMDVM_RUNTIME_STATE", "/etc/ywd-hotspot/mmdvm-runtime.json"))
 DMR_SOURCE = SOURCE_ROOT / "DMRGateway"
 DMR_BINARY = Path(os.environ.get("YWD_DMRGATEWAY_BINARY", "/usr/local/bin/DMRGateway"))
 DMR_PROVENANCE = Path(os.environ.get("YWD_DMRGATEWAY_BUILD_PROVENANCE", "/etc/ywd-hotspot/dmrgateway-build.json"))
 CACHE_SCHEMA = 1
+MMDVM_VARIANTS = {"ywd-extended", "upstream"}
 
 
 def sha256(path: Path) -> str:
@@ -113,6 +120,41 @@ def plausible_binary(path: Path, architecture: str, minimum_size: int = 50_000) 
         if architecture == "armhf" and "ARM" not in (p.stdout or ""):
             return False
     return True
+
+
+def requested_mmdvm_variant() -> str:
+    value = str(os.environ.get("YWD_MMDVM_VARIANT", "") or "").strip().lower()
+    if not value:
+        try:
+            doc = json.loads(RUNTIME_STATE.read_text(encoding="utf-8"))
+            value = str(doc.get("variant") or "").strip().lower()
+        except Exception:
+            value = ""
+    value = value or "ywd-extended"
+    if value not in MMDVM_VARIANTS:
+        raise RuntimeError(f"invalid MMDVM runtime variant: {value}")
+    return value
+
+
+def write_mmdvm_runtime_state(variant: str, status: dict) -> None:
+    if variant == "ywd-extended":
+        capabilities = ["passive-dmr-voice", "plugin-rx-monitor"]
+        extension_api = status.get("api") or status.get("extension_api")
+        patch_sha = status.get("patch_sha256")
+    else:
+        capabilities = []
+        extension_api = None
+        patch_sha = None
+    atomic_json(RUNTIME_STATE, {
+        "schema": 1,
+        "variant": variant,
+        "selected_at": int(time.time()),
+        "upstream_commit": status.get("upstream_commit"),
+        "binary_sha256": status.get("binary_sha256"),
+        "extension_api": extension_api,
+        "patch_sha256": patch_sha,
+        "capabilities": capabilities,
+    })
 
 
 def dmr_signature() -> dict:
@@ -255,26 +297,39 @@ def install_dmrgateway() -> dict:
     return result
 
 
-def run_mmdvm_canonical() -> None:
+def run_mmdvm_canonical(variant: str) -> None:
     env = os.environ.copy()
     env.setdefault("YWD_RUNTIME_BUILD_CACHE", str(CACHE_ROOT))
-    cmd = [sys.executable, str(LIB / "mmdvm_voice_build.py"), "canonical"]
+    helper = "mmdvm_voice_build.py" if variant == "ywd-extended" else "mmdvm_upstream_build.py"
+    command = "canonical"
+    cmd = [sys.executable, str(LIB / helper), command]
     print("+ " + " ".join(cmd), flush=True)
     subprocess.run(cmd, env=env, check=True)
 
 
-def mmdvm_status() -> dict:
+def mmdvm_status(variant: str | None = None) -> dict:
+    variant = variant or requested_mmdvm_variant()
+    helper = "mmdvm_voice_build.py" if variant == "ywd-extended" else "mmdvm_upstream_build.py"
     p = subprocess.run(
-        [sys.executable, str(LIB / "mmdvm_voice_build.py"), "status"],
+        [sys.executable, str(LIB / helper), "status"],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         check=False,
     )
     try:
-        return json.loads(p.stdout or "{}")
+        doc = json.loads(p.stdout or "{}")
     except Exception:
-        return {"installed": False, "error": "status unavailable"}
+        return {"installed": False, "variant": variant, "error": "status unavailable"}
+    doc["variant"] = variant
+    if variant == "ywd-extended":
+        doc["capabilities"] = ["passive-dmr-voice", "plugin-rx-monitor"]
+        doc["extension_api"] = doc.get("api")
+    else:
+        doc.setdefault("capabilities", [])
+        doc["extension_api"] = None
+        doc["patch_sha256"] = None
+    return doc
 
 
 def dmrgateway_status() -> dict:
@@ -299,11 +354,25 @@ def install_all() -> int:
     if os.geteuid() != 0:
         print("ERROR: canonical runtime binary installation must run as root", file=sys.stderr)
         return 1
+    variant = requested_mmdvm_variant()
     print("============================================================", flush=True)
     print(" YWD canonical runtime binary installation", flush=True)
     print("============================================================", flush=True)
-    run_mmdvm_canonical()
+    if variant == "ywd-extended":
+        print("MMDVM runtime: YWD Extended (verified extension patch; plugin-capable)", flush=True)
+    else:
+        print("MMDVM runtime: Stock Upstream (no YWD MMDVM extensions)", flush=True)
+    run_mmdvm_canonical(variant)
+    mmdvm = mmdvm_status(variant)
+    if not mmdvm.get("installed"):
+        raise RuntimeError(f"selected MMDVM variant did not verify after installation: {variant}")
+    write_mmdvm_runtime_state(variant, mmdvm)
     dmr = install_dmrgateway()
+    print(
+        f"[OK] MMDVM runtime verified: variant={variant} upstream={str(mmdvm.get('upstream_commit') or '')[:12]} "
+        f"binary={str(mmdvm.get('binary_sha256') or '')[:12]}",
+        flush=True,
+    )
     print(
         f"[OK] DMRGateway verified: upstream={dmr['upstream_commit'][:12]} "
         f"binary={dmr['binary_sha256'][:12]} cache={'hit' if dmr.get('cached') else 'miss'}",
@@ -313,7 +382,14 @@ def install_all() -> int:
 
 
 def show_status() -> int:
-    state = {"mmdvm_host": mmdvm_status(), "dmrgateway": dmrgateway_status(), "cache_root": str(CACHE_ROOT)}
+    variant = requested_mmdvm_variant()
+    state = {
+        "mmdvm_variant": variant,
+        "mmdvm_host": mmdvm_status(variant),
+        "dmrgateway": dmrgateway_status(),
+        "cache_root": str(CACHE_ROOT),
+        "runtime_state": str(RUNTIME_STATE),
+    }
     print(json.dumps(state, indent=2, sort_keys=True))
     return 0 if state["mmdvm_host"].get("installed") and state["dmrgateway"].get("installed") else 1
 
@@ -321,7 +397,10 @@ def show_status() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build/verify canonical YWD runtime binaries")
     ap.add_argument("command", nargs="?", choices=("install", "status"), default="install")
+    ap.add_argument("--mmdvm-variant", choices=sorted(MMDVM_VARIANTS))
     args = ap.parse_args()
+    if args.mmdvm_variant:
+        os.environ["YWD_MMDVM_VARIANT"] = args.mmdvm_variant
     try:
         if args.command == "status":
             return show_status()

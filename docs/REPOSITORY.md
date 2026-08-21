@@ -1,129 +1,97 @@
 # 🌿 Repository Policy
 
-[← Docs index](README.md) · [Development](GITHUB-SETUP.md) · [Project README](../README.md)
+[← Docs index](README.md) · [Development](GITHUB-SETUP.md) · [Release plan](RELEASE-PLAN-0.2.0-rc1.md)
 
-YWD-Hotspot keeps Git history useful without letting temporary development branches become permanent clutter.
+YWD-Hotspot keeps release history trustworthy: active branches move deliberately, while checkpoint refs remain evidence of what was actually tested.
 
-## Active branch roles
+## Current roles
 
-| Branch | Role |
+| Ref | Role |
 |---|---|
-| `main` | conservative/promoted releases; current stable 0.1.0 |
+| `main` | promoted public release/testing line |
 | `dev` | physically accepted integrated development baseline |
-| `dev-builder` | isolated OS image/builder work |
-| `dev-plugins` | plugin/framework development line |
+| `release/0.2.0-rc1` | current prerelease hardening/factory-image line |
+| `checkpoint-builder-0.1.0-image-boot-proven` | immutable physically proven builder/appliance baseline |
+| `dev-builder` | isolated builder development history/future work |
+| `dev-plugins` | specialized plugin/framework development when needed |
 
-Temporary release branches such as the completed `dev-release-0.1.0` line are cut from an exact accepted parent and are removed or archived after their accepted work is merged forward.
+Historical `checkpoint-*` refs and prior RC refs are not rewritten merely because a newer release exists.
 
-## Promotion model
-
-The 0.1.0 release established this pattern:
+## 0.2.0-rc1 promotion model
 
 ```text
-dev
-  └── temporary release branch
-          ↓ physical release-candidate acceptance
-        dev
-          ↓ promotion sanity test
-        main
+checkpoint-builder-0.1.0-image-boot-proven
+        ↓
+release/0.2.0-rc1
+        ↓ source/static validation
+clean public factory image
+        ↓ physical acceptance of exact artifact
+checkpoint-release-0.2.0-rc1-image-proven
+        ↓
+dev (fast-forward)
+        ↓ promotion sanity
+main (fast-forward)
+        ↓
+v0.2.0-rc1 GitHub prerelease
 ```
 
-For 0.1.0 specifically, the accepted `dev-release-0.1.0` RC tree was merged into `dev`, physically sanity-tested there, then promoted to `main` and tested again before the stable identity bump.
-
-`dev-builder` remains isolated during release hardening. After the final release state is proven, release changes can be intentionally synchronized forward into builder work before image development resumes.
+The accepted release branch is currently a clean descendant of the prior `dev` and `main`, so the intended promotion is fast-forward rather than an unrelated merge.
 
 Promotion is never automatic.
 
-## Companion plugin repository
+## Public image policy
 
-Standalone/open-source plugin development lives in:
+A GitHub release image is not a developer image. It must be built through `os/builder/BUILD-PUBLIC-RELEASE.sh` and contain factory/default onboarding state only—no operator Wi-Fi, radio identity, secrets, imported backup, RF autostart, or builder SSH key.
 
-```text
-merberg-ai/ywd-hotspot-plugins
-```
-
-Core remains authoritative for package verification, lifecycle management, capability isolation, updater integration, sandboxing, and RF ownership. Private signing keys belong in neither repository.
+The exact artifact tested is the artifact published. Do not rebuild another image after physical acceptance and reuse the same release identity.
 
 ## Checkpoint policy
 
-A known-good checkpoint is created only after the relevant hardware/runtime behavior has actually been exercised.
+Create a known-good checkpoint only after the relevant behavior has been exercised. Checkpoints are rollback/audit anchors, not update channels.
 
-The 0.1.0 release hardening used named `checkpoint-release-*` references as rollback anchors, including checkpoints for RC acceptance on the temporary release branch, `dev`, and `main`. They are historical safety references, not active development lines.
+Current critical anchor:
 
-Do not delete a checkpoint merely because its name looks old until its commit has been intentionally preserved by the repository's long-term archive/tag policy.
+```text
+checkpoint-builder-0.1.0-image-boot-proven
+a5a6d9483a7cad519ee5288661447875f346b4e7
+```
+
+## MMDVM runtime policy
+
+The active release supports:
+
+```text
+ywd-extended   default/recommended; verified YWD extension patch
+upstream       exact pinned stock upstream
+```
+
+The radio upstream pin remains fixed unless an isolated RF regression task intentionally changes it. YWD Extended patch identity is likewise pinned/hash-verified.
+
+Runtime-variant support requires both canonical builders/dispatcher in candidate validation and `MANIFEST.txt`.
+
+## Plugin requirement policy
+
+Plugins may use trusted declarative requirement tokens for the selected MMDVM runtime. Requirement handling remains core-owned; plugins cannot run custom dependency installers or switch the MMDVM runtime themselves.
 
 ## Temporary branches
 
-Feature, release, audit, recovery, and hotfix work should be scoped and temporary. Normal lifecycle:
+Normal lifecycle:
 
-1. branch from an exact verified parent;
-2. make the smallest scoped change;
-3. run static/source validation;
+1. branch from exact verified parent;
+2. make the scoped change;
+3. run source/candidate validation;
 4. compare exact changed-file scope;
-5. test on real hardware when runtime behavior changed;
-6. freeze an accepted rollback checkpoint when useful;
-7. merge/promote intentionally;
-8. remove temporary scaffolding only after useful history is preserved.
+5. hardware-test runtime changes;
+6. freeze accepted checkpoint when useful;
+7. promote intentionally;
+8. clean temporary branches only after history is preserved.
 
-## Repository layout
+## Manifest/candidate validation
 
-```text
-assets/     source artwork and optimized branding derivatives
-bin/        operator CLI
-docs/       operator/development documentation
-lab/        explicit diagnostic utilities
-lib/        trusted application core
-os/         reproducible image builder
-sudoers/    privilege policy
-systemd/    service units/sandbox templates
-tools/      trusted development/package utilities
-web/        static WebUI payload
-```
+`MANIFEST.txt` inventories trusted runtime/release files. Capability-based candidate validation requires coherent core/plugin/voice/telemetry/runtime-variant payloads regardless of branch name.
 
-Do not move runtime paths merely for aesthetics. Installer/updater/image-builder behavior depends on stable layout. Path moves are migrations and require candidate-validation/manifest coverage plus hardware testing.
+Do not weaken this to make an incomplete candidate easier to deploy.
 
-Root install/update/migration wrappers remain at repository root as public operator entry points.
+## Secrets
 
-## RF / RX Monitor boundary
-
-Repository cleanup is not a reason to move the tested radio baseline.
-
-Current RF pins remain:
-
-```text
-MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
-DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
-```
-
-The optional passive RX Monitor voice path uses:
-
-```text
-lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
-```
-
-That patch is part of a narrow observation capability while MMDVM-Host stays the sole modem owner. Pin/patch changes require isolated RF regression testing.
-
-## Manifest and candidate-validation policy
-
-`MANIFEST.txt` is the current repository/runtime inventory used for release auditing. It must track current trusted runtime pieces rather than lag behind newly promoted subsystems.
-
-The managed updater performs capability-based candidate validation. If a staged tree contains plugin UI/package-update, passive voice, or telemetry markers, the complete corresponding runtime set must be present regardless of branch name.
-
-Repository cleanup must not weaken this invariant.
-
-## Cleanup checklist
-
-Periodic cleanup should verify:
-
-- `main` and `dev` retain clear release/integration roles;
-- specialized `dev-builder` and `dev-plugins` work stays isolated from unrelated release changes;
-- temporary release/feature branches are removed or archived after promotion;
-- checkpoint history is preserved before cleanup;
-- `MANIFEST.txt` matches current trusted runtime files;
-- README/install/build/architecture/plugin/update docs describe the current product rather than an old Alpha or RC phase;
-- generated/local plugin decoder artifacts remain ignored unless an explicit distribution decision is made;
-- no secrets, runtime config, backups, SSH private keys, or signing private keys are tracked.
-
-## Safety rule
-
-Repository cleanup and documentation work stay isolated from MMDVM-Host/DMRGateway pins, calibration, frequencies, modem ownership, and normal DMR service behavior unless that radio change is explicitly the scoped task.
+Never commit runtime config, backups, API/password state, SSH private keys, plugin signing private keys, or unsanitized diagnostics. `os/local/`, work trees, runtime caches and deploy artifacts remain local/ignored unless explicitly attached to a GitHub Release.

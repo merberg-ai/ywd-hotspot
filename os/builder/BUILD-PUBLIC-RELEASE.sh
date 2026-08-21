@@ -5,10 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILDER="$ROOT_DIR/os/builder"
 LOCAL="$ROOT_DIR/os/local"
 PROFILE="$LOCAL/builder-profile.json"
+RUNTIME_PREF="$LOCAL/mmdvm-runtime.json"
 VERSION="$(tr -d '\r\n' < "$ROOT_DIR/VERSION")"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$LOCAL/builder-profile.before-public-release.$STAMP.json"
+RUNTIME_BACKUP="$LOCAL/mmdvm-runtime.before-public-release.$STAMP.json"
 HAD_PROFILE=0
+HAD_RUNTIME_PREF=0
 
 if [[ "$VERSION" != "0.2.0-rc1" ]]; then
   echo "ERROR: public release wrapper expects VERSION 0.2.0-rc1, got $VERSION" >&2
@@ -34,8 +37,14 @@ if [[ -f "$PROFILE" ]]; then
   HAD_PROFILE=1
   echo "[INFO] Saved current private builder profile: $BACKUP"
 fi
+if [[ -f "$RUNTIME_PREF" ]]; then
+  cp -p "$RUNTIME_PREF" "$RUNTIME_BACKUP"
+  chmod 0600 "$RUNTIME_BACKUP"
+  HAD_RUNTIME_PREF=1
+  echo "[INFO] Saved current MMDVM runtime preference: $RUNTIME_BACKUP"
+fi
 
-restore_profile() {
+restore_local_state() {
   if [[ "$HAD_PROFILE" == "1" && -f "$BACKUP" ]]; then
     cp -p "$BACKUP" "$PROFILE"
     chmod 0600 "$PROFILE"
@@ -43,14 +52,22 @@ restore_profile() {
   else
     rm -f "$PROFILE"
   fi
+  if [[ "$HAD_RUNTIME_PREF" == "1" && -f "$RUNTIME_BACKUP" ]]; then
+    cp -p "$RUNTIME_BACKUP" "$RUNTIME_PREF"
+    chmod 0600 "$RUNTIME_PREF"
+    echo "[INFO] Restored original MMDVM runtime preference: $RUNTIME_PREF"
+  else
+    rm -f "$RUNTIME_PREF"
+  fi
 }
-trap restore_profile EXIT INT TERM
+trap restore_local_state EXIT INT TERM
 
 # Start from the application's canonical defaults, not the developer's current
 # profile. Release identity and update/security policy are the only deliberate
-# public-image overrides.
+# public-image overrides. YWD Extended is the recommended/default runtime.
 python3 "$BUILDER/PROFILE-CLI.py" reset
 python3 "$BUILDER/SYSTEM-CLI.py" reset
+python3 "$BUILDER/MMDVM-RUNTIME.py" reset
 python3 "$BUILDER/PROFILE-CLI.py" set image.image_name str "ywd-hotspot-0.2.0-rc1-pi-zero"
 python3 "$BUILDER/PROFILE-CLI.py" set image.os_version str "YWD-Hotspot OS 0.2.0-rc1"
 printf '%s' main | python3 "$BUILDER/SYSTEM-CLI.py" set-stdin update_channel
@@ -66,6 +83,8 @@ printf '============================================================\n'
 python3 "$BUILDER/PROFILE-CLI.py" review
 printf '\n'
 python3 "$BUILDER/SYSTEM-CLI.py" review
+printf '\n'
+python3 "$BUILDER/MMDVM-RUNTIME.py" review
 printf '\n'
 python3 "$BUILDER/PUBLIC-RELEASE-CHECK.py" profile
 

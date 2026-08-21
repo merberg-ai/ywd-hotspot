@@ -1,0 +1,25 @@
+[Unit]
+Description=YWD Vocoder Protocol v1 fake backend (development only)
+Requires=ywd-vocoder-fake.socket
+After=ywd-vocoder-fake.socket
+
+[Service]
+Type=simple
+User=ywd-hotspot
+Group=ywd-hotspot
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_fake_backend.py --systemd --idle-seconds 5 --mode tone
+Nice=10
+CPUWeight=10
+MemoryMax=32M
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=true
+Restart=no
+TimeoutStopSec=2

@@ -38,6 +38,7 @@ ENABLE_SSH_VALUE="${YWD_ENABLE_SSH:-1}"
 PUBKEY_ONLY_SSH_VALUE="${YWD_PUBKEY_ONLY_SSH:-1}"
 RF_AUTOSTART_VALUE="${YWD_RF_AUTOSTART:-0}"
 RUNTIME_CACHE_BYPASS_VALUE="${YWD_RUNTIME_CACHE_BYPASS:-0}"
+MMDVM_VARIANT_VALUE="${YWD_MMDVM_VARIANT:-ywd-extended}"
 
 [[ -f "$PIN_FILE" ]] || { echo "ERROR: missing $PIN_FILE" >&2; exit 1; }
 PI_GEN_COMMIT="$(tr -d '[:space:]' < "$PIN_FILE")"
@@ -51,7 +52,7 @@ for required in \
   VERSION pins.env MANIFEST.txt \
   lib/oled.py lib/admin.py lib/admin_dispatch.sh lib/setup_admin.py lib/setup_entry.sh \
   lib/update_admin.py lib/update_runner.py lib/dashboard_update.py lib/oled_owner.sh \
-  lib/runtime_build.py lib/mmdvm_voice_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
+  lib/runtime_build.py lib/mmdvm_voice_build.py lib/mmdvm_upstream_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
   lib/branding/issue lib/branding/motd \
   lib/console/ywd-system-info.py lib/console/ywd-info-wrapper.sh lib/console/ywd-logs.sh \
   lib/console/ywd-env.sh lib/console/ywd-prompt.sh lib/console/ywd-motd.sh \
@@ -96,6 +97,7 @@ case "$UPDATE_CHANNEL" in main|dev) ;; *) echo "ERROR: invalid update channel: $
 [[ "$PUBKEY_ONLY_SSH_VALUE" == "1" ]] || { echo 'ERROR: YWD-Hotspot builder currently permits only public-key-only SSH' >&2; exit 1; }
 [[ "$RF_AUTOSTART_VALUE" == "0" || "$RF_AUTOSTART_VALUE" == "1" ]] || { echo 'ERROR: YWD_RF_AUTOSTART must be 0 or 1' >&2; exit 1; }
 [[ "$RUNTIME_CACHE_BYPASS_VALUE" == "0" || "$RUNTIME_CACHE_BYPASS_VALUE" == "1" ]] || { echo 'ERROR: YWD_RUNTIME_CACHE_BYPASS must be 0 or 1' >&2; exit 1; }
+case "$MMDVM_VARIANT_VALUE" in ywd-extended|upstream) ;; *) echo "ERROR: invalid MMDVM runtime variant: $MMDVM_VARIANT_VALUE" >&2; exit 1 ;; esac
 
 printf '==================================================\n'
 printf ' YWD-Hotspot OS Unified Image Builder\n'
@@ -111,8 +113,9 @@ printf 'Timezone:           %s\n' "$TIMEZONE_DEFAULT_VALUE"
 printf 'Locale:             %s\n' "$LOCALE_DEFAULT_VALUE"
 printf 'Keyboard:           %s / %s\n' "$KEYBOARD_KEYMAP_VALUE" "$KEYBOARD_LAYOUT_VALUE"
 printf 'Wi-Fi country:      %s\n' "$WPA_COUNTRY_VALUE"
-printf 'SSH:                 %s\n' "$([[ "$ENABLE_SSH_VALUE" == "1" ]] && printf 'enabled / key-only' || printf 'disabled')"
+printf 'SSH:                 %s\n' "$([[ "$ENABLE_SSH_VALUE" == "1" ]] && printf 'enabled / key-only' || printf 'disabled / no key staged')"
 printf 'RF autostart:       %s\n' "$([[ "$RF_AUTOSTART_VALUE" == "1" ]] && printf 'ON' || printf 'OFF')"
+printf 'MMDVM runtime:      %s\n' "$MMDVM_VARIANT_VALUE"
 printf 'Runtime cache:      %s\n' "$([[ "$RUNTIME_CACHE_BYPASS_VALUE" == "1" ]] && printf 'BYPASS ONCE' || printf 'enabled')"
 printf 'Runtime cache dir:  %s\n' "$LOCAL_RUNTIME_CACHE"
 printf 'Target:             Raspberry Pi Zero W / Zero WH\n'
@@ -124,10 +127,15 @@ printf 'Work directory:     %s\n' "$WORK_DIR"
 printf 'Deploy directory:   %s\n\n' "$DEPLOY_DIR"
 printf 'Safety model:\n'
 printf '  - current root application is packaged verbatim\n'
-printf '  - MMDVM-Host is the pinned upstream source plus the verified canonical YWD voice-tap patch\n'
-printf '  - runtime compile cache identity includes source pin, patch hash/API, target arch, compiler and flags\n'
+if [[ "$MMDVM_VARIANT_VALUE" == "ywd-extended" ]]; then
+  printf '  - MMDVM-Host uses pinned upstream plus the verified YWD extension patch\n'
+else
+  printf '  - MMDVM-Host uses exact pinned stock upstream with no YWD extensions\n'
+fi
+printf '  - runtime compile cache identity separates stock and YWD Extended variants\n'
 printf '  - RF startup follows the validated hotspot profile and is warned when enabled\n'
 printf '  - SSH, hostname, locale, timezone and regulatory domain follow the validated System / OS profile\n'
+printf '  - disabled SSH stages no authorized builder key\n'
 printf '  - ywd-headless-oled remains the sole SSD1306 owner\n'
 printf '  - OLED/console presentation is injected from current canonical app source\n'
 printf '  - normal GitHub app updates remain available after imaging\n\n'
@@ -163,9 +171,6 @@ for pair in \
   cp -a "$src/." "$dst/"
 done
 
-# Seed the disposable runtime stage with the persistent cache.  The stage
-# copies new entries back here even on failure; this EXIT trap then syncs them
-# into os/local so later image builds can reuse the expensive armhf binaries.
 rm -rf "$STAGED_RUNTIME_CACHE"
 mkdir -p "$STAGED_RUNTIME_CACHE"
 if [[ -d "$LOCAL_RUNTIME_CACHE" ]]; then
@@ -180,9 +185,6 @@ sync_runtime_cache() {
 }
 trap sync_runtime_cache EXIT
 
-# Replace historical OS copies with the current canonical application assets.
-# This is intentionally done after staging so a new image cannot silently ship
-# an old OLED renderer or old console branding while the root app has moved on.
 install -m 0755 "$ROOT_DIR/lib/oled.py" "$HEADLESS_STAGE_DST/files/ywd-headless-oled.py"
 install -m 0644 "$ROOT_DIR/lib/branding/issue" "$POLISH_STAGE_DST/files/issue"
 install -m 0644 "$ROOT_DIR/lib/branding/motd" "$POLISH_STAGE_DST/files/motd"
@@ -227,6 +229,7 @@ install -m 0644 "$ROOT_DIR/assets/branding/ywd-hotspot-badge-256.webp" "$RUNTIME
   printf 'YWD_UPDATE_CHANNEL=%q\n' "$UPDATE_CHANNEL"
   printf 'YWD_OS_VERSION=%q\n' "$OS_VERSION"
   printf 'YWD_RUNTIME_CACHE_BYPASS=%q\n' "$RUNTIME_CACHE_BYPASS_VALUE"
+  printf 'YWD_MMDVM_VARIANT=%q\n' "$MMDVM_VARIANT_VALUE"
 } > "$RUNTIME_STAGE_DST/files/build.env"
 chmod 0644 "$RUNTIME_STAGE_DST/files/build.env"
 
@@ -239,7 +242,6 @@ chmod 0644 "$RUNTIME_STAGE_DST/files/build.env"
 chmod 0644 "$POLISH_STAGE_DST/files/build-polish.env"
 
 if [[ -f "$LOCAL_WIFI" ]]; then
-  # shellcheck disable=SC1090
   source "$LOCAL_WIFI"
   if [[ -n "${WIFI_SSID:-}" ]]; then
     install -m 0600 "$LOCAL_WIFI" "$HEADLESS_STAGE_DST/files/provision.env"
@@ -269,6 +271,7 @@ required_payload=(
   "$RUNTIME_APP/VERSION"
   "$RUNTIME_APP/lib/runtime_build.py"
   "$RUNTIME_APP/lib/mmdvm_voice_build.py"
+  "$RUNTIME_APP/lib/mmdvm_upstream_build.py"
   "$RUNTIME_APP/lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch"
   "$RUNTIME_APP/lib/dashboard.py"
   "$RUNTIME_APP/lib/config_model.py"
@@ -317,21 +320,26 @@ else
 fi
 printf '[OK] Unified payload staged and syntax preflight passed; app version %s\n' "$APP_VERSION"
 
-command -v ssh-keygen >/dev/null 2>&1 || { echo 'ERROR: ssh-keygen is required (install openssh-client).' >&2; exit 1; }
-if [[ ! -f "$DEV_KEY" ]]; then
-  echo '[4/8] Generating local OS development SSH key...'
-  ssh-keygen -q -t ed25519 -N '' -C 'ywd-hotspot-os-dev' -f "$DEV_KEY"
-  chmod 0600 "$DEV_KEY"
-  chmod 0644 "$DEV_KEY.pub"
+PUBKEY=""
+if [[ "$ENABLE_SSH_VALUE" == "1" ]]; then
+  command -v ssh-keygen >/dev/null 2>&1 || { echo 'ERROR: ssh-keygen is required when SSH is enabled (install openssh-client).' >&2; exit 1; }
+  if [[ ! -f "$DEV_KEY" ]]; then
+    echo '[4/8] Generating local OS development SSH key...'
+    ssh-keygen -q -t ed25519 -N '' -C 'ywd-hotspot-os-dev' -f "$DEV_KEY"
+    chmod 0600 "$DEV_KEY"
+    chmod 0644 "$DEV_KEY.pub"
+  else
+    echo '[4/8] Reusing local OS development SSH key...'
+  fi
+  PUBKEY="$(cat "$DEV_KEY.pub")"
 else
-  echo '[4/8] Reusing local OS development SSH key...'
+  echo '[4/8] SSH disabled; no authorized client key will be embedded.'
 fi
-PUBKEY="$(cat "$DEV_KEY.pub")"
 DEV_PASS="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
 
 cat > "$PI_GEN_DIR/config" <<EOF
 IMG_NAME='$IMG_NAME'
-PI_GEN_RELEASE='YWD-Hotspot OS unified development image'
+PI_GEN_RELEASE='YWD-Hotspot OS'
 RELEASE='trixie'
 ARCH='armhf'
 TARGET_HOSTNAME='$TARGET_HOSTNAME'
@@ -341,8 +349,6 @@ KEYBOARD_LAYOUT='$KEYBOARD_LAYOUT_VALUE'
 TIMEZONE_DEFAULT='$TIMEZONE_DEFAULT_VALUE'
 WPA_COUNTRY='$WPA_COUNTRY_VALUE'
 ENABLE_SSH=$ENABLE_SSH_VALUE
-PUBKEY_ONLY_SSH=$PUBKEY_ONLY_SSH_VALUE
-PUBKEY_SSH_FIRST_USER='$PUBKEY'
 FIRST_USER_NAME='ywd'
 FIRST_USER_PASS='$DEV_PASS'
 DISABLE_FIRST_BOOT_USER_RENAME=1
@@ -353,6 +359,12 @@ WORK_DIR='$WORK_DIR'
 DEPLOY_DIR='$DEPLOY_DIR'
 STAGE_LIST="\$BASE_DIR/stage0 \$BASE_DIR/stage1 \$BASE_DIR/stage2"
 EOF
+if [[ "$ENABLE_SSH_VALUE" == "1" ]]; then
+  {
+    printf 'PUBKEY_ONLY_SSH=%s\n' "$PUBKEY_ONLY_SSH_VALUE"
+    printf "PUBKEY_SSH_FIRST_USER='%s'\n" "$PUBKEY"
+  } >> "$PI_GEN_DIR/config"
+fi
 chmod 0600 "$PI_GEN_DIR/config"
 
 find "$DEPLOY_DIR" -maxdepth 1 -type f -name "*${IMG_NAME}*" -delete
@@ -363,7 +375,8 @@ bash "$OS_DIR/builder/DOCTOR.sh"
 
 echo '[6/8] Building Raspberry Pi OS Lite + current YWD-Hotspot source...'
 echo '      Runtime compilation auto-detects CPUs and is capped at four jobs.'
-echo '      Canonical MMDVM-Host/DMRGateway binaries are reused from the persistent cache when signatures match.'
+echo "      MMDVM runtime variant: $MMDVM_VARIANT_VALUE"
+echo '      MMDVM-Host/DMRGateway binaries are reused from the persistent cache only when strict signatures match.'
 if [[ "$EUID" -eq 0 ]]; then
   (cd "$PI_GEN_DIR" && ./build.sh)
 else
@@ -392,7 +405,7 @@ printf 'Source:      %s @ %s\n' "$SOURCE_BRANCH" "$SOURCE_COMMIT_SHORT"
 printf 'OS:          %s\n' "$OS_VERSION"
 printf 'Hostname:    %s.local\n' "$TARGET_HOSTNAME"
 printf 'Update:      %s\n' "$UPDATE_CHANNEL"
-printf 'MMDVM:       canonical YWD-patched build\n'
+printf 'MMDVM:       %s\n' "$MMDVM_VARIANT_VALUE"
 printf 'Runtime cache: %s\n' "$LOCAL_RUNTIME_CACHE"
 printf 'RF autostart:%s\n' "$([[ "$RF_AUTOSTART_VALUE" == "1" ]] && printf ' ON' || printf ' OFF')"
 find "$DEPLOY_DIR" -maxdepth 1 -type f \( -name "*${IMG_NAME}*" -o -name "$CHECKSUM_FILE" \) -printf '  %f\n' | sort
@@ -404,6 +417,6 @@ printf '  4. Finish wizard -> normal dashboard at http://%s.local:8080/\n' "$TAR
 if [[ "$ENABLE_SSH_VALUE" == "1" ]]; then
   printf '\nSSH: ssh -i %s ywd@%s.local\n' "$DEV_KEY" "$TARGET_HOSTNAME"
 else
-  printf '\nSSH: disabled by System / OS profile (authorized client key is still baked for later enablement).\n'
+  printf '\nSSH: disabled; no authorized builder key is embedded.\n'
 fi
 printf 'RF autostart is %s for this image profile.\n' "$([[ "$RF_AUTOSTART_VALUE" == "1" ]] && printf 'ENABLED' || printf 'disabled')"

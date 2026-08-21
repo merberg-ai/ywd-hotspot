@@ -2,13 +2,35 @@
 
 [← Docs index](README.md) · [Installation](INSTALL.md) · [Development](GITHUB-SETUP.md) · [OS Development](OS-DEVELOPMENT.md)
 
-This guide separates the four things people often mean by “build YWD-Hotspot.” Pick the one that matches what you are actually trying to do.
+`0.2.0-rc1` separates four build paths: source validation, source installation, MMDVM runtime selection, and complete appliance images.
 
-## 1. Build and install a hotspot from GitHub — recommended
+## 1. Source validation
 
-For a normal Raspberry Pi hotspot install, you do **not** manually clone and build MMDVM-Host yourself. `INSTALL.sh` is the supported build/install entry point.
+Before installation/image work:
 
-### Stable `main`
+```bash
+python3 lib/candidate_validate.py .
+python3 -m py_compile lib/*.py os/builder/*.py
+
+bash -n \
+  INSTALL.sh INSTALL-core.sh \
+  UPDATE.sh UPDATE-core.sh \
+  GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh \
+  MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh \
+  os/builder/BUILD.sh os/builder/RUN-BUILD.sh \
+  os/builder/BUILD-PUBLIC-RELEASE.sh \
+  os/pi-gen/stage2/20-ywd-runtime/01-run.sh
+```
+
+If Node.js is available:
+
+```bash
+for js in web/*.js; do node --check "$js"; done
+```
+
+These checks do not replace hardware acceptance.
+
+## 2. Build/install from GitHub source
 
 ```bash
 sudo apt update
@@ -19,181 +41,145 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-For intentionally testing the accepted development baseline instead of the stable release, clone `--branch dev`. The completed `dev-release-0.1.0` branch is release history rather than the normal 0.1.0 build path.
+The full installer asks which MMDVM runtime to build:
 
-The fresh installer:
+### YWD Extended — default/recommended
 
-1. validates the YWD-Hotspot source tree;
-2. checks Raspberry Pi/UART prerequisites;
-3. installs build/runtime dependencies;
-4. clones the exact upstream radio sources from `pins.env`;
-5. checks out the exact pinned commits;
-6. builds MMDVM-Host and DMRGateway conservatively for the Pi;
-7. deploys YWD-Hotspot and systemd services;
-8. establishes canonical configuration and GitHub provenance;
-9. leaves RF start/enable as an explicit operator decision.
+Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. It advertises capabilities used by RX Monitor and future compatible plugins.
 
-On the original Pi Zero W the first radio build can take a while. That is normal.
+### Stock Upstream
 
-## 2. Validate source without installing it
+Exact pinned upstream MMDVM-Host with no YWD MMDVM extensions. Normal DMR hotspot operation remains supported; plugins declaring extension requirements are refused cleanly.
 
-For docs/WebUI/Python/shell work, run source validation before pushing or testing on a Pi:
+Noninteractive selection:
 
 ```bash
-cd ~/ywd-hotspot
-
-python3 lib/candidate_validate.py .
-python3 -m py_compile lib/*.py
-
-bash -n \
-  INSTALL.sh INSTALL-core.sh \
-  UPDATE.sh UPDATE-core.sh \
-  GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh \
-  MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh \
-  UNINSTALL.sh \
-  bin/ywd-hotspotctl bin/ywd-hotspotctl-core bin/ywd-ui.sh \
-  lab/mmdvm-diag.sh
+sudo YWD_MMDVM_VARIANT=ywd-extended ./INSTALL.sh
+sudo YWD_MMDVM_VARIANT=upstream ./INSTALL.sh
 ```
 
-If Node.js is available on the development machine:
+Recovery installs preserve the existing runtime variant by default. Ordinary app updates do not rebuild or switch it.
+
+## 3. Runtime builders and cache identity
+
+Dispatcher:
 
 ```bash
-for js in web/*.js; do
-  node --check "$js"
-done
+sudo python3 lib/runtime_build.py install --mmdvm-variant ywd-extended
+sudo python3 lib/runtime_build.py install --mmdvm-variant upstream
+sudo python3 lib/runtime_build.py status
 ```
 
-These checks do not replace a real Pi test for runtime, systemd, sudoers, updater, RF, OLED, or plugin-lifecycle changes.
+YWD Extended uses `lib/mmdvm_voice_build.py`. Stock uses `lib/mmdvm_upstream_build.py`.
 
-## 3. Build the patched MMDVM-Host used by RX Monitor
+The variants have separate cache namespaces/signatures. Extended cache identity includes the extension API/hash, so an unpatched binary cannot satisfy a patched cache lookup.
 
-### Why there is a patch
-
-YWD-Hotspot keeps **MMDVM-Host as the only owner of the modem serial/RF path**. RX Monitor therefore does not open `/dev/serial0` and does not run a second modem process.
-
-Instead, the optional passive voice path applies a small patch to the pinned MMDVM-Host source. The patch mirrors already-accepted DMR voice bursts to a loopback-only observation topic while normal MMDVM processing continues unchanged.
-
-Pinned upstream source:
-
-```text
-MMDVM-Host repo   https://github.com/g4klx/MMDVM-Host.git
-MMDVM-Host commit dea6e9b2c35857fe6f904c5092bebadb86cbf079
-```
-
-Patch:
-
-```text
-lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
-```
-
-The exact upstream pin is also recorded in `pins.env`.
-
-### Guarded build
-
-On an installed hotspot:
-
-```bash
-sudo systemctl start ywd-mmdvm-voice-build.service
-```
-
-Follow progress:
-
-```bash
-sudo journalctl -fu ywd-mmdvm-voice-build.service
-```
-
-Check status at any time:
-
-```bash
-sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
-```
-
-The service runs:
-
-```text
-/usr/bin/python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py ensure
-```
-
-and is intentionally configured as a low-priority one-shot build with a long timeout. On the original single-core Pi Zero W the patched MMDVM compile can be slow.
-
-### Important behavior
-
-- ordinary YWD-Hotspot application updates do **not** rebuild MMDVM-Host or DMRGateway;
-- the passive voice build is outside normal RF startup;
-- the helper verifies the exact pinned source and exact patch identity before reusing an interrupted source tree;
-- activation is guarded and retains a fallback to the previously working binary;
-- RX Monitor receives only a bounded capability-gated frame stream;
-- RX Monitor does not receive arbitrary RF TX, serial, MQTT, sudo, or broad network authority.
-
-If you do not use passive DMR voice/RX Monitor, there is no reason to manually trigger this optional build just to run a normal hotspot.
-
-Full architecture: **[DMR-VOICE.md](DMR-VOICE.md)**.
-
-## 4. Build a complete SD-card appliance image
-
-The application repo also contains the YWD-Hotspot OS image builder. This is a separate workflow from installing the application onto an existing Raspberry Pi OS system.
-
-On the Linux builder machine:
-
-```bash
-cd ~/ywd-hotspot
-git status --short
-git branch --show-current
-
-bash os/builder/DOCTOR.sh
-```
-
-Fix anything reported by the doctor before starting a long image build.
-
-Then:
-
-```bash
-bash os/builder/BUILD.sh
-```
-
-Optional build-time Wi-Fi configuration:
-
-```bash
-bash os/builder/CONFIGURE-WIFI.sh
-```
-
-Generated image artifacts are written under the ignored builder/deploy paths rather than committed to the application tree.
-
-See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)** and `os/README.md` for the builder-specific workflow.
-
-## Current pinned radio baseline
+Pinned identities:
 
 ```text
 MMDVM-Host
-  repo   https://github.com/g4klx/MMDVM-Host.git
-  commit dea6e9b2c35857fe6f904c5092bebadb86cbf079
+  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+
+YWD extension API
+  2
+
+YWD patch SHA256
+  f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
 
 DMRGateway
-  repo   https://github.com/g4klx/DMRGateway.git
-  commit 2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
 
-Do not casually change these pins while doing unrelated UI/docs/plugin work. A radio pin move changes the calibration and RF stability baseline and needs an isolated physical regression pass.
+## 4. Personalized/development appliance image
 
-## After a build/install
-
-Useful checks:
+Run builder doctor first:
 
 ```bash
-ywd-hotspotctl status
-ywd-hotspotctl source
+bash os/builder/DOCTOR.sh
 ```
 
-Dashboard API:
+Review/select the MMDVM runtime:
 
 ```bash
-curl -fsS http://127.0.0.1:8080/api/status | python3 -m json.tool | head -80
+python3 os/builder/MMDVM-RUNTIME.py review
+python3 os/builder/MMDVM-RUNTIME.py set ywd-extended   # default
+# or
+python3 os/builder/MMDVM-RUNTIME.py set upstream
 ```
 
-For the optional passive voice build:
+Review the builder profile, then build:
 
 ```bash
-sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
+python3 os/builder/PROFILE-CLI.py review
+python3 os/builder/PROFILE-CLI.py validate
+bash os/builder/RUN-BUILD.sh
 ```
 
-For complete release acceptance, also exercise the real RF path: BrandMeister reconnect, Parrot, simplex/duplex behavior as configured, and both TS1/TS2 on duplex hardware.
+Local runtime cache status:
+
+```bash
+python3 os/builder/RUNTIME-CACHE.py status
+```
+
+## 5. Public factory release image
+
+Public release images use a separate wrapper:
+
+```bash
+bash os/builder/BUILD-PUBLIC-RELEASE.sh
+```
+
+The wrapper:
+
+1. requires the exact release branch/version and clean tracked source;
+2. saves the developer's private local builder profile/runtime preference;
+3. resets hotspot configuration to canonical defaults;
+4. removes Wi-Fi/operator/credential/imported-backup preconfiguration;
+5. sets RF first boot OFF;
+6. sets update channel `main`;
+7. disables SSH and embeds no builder authorized key;
+8. selects default/recommended `ywd-extended`;
+9. runs `PUBLIC-RELEASE-CHECK.py` before and after profile generation;
+10. runs the normal image build/cache path;
+11. validates factory state again;
+12. writes `BUILD-METADATA.json` and `README-FIRST.txt` beside the image;
+13. restores the developer's original local profile.
+
+The release gate refuses personalized images rather than trying to sanitize them after the fact.
+
+Expected release assets:
+
+```text
+*.img.xz
+*.bmap
+*.info
+SHA256SUMS-YWD-HOTSPOT-OS
+BUILD-METADATA.json
+README-FIRST.txt
+```
+
+## Release-image acceptance
+
+A successful compile is not enough. For the exact artifact intended for GitHub, verify:
+
+```text
+[ ] SHA256 verification passes
+[ ] xz integrity passes
+[ ] no preconfigured Wi-Fi -> YWD setup AP appears
+[ ] Wi-Fi handoff works
+[ ] OLED one-time code appears
+[ ] secure first-boot wizard completes
+[ ] shipped runtime reports ywd-extended + exact patch API/hash
+[ ] RF remains OFF until explicit enable
+[ ] BrandMeister connects after configuration
+[ ] Parrot works
+[ ] simplex/duplex settings operate as configured
+[ ] duplex TS1/TS2 work on duplex hardware
+[ ] reboot preserves settings
+[ ] RF autostart works only when operator enabled it
+[ ] zero failed systemd units
+```
+
+Only after the exact public artifact passes should `dev`/`main` promotion and GitHub prerelease publication happen.
+
+See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)** and the release plan for the full promotion sequence.

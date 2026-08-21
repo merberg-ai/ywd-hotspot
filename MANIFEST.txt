@@ -39,6 +39,7 @@ docs/OS-DEVELOPMENT.md
 docs/PLUGIN-PACKAGES.md
 docs/PLUGIN-UI.md
 docs/PLUGINS.md
+docs/RELEASE-PLAN-0.2.0-rc1.md
 docs/REPOSITORY.md
 docs/TALKGROUPS.md
 docs/TELEMETRY.md
@@ -74,6 +75,7 @@ lib/migrate.py
 lib/mmdvm_session.py
 lib/mmdvm_telemetry.py
 lib/mmdvm_telemetry_bridge.py
+lib/mmdvm_upstream_build.py
 lib/mmdvm_voice.py
 lib/mmdvm_voice_bridge.py
 lib/mmdvm_voice_build.py
@@ -95,6 +97,7 @@ lib/plugin_service_manager.py
 lib/plugin_service_runner.py
 lib/plugin_ui_manager.py
 lib/plugin_update_safety.py
+lib/runtime_build.py
 lib/settings_admin.py
 lib/settings_backup.py
 lib/setup_admin.py

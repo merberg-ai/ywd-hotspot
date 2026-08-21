@@ -192,6 +192,20 @@ def _available_map():
     return result
 
 
+def _lan_ipv4():
+    p = core_admin.run(["hostname", "-I"], 5)
+    if p.returncode == 0:
+        for item in (p.stdout or "").split():
+            if ":" not in item and not item.startswith("127.") and item != "10.42.0.1":
+                return item
+    return ""
+
+
+def _dashboard_url(port):
+    host = _lan_ipv4() or "ywd-hotspot.local"
+    return f"http://{host}:{int(port)}/"
+
+
 def export_settings(data):
     passphrase = str(data.get("passphrase") or "")
     include_wifi = bool(data.get("include_wifi", False))
@@ -226,6 +240,8 @@ def restore_settings(data):
     missing_plugins = []
     restored_plugins = []
     wifi_result = None
+    deferred_dashboard_restart = False
+    original_schedule_dashboard_restart = core_admin.schedule_dashboard_restart
     try:
         core_admin.rf_action("rf-stop")
         plugin_catalog_overlay.install()
@@ -300,7 +316,19 @@ def restore_settings(data):
                 restored_state["plugins"][str(ident)] = {"enabled": bool(row.get("enabled", False))}
         plugin_admin_common.atomic_json(plugin_manager.STATE, restored_state)
 
-        applied = core_admin.config_apply({})
+        # A normal config apply may schedule the dashboard to restart in two
+        # seconds. During a restore that can terminate the very HTTP request
+        # performing plugin/RF reconciliation. Defer that restart until the
+        # complete restore transaction is ready to return success.
+        def defer_dashboard_restart(_delay=2):
+            nonlocal deferred_dashboard_restart
+            deferred_dashboard_restart = True
+
+        core_admin.schedule_dashboard_restart = defer_dashboard_restart
+        try:
+            applied = core_admin.config_apply({})
+        finally:
+            core_admin.schedule_dashboard_restart = original_schedule_dashboard_restart
 
         # Only after the core config/INIs have applied successfully may restored
         # plugin services be brought back.
@@ -348,6 +376,14 @@ def restore_settings(data):
             except Exception as exc:
                 warnings.append(f"Wi-Fi profile was not restored: {exc}")
 
+        if deferred_dashboard_restart:
+            # Long enough for the JSON success response and the browser's
+            # redirect message to complete before the dashboard process moves
+            # to restored web/instrumentation settings.
+            original_schedule_dashboard_restart(8)
+            applied["dashboard_restart_pending"] = True
+            applied["dashboard_restart_deferred"] = True
+
         core_admin.audit("settings-restore", {"snapshot": str(snap), "changed": changed, "start_rf": start_rf, "first_boot": first_boot, "missing_plugins": sorted(set(missing_plugins)), "warnings": warnings[:20]})
         return {
             "ok": True,
@@ -361,9 +397,12 @@ def restore_settings(data):
             "restored_plugins": sorted(set(restored_plugins)),
             "warnings": warnings,
             "wifi": wifi_result,
-            "dashboard": f"http://ywd-hotspot.local:{candidate['web']['port']}/",
+            "dashboard": _dashboard_url(candidate["web"]["port"]),
+            "mdns_dashboard": f"http://ywd-hotspot.local:{candidate['web']['port']}/",
+            "dashboard_restart_deferred": deferred_dashboard_restart,
         }
     except Exception:
+        core_admin.schedule_dashboard_restart = original_schedule_dashboard_restart
         try:
             plugin_admin_state.set_system({"enabled": False})
         except Exception:

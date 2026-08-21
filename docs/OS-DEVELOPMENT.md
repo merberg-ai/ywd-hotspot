@@ -1,131 +1,163 @@
 # YWD-Hotspot OS development
 
-[Project README](../README.md) · [Building](BUILDING.md) · [OS builder](../os/README.md) · [Architecture](ARCHITECTURE.md)
+[Project README](../README.md) · [Building](BUILDING.md) · [OS builder](../os/README.md) · [Release plan](RELEASE-PLAN-0.2.0-rc1.md)
 
-YWD-Hotspot keeps the application and appliance-image source in one repository while preserving a strict runtime boundary: normal installs and updates do not depend on `os/`, but fresh images are built from the exact application commit that contains the OS builder.
+YWD-Hotspot keeps the application and appliance-image source in one repository. Fresh images are built from the exact application commit that contains the builder; installed appliances then use the normal GitHub update mechanism.
 
-## Current branch model
-
-Application release work and image-builder work stay separated:
+## Current release flow
 
 ```text
-main                     stable/promoted release line
-  ↑
-dev                      physically accepted app integration line
-
-
-dev-builder              isolated image/builder line
+checkpoint-builder-0.1.0-image-boot-proven
+        │ physically proven baseline
+        ▼
+release/0.2.0-rc1
+        │ release hardening + public factory image
+        ▼ exact factory-image physical acceptance
+       dev
+        ▼ promotion sanity
+       main
+        ▼
+ v0.2.0-rc1 GitHub prerelease
 ```
 
-The completed `dev-release-0.1.0` RC branch is historical release-hardening context. Do not merge builder/image experimentation into a release merely because both ultimately ship the same application. After the final 0.1.0 release state is proven, synchronize it forward into `dev-builder` intentionally before resuming image work.
+The checkpoint is immutable evidence of the tested pre-release baseline. `main` and `dev` are not moved until the exact public factory artifact is accepted.
 
-## Current builder entry points
+## Builder entry points
 
-- `os/builder/DOCTOR.sh` — preflight the builder machine/source tree
-- `os/builder/BUILD.sh` — canonical image build
-- `os/builder/CONFIGURE-WIFI.sh` — optional local build-time Wi-Fi settings
+```text
+os/builder/DOCTOR.sh                  host/source preflight
+os/builder/PROFILE-CLI.py             hotspot/image profile
+os/builder/SYSTEM-CLI.py              OS/system profile
+os/builder/MMDVM-RUNTIME.py           Extended vs Stock preference
+os/builder/RUNTIME-CACHE.py           persistent compile cache
+os/builder/RUN-BUILD.sh                normal/personalized image build
+os/builder/BUILD-PUBLIC-RELEASE.sh     factory-clean release build
+os/builder/PUBLIC-RELEASE-CHECK.py     fail-closed release gate
+os/builder/RELEASE-ARTIFACTS.py        release metadata/readme generator
+```
 
-Root `VERSION`, application code, WebUI, systemd units, console/branding assets, and canonical config generation are consumed from the same source tree.
-
-## Easy image build
-
-On the Linux builder machine:
+## Normal image build
 
 ```bash
-cd ~/ywd-hotspot
-
-git status --short
-git branch --show-current
-
 bash os/builder/DOCTOR.sh
+python3 os/builder/PROFILE-CLI.py review
+python3 os/builder/SYSTEM-CLI.py review
+python3 os/builder/MMDVM-RUNTIME.py review
+bash os/builder/RUN-BUILD.sh
 ```
 
-Do not start a long image build until the doctor passes.
+Normal builds may intentionally contain local Wi-Fi, station identity, credentials, SSH policy, or imported settings according to the private builder profile. Those images are **not** public release artifacts.
 
-Then:
+## MMDVM runtime variants
+
+### `ywd-extended` — default/recommended
+
+- exact pinned MMDVM-Host upstream commit;
+- exact hash-verified YWD extension patch;
+- extension API 2;
+- passive DMR voice/RX Monitor capability;
+- foundation for future plugins that declare matching requirements.
+
+### `upstream`
+
+- exact same pinned MMDVM-Host upstream commit;
+- no YWD extension patch;
+- extension-dependent plugins unavailable.
+
+The two variants have separate compile-cache identities. DMRGateway remains the same pinned upstream build.
+
+## Public factory image
+
+Run only from the release branch:
 
 ```bash
-bash os/builder/BUILD.sh
+bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-Build-time Wi-Fi is optional:
+The wrapper temporarily replaces the local builder state with release defaults and restores the developer's original local settings afterward.
 
-```bash
-bash os/builder/CONFIGURE-WIFI.sh
-```
-
-The builder performs syntax/preflight checks before pi-gen and uses bounded parallelism for the heavier radio-source builds.
-
-Local credentials, SSH keys, work directories, pi-gen checkout and deploy images are ignored under the builder's local/work/deploy paths and should not be committed.
-
-## Radio build baseline inside the image
-
-The image consumes the same exact pins as a normal source install:
+The public image is required to contain:
 
 ```text
-MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
-DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+Wi-Fi credentials       none
+Callsign/DMR ID          none
+BM credentials/API key  none
+Dashboard password      none
+Imported settings       none
+RF autostart             OFF
+SSH                      disabled; no builder authorized key
+Update channel           main
+MMDVM runtime            ywd-extended (default/recommended)
 ```
 
-The optional RX Monitor/passive voice tap uses the same YWD patch shipped by the application:
+The release checker validates both the source profile and generated first-boot payload. `provision.env`, `factory-provision.json`, and `factory-restore.json` are forbidden in the public artifact path.
+
+## First-boot factory path
 
 ```text
-lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+Flash image
+  ↓
+No saved Wi-Fi
+  ↓
+YWD-Hotspot-XXXX setup AP / 10.42.0.1
+  ↓
+User configures Wi-Fi
+  ↓
+OLED six-digit setup code
+  ↓
+HTTPS :8443 first-boot wizard
+  ↓
+user configures identity/radio/BM/passwords
+  ↓
+Dashboard handoff
+  ↓
+RF only if explicitly enabled
 ```
 
-That optional patched binary is still treated as passive observation infrastructure and must not become a second modem owner. Normal application updates remain independent of long MMDVM compilation.
+## Release artifacts
+
+After a successful public build, `RELEASE-ARTIFACTS.py` writes:
+
+```text
+BUILD-METADATA.json
+README-FIRST.txt
+```
+
+Metadata records source commit, target architecture, factory-clean state, MMDVM variant/upstream/patch identity, DMRGateway pin, image filename/size, and image SHA-256.
 
 ## Physical acceptance checklist
 
-Do not call an image known-good merely because it compiled. Validate the actual target appliance:
+For the exact artifact to be uploaded:
 
 ```text
-[ ] builder doctor passes
-[ ] image build completes
-[ ] xz integrity test passes
-[ ] Pi Zero boots
-[ ] OLED boot/network screens work
-[ ] setup AP appears without station Wi-Fi
-[ ] Wi-Fi handoff works
-[ ] secure :8443 wizard accepts OLED code
-[ ] current WebUI loads
-[ ] unlock/auth works
-[ ] settings/config apply works
-[ ] BrandMeister connects
-[ ] RF can be explicitly enabled
-[ ] handheld -> hotspot RX works
-[ ] hotspot -> handheld TX works
+[ ] checksum and xz integrity pass
+[ ] setup AP appears with no preconfigured Wi-Fi
+[ ] Wi-Fi handoff succeeds
+[ ] OLED setup code works
+[ ] setup wizard completes and dashboard handoff works
+[ ] no operator defaults from the builder are present
+[ ] MMDVM runtime = ywd-extended
+[ ] extension API/hash match pins.env
+[ ] BrandMeister connects after user configuration
 [ ] Parrot succeeds
-[ ] duplex TS1 succeeds when using duplex hardware
-[ ] duplex TS2 succeeds when using duplex hardware
-[ ] ywd-headless-oled.service active
-[ ] legacy ywd-oled.service inactive on YWD-Hotspot OS
-[ ] reboot preserves setup/config
-[ ] CLI update check/dry-run works
-[ ] About-page application update works
-[ ] another reboot preserves the fully configured state
-```
-
-If the image is intended to ship the passive RX voice feature as ready-to-use, separately verify the guarded voice-tap build/status and normal RF operation while the observer infrastructure is present.
-
-## Image vs application updates
-
-An image build is an installation artifact, not the ongoing application update mechanism. Once installed, YWD-Hotspot should receive normal application updates from its saved update channel without another SD-card image build.
-
-The runtime split remains:
-
-```text
-/opt/ywd-hotspot/repo    managed Git source
-/opt/ywd-hotspot/app     deployed runtime
+[ ] RF both directions
+[ ] duplex TS1/TS2 when configured on duplex hardware
+[ ] reboot persists configuration
+[ ] RF comes up on reboot only after user enables autostart
+[ ] authoritative ywd-headless-oled service owns display
+[ ] systemctl --failed reports zero failed units
 ```
 
 ## Promotion
 
-After an image build is physically validated:
+After acceptance:
 
-1. record the exact application/builder commit;
-2. freeze a known-good builder/image checkpoint;
-3. keep release/app promotion decisions separate from image experiments;
-4. only merge/synchronize the focused builder changes into the intended active line after acceptance.
+1. record the exact release commit and image SHA-256;
+2. freeze an immutable `checkpoint-release-0.2.0-rc1-image-proven` ref;
+3. update release wording from candidate to physically accepted;
+4. fast-forward `dev` to the accepted release commit;
+5. perform promotion sanity validation;
+6. fast-forward `main` to the same accepted tree;
+7. create/publish `v0.2.0-rc1` as a GitHub prerelease with the exact tested assets.
 
-This keeps risky image work away from the daily-driver release path while still producing an image from the same canonical application source.
+Never rebuild a different binary after acceptance and upload it under the same release identity.

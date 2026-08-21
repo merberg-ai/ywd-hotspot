@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Locked dashboard routes for settings backup/restore and SSH key operations."""
+"""Locked dashboard routes for settings backup/restore and SSH operations."""
 from __future__ import annotations
 
 import json
@@ -57,19 +57,21 @@ def wrap_handler(base):
                 "/api/settings/export": "settings-export",
                 "/api/settings/preview": "settings-preview",
                 "/api/settings/import": "settings-import",
+                "/api/ssh/status": "ssh-status",
+                "/api/ssh/configure": "ssh-configure",
                 "/api/ssh-keys/export": "ssh-keys-export",
                 "/api/ssh-client-key/create": "ssh-client-key-create",
             }
             if path not in routes:
                 super().do_POST()
                 return
-            # Sensitive SSH operations are unreachable until the existing
-            # dashboard control session has been authenticated/unlocked.
+            # SSH/runtime and settings migration operations are unreachable until
+            # the existing dashboard control session has been authenticated.
             if not self.require_control():
                 return
             try:
                 body = self._large_json()
-                timeout = 30 if path.startswith("/api/ssh-") else 150
+                timeout = 30 if path.startswith("/api/ssh") else 150
                 out = core.admin_call(routes[path], body, timeout)
                 self.send_json(out)
             except ValueError as exc:

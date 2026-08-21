@@ -98,8 +98,11 @@ export YWD_PUBLIC_RELEASE=1
 bash "$BUILDER/RUN-BUILD.sh"
 
 # RUN-BUILD prepares the profile again; verify that no forbidden payload was
-# introduced during the actual build path.
+# introduced during the actual build path, then generate auditable release
+# metadata beside the image.
 python3 "$BUILDER/PUBLIC-RELEASE-CHECK.py" all
+python3 "$BUILDER/RELEASE-ARTIFACTS.py"
 
 printf '\n[OK] Public release build completed from clean factory/default settings.\n'
 printf '     Original private builder profile has not been included in the image.\n'
+printf '     BUILD-METADATA.json and README-FIRST.txt are ready in os/deploy.\n'

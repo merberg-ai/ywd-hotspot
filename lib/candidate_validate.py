@@ -3,7 +3,7 @@
 
 This check is intentionally based on capabilities present in the candidate,
 not on the Git branch name used to fetch it. That lets the same safety gate
-cover dev-plugins, promoted dev, a future plugin-capable main, and explicit
+cover development, promoted dev/main, release candidates, and explicit
 checkpoint/tag updates.
 
 It performs only source-tree validation. It never reads or changes live RF,
@@ -43,6 +43,8 @@ CORE_REQUIRED = (
     "lib/generate-config.py",
     "lib/id-update.py",
     "lib/migrate.py",
+    "lib/mmdvm_upstream_build.py",
+    "lib/runtime_build.py",
     "lib/oled.py",
     "lib/oled_owner.sh",
     "lib/system_admin.py",

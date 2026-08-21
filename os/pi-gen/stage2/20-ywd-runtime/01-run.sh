@@ -31,9 +31,7 @@ if [ ! -f "${BUILD_ENV}" ]; then
   exit 1
 fi
 
-# shellcheck disable=SC1090
 source "${APP_SRC}/pins.env"
-# shellcheck disable=SC1090
 source "${BUILD_ENV}"
 
 : "${YWD_GIT_BRANCH:?missing YWD_GIT_BRANCH}"
@@ -42,6 +40,8 @@ source "${BUILD_ENV}"
 : "${YWD_UPDATE_CHANNEL:=dev}"
 : "${YWD_OS_VERSION:=M4.2-unified-dev}"
 : "${YWD_RUNTIME_CACHE_BYPASS:=0}"
+: "${YWD_MMDVM_VARIANT:=ywd-extended}"
+case "$YWD_MMDVM_VARIANT" in ywd-extended|upstream) ;; *) echo "ERROR: invalid MMDVM runtime variant: $YWD_MMDVM_VARIANT" >&2; exit 1 ;; esac
 
 printf 'Installing current YWD-Hotspot runtime payload...\n'
 
@@ -95,9 +95,6 @@ for unit in "${APP_SRC}"/systemd/*.service "${APP_SRC}"/systemd/*.timer; do
   install -m 0644 "$unit" "${ROOTFS_DIR}/etc/systemd/system/$(basename "$unit")"
 done
 
-# Generate the factory placeholder using the current canonical configuration
-# model so future schema additions do not require another hand-maintained JSON
-# copy in the image builder.
 on_chroot <<'EOF'
 python3 - <<'PY'
 import json, sys
@@ -118,8 +115,6 @@ printf '%s\n' "$YWD_UPDATE_CHANNEL" > "${ROOTFS_DIR}/etc/ywd-hotspot/update-chan
 printf '%s\n' "$YWD_OS_VERSION" > "${ROOTFS_DIR}/etc/ywd-hotspot/os-version"
 touch "${ROOTFS_DIR}/var/lib/ywd-hotspot/DMRIds.dat"
 
-# Pi Zero W GPIO14/15 UART for the MMDVM HAT. Bluetooth is disabled so
-# /dev/serial0 maps to PL011 /dev/ttyAMA0.
 CONFIG_TXT="${ROOTFS_DIR}/boot/firmware/config.txt"
 CMDLINE_TXT="${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 if [ -f "${CONFIG_TXT}" ]; then
@@ -145,19 +140,24 @@ BUILD_JOBS="$DETECTED_CPUS"
 [ "$BUILD_JOBS" -lt 1 ] && BUILD_JOBS=1
 [ "$BUILD_JOBS" -gt 4 ] && BUILD_JOBS=4
 printf 'Installing canonical MMDVM-Host + DMRGateway inside armhf rootfs...\n'
-printf 'MMDVM-Host source: %s @ %s + YWD patch API %s\n' "$MMDVM_HOST_REPO" "$MMDVM_HOST_COMMIT" "$MMDVM_YWD_PATCH_API"
-printf 'MMDVM patch SHA256: %s\n' "$MMDVM_YWD_PATCH_SHA256"
+if [ "$YWD_MMDVM_VARIANT" = "ywd-extended" ]; then
+  printf 'MMDVM runtime: YWD Extended (default/recommended)\n'
+  printf 'MMDVM-Host source: %s @ %s + YWD extension API %s\n' "$MMDVM_HOST_REPO" "$MMDVM_HOST_COMMIT" "$MMDVM_YWD_PATCH_API"
+  printf 'MMDVM patch SHA256: %s\n' "$MMDVM_YWD_PATCH_SHA256"
+else
+  printf 'MMDVM runtime: Stock Upstream (YWD MMDVM extensions disabled)\n'
+  printf 'MMDVM-Host source: %s @ %s\n' "$MMDVM_HOST_REPO" "$MMDVM_HOST_COMMIT"
+fi
 printf 'Runtime compile parallelism: detected %s CPU(s), using -j%s (cap 4)\n' "$DETECTED_CPUS" "$BUILD_JOBS"
 on_chroot <<EOF
 set -e
 YWD_RUNTIME_BUILD_CACHE=/var/cache/ywd-hotspot/runtime-build \
 YWD_RUNTIME_CACHE_BYPASS='${YWD_RUNTIME_CACHE_BYPASS}' \
+YWD_MMDVM_VARIANT='${YWD_MMDVM_VARIANT}' \
 YWD_BUILD_JOBS='${BUILD_JOBS}' \
 python3 /opt/ywd-hotspot/app/lib/runtime_build.py install
 EOF
 
-# Keep a normal full-ref Git checkout in the image. The deployed runtime stays
-# /opt/ywd-hotspot/app; future app updates continue to use the managed checkout.
 on_chroot <<EOF
 set -e
 rm -rf /opt/ywd-hotspot/repo
@@ -212,12 +212,22 @@ YWD-Hotspot OS unified image safety state
 Application: $(tr -d '\r\n' < "${APP_SRC}/VERSION")
 OS: ${YWD_OS_VERSION}
 Source: ${YWD_GIT_BRANCH} @ ${YWD_GIT_COMMIT}
-MMDVM-Host: ${MMDVM_HOST_COMMIT} + YWD voice tap patch API ${MMDVM_YWD_PATCH_API}
-MMDVM patch SHA256: ${MMDVM_YWD_PATCH_SHA256}
+MMDVM runtime variant: ${YWD_MMDVM_VARIANT}
+MMDVM-Host upstream: ${MMDVM_HOST_COMMIT}
+EOF
+if [ "$YWD_MMDVM_VARIANT" = "ywd-extended" ]; then
+  cat >> "${ROOTFS_DIR}/etc/ywd-hotspot/image-safety.txt" <<EOF
+YWD extension API: ${MMDVM_YWD_PATCH_API}
+YWD extension patch SHA256: ${MMDVM_YWD_PATCH_SHA256}
+EOF
+else
+  printf '%s\n' 'YWD MMDVM extensions: disabled (stock upstream variant)' >> "${ROOTFS_DIR}/etc/ywd-hotspot/image-safety.txt"
+fi
+cat >> "${ROOTFS_DIR}/etc/ywd-hotspot/image-safety.txt" <<'EOF'
 
 RF services are disabled at image build time. The first-boot safety gate and
 secure setup wizard/factory restore must complete before RF follows the selected
 autostart policy.
 EOF
 
-printf 'Current YWD-Hotspot runtime installation complete; canonical patched MMDVM installed; RF remains disabled.\n'
+printf 'Current YWD-Hotspot runtime installation complete; MMDVM variant %s installed; RF remains disabled.\n' "$YWD_MMDVM_VARIANT"

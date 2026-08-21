@@ -5,6 +5,10 @@ Repository-bundled packages are *available* source. Installation is a separate
 root-owned registration decision stored outside the canonical hotspot config.
 This module never downloads packages, installs OS dependencies, or executes
 plugin code.
+
+MMDVM runtime requirements are declarative too. A plugin may require the YWD
+Extended variant, extension API 2+, or a named runtime capability. Stock
+Upstream remains fully supported, but incompatible plugins are refused cleanly.
 """
 from __future__ import annotations
 
@@ -17,10 +21,12 @@ from pathlib import Path
 
 PACKAGE_STATE = Path(os.environ.get("YWD_PLUGIN_PACKAGE_STATE", "/etc/ywd-hotspot/plugin-packages.json"))
 DATA_DIR = Path(os.environ.get("YWD_PLUGIN_DATA_DIR", "/var/lib/ywd-hotspot/plugins"))
+MMDVM_RUNTIME_STATE = Path(os.environ.get("YWD_MMDVM_RUNTIME_STATE", "/etc/ywd-hotspot/mmdvm-runtime.json"))
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 
 ALLOWED_DEPENDENCIES = frozenset({
-    "python3", "systemd", "journalctl", "mmdvm-host", "mosquitto-broker", "mosquitto-client"
+    "python3", "systemd", "journalctl", "mmdvm-host", "mosquitto-broker", "mosquitto-client",
+    "mmdvm-ywd-extended", "mmdvm-extension-api-2", "mmdvm-cap-passive-dmr-voice",
 })
 ALLOWED_HARDWARE = frozenset({"mmdvm-serial", "oled-i2c"})
 
@@ -31,6 +37,9 @@ DEPENDENCY_LABELS = {
     "mmdvm-host": "MMDVM-Host binary",
     "mosquitto-broker": "Mosquitto MQTT broker",
     "mosquitto-client": "Mosquitto subscriber client",
+    "mmdvm-ywd-extended": "YWD Extended MMDVM runtime",
+    "mmdvm-extension-api-2": "YWD MMDVM extension API 2 or newer",
+    "mmdvm-cap-passive-dmr-voice": "passive DMR voice MMDVM capability",
 }
 HARDWARE_LABELS = {
     "mmdvm-serial": "MMDVM modem serial path",
@@ -101,6 +110,25 @@ def validate_requirements(dependencies, hardware):
     return deps, hw
 
 
+def _mmdvm_runtime():
+    raw = _read_json(MMDVM_RUNTIME_STATE)
+    if not isinstance(raw, dict):
+        return {"variant": "unknown", "extension_api": None, "capabilities": []}
+    variant = str(raw.get("variant") or "unknown").strip().lower()
+    try:
+        extension_api = int(raw.get("extension_api")) if raw.get("extension_api") is not None else None
+    except Exception:
+        extension_api = None
+    caps = raw.get("capabilities")
+    if not isinstance(caps, list):
+        caps = []
+    return {
+        "variant": variant,
+        "extension_api": extension_api,
+        "capabilities": [str(x) for x in caps],
+    }
+
+
 def _dependency_result(token):
     if token == "python3":
         path = shutil.which("python3"); return bool(path), path or "python3 not found in PATH"
@@ -116,6 +144,15 @@ def _dependency_result(token):
         path = shutil.which("mosquitto"); return bool(path), path or "mosquitto broker is not installed"
     if token == "mosquitto-client":
         path = shutil.which("mosquitto_sub"); return bool(path), path or "mosquitto_sub is not installed"
+    if token == "mmdvm-ywd-extended":
+        state = _mmdvm_runtime(); ok = state["variant"] == "ywd-extended"
+        return ok, f"current MMDVM runtime variant: {state['variant']}"
+    if token == "mmdvm-extension-api-2":
+        state = _mmdvm_runtime(); api = state["extension_api"]; ok = bool(api is not None and api >= 2)
+        return ok, f"current YWD MMDVM extension API: {api if api is not None else 'unavailable'}"
+    if token == "mmdvm-cap-passive-dmr-voice":
+        state = _mmdvm_runtime(); ok = "passive-dmr-voice" in state["capabilities"]
+        return ok, "available" if ok else f"capability unavailable on MMDVM runtime {state['variant']}"
     return False, "unsupported dependency"
 
 

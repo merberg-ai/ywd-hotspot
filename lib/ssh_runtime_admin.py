@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Fast SSH runtime controller for the authenticated YWD-Hotspot dashboard.
 
-The key/export helper owns host-key generation and policy validation. This
-controller deliberately avoids `systemctl enable --now`, which can hold an HTTP
-request open for too long on a Pi Zero. Enablement and startup are split; startup
-is queued non-blocking and then polled briefly for a definitive state.
+Factory images ship with SSH disabled.  The dashboard prepares the strict
+public-key-only sshd policy and unique host keys, manages boot persistence with
+the native systemd wants symlink, then asks systemd only to start/stop the
+service.  This deliberately avoids `systemctl enable/disable`, which is slow
+enough on a Pi Zero to exceed an interactive dashboard request.
 """
 from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -22,11 +24,18 @@ if str(HERE) not in sys.path:
 import ssh_keys_admin as keys
 
 SSH_UNIT = "ssh.service"
+SSH_PORT = 22
+WANTS_DIR = Path("/etc/systemd/system/multi-user.target.wants")
+UNIT_CANDIDATES = (
+    Path("/lib/systemd/system/ssh.service"),
+    Path("/usr/lib/systemd/system/ssh.service"),
+)
 
 
-def run(args, timeout=8, check=False):
+def run(args, timeout=12):
+    """Run a bounded command; timeout is returned as rc=124, not an exception."""
     try:
-        proc = subprocess.run(
+        return subprocess.run(
             args,
             text=True,
             stdout=subprocess.PIPE,
@@ -34,13 +43,10 @@ def run(args, timeout=8, check=False):
             timeout=timeout,
             check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        if check:
-            raise RuntimeError(f"command timed out after {timeout}s: {args[0]}") from exc
-        return subprocess.CompletedProcess(args, 124, stdout="", stderr=f"timed out after {timeout}s")
-    if check and proc.returncode != 0:
-        raise RuntimeError((proc.stderr or proc.stdout or f"command failed: {args[0]}").strip()[:800])
-    return proc
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args, 124, stdout="", stderr=f"timed out after {timeout}s"
+        )
 
 
 def payload() -> dict:
@@ -56,9 +62,55 @@ def payload() -> dict:
     return obj
 
 
-def service_state() -> str:
-    proc = run(["systemctl", "is-active", SSH_UNIT], 4)
-    return (proc.stdout or "").strip() or "unknown"
+def unit_fragment() -> Path:
+    for candidate in UNIT_CANDIDATES:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError("native OpenSSH ssh.service unit was not found")
+
+
+def boot_link() -> Path:
+    return WANTS_DIR / SSH_UNIT
+
+
+def boot_enabled() -> bool:
+    link = boot_link()
+    return link.is_symlink() and link.exists()
+
+
+def set_boot_enabled(enabled: bool) -> None:
+    """Manage the same wants symlink `systemctl enable ssh.service` would create."""
+    link = boot_link()
+    if enabled:
+        target = unit_fragment()
+        WANTS_DIR.mkdir(parents=True, exist_ok=True)
+        if os.path.lexists(link):
+            if not link.is_symlink():
+                raise RuntimeError(f"refusing to replace non-symlink boot entry: {link}")
+            link.unlink()
+        os.symlink(str(target), str(link))
+        return
+    if os.path.lexists(link):
+        if not link.is_symlink():
+            raise RuntimeError(f"refusing to remove non-symlink boot entry: {link}")
+        link.unlink()
+
+
+def port_listening() -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", SSH_PORT), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
+def wait_port(wanted: bool, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if port_listening() is wanted:
+            return True
+        time.sleep(0.25)
+    return port_listening() is wanted
 
 
 def failure_detail() -> str:
@@ -66,16 +118,27 @@ def failure_detail() -> str:
         "systemctl", "show", SSH_UNIT,
         "--property=ActiveState,SubState,Result",
         "--no-pager",
-    ], 5)
+    ], 6)
     journal = run([
-        "journalctl", "-u", SSH_UNIT, "-n", "12", "--no-pager", "-o", "cat",
+        "journalctl", "-u", SSH_UNIT, "-n", "16", "--no-pager", "-o", "cat",
     ], 6)
     bits = []
-    if show.stdout.strip():
+    if (show.stdout or "").strip():
         bits.append(show.stdout.strip().replace("\n", "; "))
-    if journal.stdout.strip():
+    if (journal.stdout or "").strip():
         bits.append(journal.stdout.strip().replace("\n", " | "))
-    return " · ".join(bits)[-1200:]
+    if show.returncode == 124:
+        bits.append("systemctl status lookup timed out")
+    return " · ".join(bits)[-1400:]
+
+
+def status() -> dict:
+    out = keys.ssh_status()
+    # Override the two runtime fields with cheap, observable facts rather than
+    # making the status card wait on systemctl is-active/is-enabled.
+    out["active"] = port_listening()
+    out["enabled_at_boot"] = boot_enabled()
+    return out
 
 
 def configure(data: dict) -> dict:
@@ -86,52 +149,47 @@ def configure(data: dict) -> dict:
         raise ValueError("enabled must be true or false")
 
     if enabled:
-        # This writes the public-key-only drop-in, creates unique host identity
-        # keys when absent, and validates sshd configuration before systemd is
-        # asked to expose port 22.
+        # Writes the key-only policy, creates unique host keys when absent, and
+        # validates sshd before port 22 can be exposed.
         keys._install_public_key_policy()
+        set_boot_enabled(True)
 
-        # Keep enable separate from start. `enable --now` can remain attached to
-        # the systemd start job long enough to exceed a dashboard request on a
-        # Pi Zero even when sshd eventually starts successfully.
-        run(["systemctl", "enable", SSH_UNIT], 8, check=True)
-        run(["systemctl", "start", "--no-block", SSH_UNIT], 8, check=True)
+        # `--no-block` queues startup.  Even if the client-side systemctl command
+        # itself is sluggish, the queued job may still complete, so success is
+        # determined by the actual listener rather than command duration.
+        start = run(["systemctl", "start", "--no-block", SSH_UNIT], 12)
+        if wait_port(True, 14):
+            out = status()
+            out.update({
+                "changed": True,
+                "message": "SSH enabled in public-key-only mode",
+            })
+            return out
 
-        deadline = time.monotonic() + 18
-        while time.monotonic() < deadline:
-            state = service_state()
-            if state == "active":
-                out = keys.ssh_status()
-                out.update({
-                    "changed": True,
-                    "message": "SSH enabled in public-key-only mode",
-                })
-                return out
-            if state in {"failed", "inactive"}:
-                # Give a newly queued job one small grace interval before
-                # declaring it failed; systemd can briefly report inactive.
-                time.sleep(0.5)
-                state2 = service_state()
-                if state2 == "active":
-                    continue
-                if state2 == "failed":
-                    break
-            time.sleep(0.5)
-
+        # Do not leave boot activation armed when runtime startup failed.
+        set_boot_enabled(False)
         detail = failure_detail()
-        raise RuntimeError("SSH was enabled but did not become active" + (f": {detail}" if detail else ""))
+        cmd = (start.stderr or start.stdout or "").strip()
+        if cmd:
+            detail = (cmd + (" · " + detail if detail else ""))[-1400:]
+        raise RuntimeError(
+            "SSH did not open port 22" + (f": {detail}" if detail else "")
+        )
 
-    # Disable boot activation immediately, then queue the stop without waiting
-    # for every sshd child/session to unwind inside the dashboard request.
-    run(["systemctl", "disable", SSH_UNIT], 8, check=False)
-    run(["systemctl", "stop", "--no-block", SSH_UNIT], 8, check=False)
-    deadline = time.monotonic() + 8
-    while time.monotonic() < deadline:
-        if service_state() != "active":
-            break
-        time.sleep(0.4)
+    set_boot_enabled(False)
+    stop = run(["systemctl", "stop", "--no-block", SSH_UNIT], 12)
+    closed = wait_port(False, 10)
+    if not closed:
+        detail = failure_detail()
+        cmd = (stop.stderr or stop.stdout or "").strip()
+        if cmd:
+            detail = (cmd + (" · " + detail if detail else ""))[-1400:]
+        raise RuntimeError(
+            "SSH boot activation was disabled but port 22 did not close"
+            + (f": {detail}" if detail else "")
+        )
 
-    out = keys.ssh_status()
+    out = status()
     out.update({
         "changed": True,
         "message": "SSH disabled; saved keys were preserved",
@@ -143,7 +201,7 @@ def main() -> None:
     action = sys.argv[1] if len(sys.argv) > 1 else ""
     data = payload()
     if action == "ssh-status":
-        out = keys.ssh_status()
+        out = status()
     elif action == "ssh-configure":
         out = configure(data)
     else:
@@ -155,5 +213,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)[:1400]}, separators=(",", ":")))
+        print(json.dumps({"ok": False, "error": str(exc)[:1600]}, separators=(",", ":")))
         raise SystemExit(1)

@@ -143,7 +143,9 @@
     resetModal();
     el('backupModalTitle').textContent = 'IMPORT ENCRYPTED SETTINGS';
     el('backupModalHint').textContent = `${file.name} · ${(file.size/1024).toFixed(1)} KiB. Enter the backup passphrase to decrypt and verify it before anything is changed.`;
-    el('backupPass2Row').hidden = true; el('backupWifiExportRow').hidden = true; el('backupRfRow').hidden = false; el('backupWifiRestoreRow').hidden = false;
+    // Stage 1 is intentionally password-only. Restore policy is chosen only
+    // after the backup has authenticated and its contents are visible.
+    el('backupPass2Row').hidden = true; el('backupWifiExportRow').hidden = true; el('backupRfRow').hidden = true; el('backupWifiRestoreRow').hidden = true;
     el('backupGo').textContent = 'DECRYPT & VERIFY'; el('backupGo').onclick = previewImport;
     el('backupModal').classList.add('on'); setTimeout(() => el('backupPass').focus(),50);
   }
@@ -173,10 +175,14 @@
     try {
       const d = await api('/api/settings/preview',{backup_b64:importB64,passphrase:pass});
       el('backupPreview').textContent = previewText(d.preview); el('backupPreview').hidden=false;
+      el('backupModalTitle').textContent = 'VERIFY & RESTORE SETTINGS';
+      el('backupModalHint').textContent = 'Backup authenticated. Review its contents and choose what should happen after restore.';
       // The backup shows the prior RF intent, but every new restore starts with
       // a fresh explicit operator choice before RF can be enabled or started.
       el('backupStartRf').checked = false;
       el('backupWifiRestore').checked = !!d.preview?.wifi_included;
+      el('backupRfRow').hidden = false;
+      el('backupWifiRestoreRow').hidden = !d.preview?.wifi_included;
       setBusy(false, 'RESTORE SETTINGS');
       const button = el('backupGo'); button.onclick=doImport;
       modalFeedback('Backup decrypted and authenticated.', false);
@@ -200,9 +206,6 @@
       notify(`Settings restored${warns?` · ${warns} warning(s)`:''}${missing?` · ${missing} missing plugin package(s)`:''}${restart?' · dashboard restart pending':''}`);
       importB64=null; importFile=null;
       const target=d.dashboard||location.href;
-      // When restored WebUI/instrumentation settings require a dashboard
-      // restart, the backend deliberately waits eight seconds so this request
-      // can finish. Follow the returned IP-first URL after that restart.
       setTimeout(()=>{location.href=target}, restart?9500:1800);
     } catch(e) {
       setBusy(false, 'RESTORE SETTINGS'); modalError(e.message || 'Settings restore failed.', 'backupPass');

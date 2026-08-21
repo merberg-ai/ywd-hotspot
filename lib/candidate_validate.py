@@ -92,6 +92,7 @@ PLUGIN_REQUIRED = (
     "lib/plugin_admin_state.py",
     "lib/plugin_admin_upload.py",
     "lib/plugin_catalog_overlay.py",
+    "lib/plugin_feature_runtime.py",
     "lib/plugin_manager.py",
     "lib/plugin_manifest.py",
     "lib/plugin_package_archive.py",

@@ -1,33 +1,83 @@
-# 🎧 Passive DMR Voice / RX Monitor Core Path
+# 🎧 YWD Extended MMDVM / Passive DMR Voice
 
-[← Docs index](README.md) · [Building](BUILDING.md) · [Architecture](ARCHITECTURE.md) · [Plugins](PLUGINS.md) · [Plugin UI](PLUGIN-UI.md)
+[← Docs index](README.md) · [Building](BUILDING.md) · [Architecture](ARCHITECTURE.md) · [Plugins](PLUGINS.md)
 
-YWD-Hotspot's passive DMR voice path exists to let an isolated browser plugin observe received DMR voice without ever becoming the modem owner.
-
-> [!IMPORTANT]
-> RX Monitor's passive voice-frame path uses a **patched build of the exact pinned MMDVM-Host commit**. Normal hotspot operation does not require RX Monitor, and ordinary YWD-Hotspot application updates do **not** recompile MMDVM-Host or DMRGateway.
+YWD-Hotspot supports two explicit MMDVM-Host runtime variants. Passive DMR voice and RX Monitor use the **YWD Extended** variant; Stock Upstream intentionally omits that observation capability.
 
 ## Safety invariant
 
-**MMDVM-Host remains the only process that owns the MMDVM serial/RF path.**
+**MMDVM-Host remains the only process that owns the MMDVM serial/RF path in both variants.**
 
-RX Monitor/plugin code never:
+Plugins never:
 
-- opens `/dev/serial0`;
-- starts a competing MMDVM process;
-- obtains RF TX authority;
-- receives arbitrary MQTT/network access;
-- writes canonical radio configuration.
+- open `/dev/serial0`;
+- start a competing MMDVM instance;
+- receive RF TX authority;
+- write canonical radio configuration;
+- receive arbitrary MQTT/network/sudo access.
 
-## Current path
+## Runtime variants
+
+### YWD Extended — default/recommended
+
+Exact pinned upstream source plus the verified YWD extension patch.
+
+```text
+MMDVM-Host upstream
+  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+
+Patch
+  lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+
+Extension API
+  2
+
+Patch SHA256
+  f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
+```
+
+Advertised runtime capabilities include:
+
+```text
+passive-dmr-voice
+plugin-rx-monitor
+```
+
+### Stock Upstream
+
+Exact same pinned upstream source, no YWD extension patch. Normal hotspot RF/DMR operation remains available, but passive-voice/extension-dependent plugins do not satisfy their runtime requirements.
+
+## Runtime state
+
+The selected variant is persisted in:
+
+```text
+/etc/ywd-hotspot/mmdvm-runtime.json
+```
+
+Build provenance is recorded in:
+
+```text
+/etc/ywd-hotspot/mmdvm-build.json
+```
+
+Check it with:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
+```
+
+Normal application updates preserve the selected runtime and do not rebuild MMDVM-Host or DMRGateway.
+
+## Extended observation path
 
 ```text
 MMDVM modem / BrandMeister
           │
           ▼
       MMDVM-Host
-          │ normal DMR processing continues unchanged
-          ├──────────────────────────────────────────────► DMRGateway / RF
+          │ normal DMR processing continues
+          ├────────────────────────────────────► DMRGateway / RF
           │
           └─ accepted voice-frame copy
                     │
@@ -37,7 +87,6 @@ MMDVM modem / BrandMeister
                     │
                     ▼
           trusted voice bridge
-          bounded state / cursor transport
                     │
                     ▼
           read:dmr-voice capability
@@ -45,69 +94,56 @@ MMDVM modem / BrandMeister
                     ▼
           sandboxed RX Monitor iframe
                     │
-                    ├─ DMR A/B/C deinterleave
-                    ├─ Golay/FEC correction
-                    ├─ AMBE+2 descrambling
-                    ├─ 49-bit vocoder recovery
-                    └─ browser-side AMBE→PCM playback
+                    └─ browser FEC/AMBE/audio work
 ```
 
-The Pi performs no AMBE speech synthesis. Expensive decode/playout work happens on the browser device.
+The Pi does not perform AMBE speech synthesis. Browser-side decode/playout keeps the expensive work off the Pi Zero.
 
-## Upstream pin and YWD patch
+## Compile/cache behavior
 
-Pinned MMDVM-Host repository/commit:
+YWD Extended and Stock Upstream use different cache signatures/namespaces. The Extended signature includes the extension API/hash plus upstream commit, target architecture, compiler and build flags. A stock cached binary therefore cannot satisfy an Extended lookup.
 
-```text
-https://github.com/g4klx/MMDVM-Host.git
-dea6e9b2c35857fe6f904c5092bebadb86cbf079
-```
-
-YWD patch:
-
-```text
-lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
-```
-
-The patch mirrors accepted `DT_VOICE_SYNC` / `DT_VOICE` frames to the loopback observation topic while normal MMDVM processing continues.
-
-This patch is intentionally narrow: it is an observation tap, not a second RF stack and not permission for a plugin to transmit.
-
-## Build / activation model
-
-Preparing the patched MMDVM binary is deliberately **not** part of ordinary RF startup or normal application-update critical path.
-
-On an installed hotspot:
+Extended build helper:
 
 ```bash
-sudo systemctl start ywd-mmdvm-voice-build.service
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py canonical
 ```
 
-Follow progress:
+Stock helper:
 
 ```bash
-sudo journalctl -fu ywd-mmdvm-voice-build.service
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_upstream_build.py canonical
 ```
 
-Status helper:
+Normal dispatch:
 
 ```bash
-sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
+sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py install --mmdvm-variant ywd-extended
+sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py install --mmdvm-variant upstream
 ```
 
-The service runs:
+## Plugin requirement tokens
+
+Plugins may declare trusted requirement tokens in their normal `dependencies` list:
 
 ```text
-/usr/bin/python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py ensure
+mmdvm-ywd-extended
+mmdvm-extension-api-2
+mmdvm-cap-passive-dmr-voice
 ```
 
-and is configured as a low-priority one-shot job with a long timeout because the original Pi Zero W is a single-core ARMv6 machine.
+Install/enable/runtime-start checks resolve these against `/etc/ywd-hotspot/mmdvm-runtime.json`. If a requirement is not met, trusted core refuses the operation with a readable missing-requirement result. A plugin cannot switch the MMDVM runtime by itself.
 
-The helper verifies the pinned source and exact patch identity before reusing an interrupted build tree, performs the build conservatively, guards activation, and retains a fallback to the previously working MMDVM-Host binary if activation fails.
+An RX Monitor package can therefore declare, for example:
 
-Normal application updates do **not** recompile MMDVM-Host.
-
-See **[BUILDING.md](BUILDING.md)** for the step-by-step build guide.
+```json
+"dependencies": [
+  "mmdvm-host",
+  "mmdvm-ywd-extended",
+  "mmdvm-extension-api-2",
+  "mmdvm-cap-passive-dmr-voice"
+]
+```
 
 ## Voice-frame envelope
 
@@ -130,77 +166,14 @@ The passive copy carries metadata plus the existing 33-byte DMR voice burst, for
 }
 ```
 
-`source` is `rf` or `network`. Headers/end/session events stay on the separate telemetry/session path.
-
-## Trusted bridge
-
-`lib/mmdvm_voice_bridge.py` consumes the loopback topic into bounded runtime state. It never owns the modem.
-
-A key Pi Zero optimization is that ingestion and whole-ring JSON snapshot writing are separated: the foreground process drains/parses incoming voice data, while a lower-priority writer process coalesces `voice.json` snapshots. This removed the large shared delivery stalls seen in earlier live-audio tests.
-
-Runtime snapshot:
-
-```text
-/run/ywd-hotspot-voice/voice.json
-```
-
-Core exposes only a bounded capability-gated view through the Plugin UI bridge.
+`source` is `rf` or `network`; session/header/end events stay on the separate telemetry/session path.
 
 ## Browser recovery path
 
-RX Monitor recovers three AMBE+2 codewords per DMR voice burst.
+RX Monitor's established browser path performs DMR A/B/C deinterleave, Golay/FEC correction, AMBE+2 descrambling, 49-bit vocoder recovery, bounded diagnostics, and browser-side audio playback. Three AMBE codewords are recovered per DMR voice burst.
 
-Browser work includes:
+The architecture has been physically exercised on the reference Pi Zero + duplex MMDVM setup while normal MMDVM-Host/DMRGateway ownership remained intact.
 
-1. DMR A/B/C bit deinterleave;
-2. Golay correction of protected words;
-3. C1 descrambling seeded from corrected C0 data;
-4. recovery of the 49-bit AMBE+2 2450 vocoder frame;
-5. bounded capture/continuity diagnostics;
-6. browser-side vocoder decode and Web Audio playback.
+## Distribution boundary
 
-A clean continuous DMR call produces roughly:
-
-```text
-~16.67 DMR bursts/sec
-3 AMBE frames/burst
-≈50 AMBE frames/sec
-1 AMBE frame = 20 ms
-```
-
-So 500 recovered AMBE frames represent approximately 10 seconds of nominal voice.
-
-## Live-audio player
-
-The proven player architecture keeps vocoder state at 20 ms frame cadence but coalesces decoded PCM into 100 ms chunks before Web Audio scheduling.
-
-Key behavior:
-
-- adaptive 100 ms plugin polling while audio is running;
-- 5 AMBE frames / 100 ms PCM chunks;
-- configurable jitter target, with the useful tested region around 140–170 ms;
-- maintained playout reservoir rather than startup-only buffering;
-- tiny playback-rate correction to prevent long-term browser/audio-clock drift;
-- AUTO call locking so simultaneous duplex timeslots do not thrash the decoder;
-- bridge timestamps used for call/handoff decisions rather than JavaScript callback delay alone;
-- non-destructive call handoff so scheduled old-call audio is not abruptly discarded.
-
-The browser's AudioContext may run at 44.1/48 kHz; the recovered voice PCM remains 8 kHz speech data and is resampled by the browser audio stack.
-
-## Physical validation status
-
-The passive RX path has been exercised on the reference Pi Zero + duplex MMDVM setup with normal MMDVM-Host/DMRGateway ownership preserved, including duplex TS1/TS2 operation, RF/network voice-frame recovery, browser-side frame recovery, and live browser audio tests.
-
-The core observation architecture is therefore established. RX Monitor packaging/browser decoder distribution remains a separate concern from the RF ownership model and from normal hotspot operation.
-
-## Capture diagnostics
-
-RX Monitor can export a bounded JSON ring of recovered AMBE frames with route/timestamp/FEC metadata. Because the ring is shared by observed traffic, a long network return can replace earlier RF frames before export; capture source filtering/polish is a diagnostics concern rather than an RF correctness issue.
-
-## Licensing / distribution boundary
-
-Development has used an mbelib-based browser decoder built locally from a pinned upstream source. The repository intentionally does **not** treat a generated decoder artifact as automatically safe to publish merely because local development works.
-
-Before promoting RX Monitor from a local signed development candidate to a canonical public package, review the upstream licensing/patent notice and decide what source/binary distribution model the project will support.
-
-Private signing keys remain outside both repositories and never belong on the hotspot.
+Development has used an mbelib-based browser decoder built from pinned upstream source. Publishing generated decoder artifacts remains a separate licensing/distribution decision from the YWD Extended MMDVM patch and from normal hotspot operation.

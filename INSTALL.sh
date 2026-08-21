@@ -23,7 +23,7 @@ for f in \
   lib/candidate_validate.py \
   lib/update_runner.py lib/update_admin.py lib/oled.py lib/oled_owner.sh \
   lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_update.py lib/plugin_service_manager.py lib/plugin_ui_manager.py \
-  lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py \
+  lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py lib/plugin_feature_runtime.py \
   lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin_upload.py lib/plugin_admin.py \
   lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py \
   lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
@@ -55,7 +55,7 @@ YWD_PLUGIN_DATA_DIR="$SELF/.plugin-data-does-not-exist" \
 YWD_MMDVM_TELEMETRY="$SELF/.telemetry-does-not-exist" \
 python3 - <<'PY'
 import dashboard_backup, dashboard_plugin_upload
-import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
+import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner, plugin_feature_runtime
 import plugin_manager, plugin_service_manager, settings_backup
 base = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
 assert base["system"]["enabled"] is False
@@ -101,4 +101,10 @@ fi
 # DMR install into an RF outage; dashboard diagnostics can report the bridge state.
 if ! sudo python3 /opt/ywd-hotspot/app/lib/telemetry_runtime.py ensure; then
   echo "[WARN] Passive MMDVM telemetry runtime was not activated. Core hotspot operation is unaffected."
+fi
+
+# Optional high-rate feature runtimes are owned by aggregate plugin capability
+# demand, never by installation alone. Fresh installs therefore converge to OFF.
+if ! sudo python3 /opt/ywd-hotspot/app/lib/plugin_feature_runtime.py reconcile; then
+  echo "[WARN] Optional plugin feature runtime did not reconcile. Core hotspot operation is unaffected."
 fi

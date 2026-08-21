@@ -14,10 +14,23 @@ if str(APP_LIB) not in sys.path:
 import plugin_catalog_overlay
 plugin_catalog_overlay.install()
 
+import plugin_feature_runtime
 from plugin_admin_common import ensure_update_not_running, payload
 from plugin_admin_packages import install_package, remove_plugin_data, uninstall_package
 from plugin_admin_state import runtime_action, save_config, set_plugin, set_system
 from plugin_admin_upload import apply_package, remove_package, review_package, upload_package
+
+# These actions can change the aggregate enabled+installed capability set.  The
+# trusted core reconciler runs only after the mutation succeeds; plugins never
+# receive direct systemd or RF control.
+FEATURE_RECONCILE_ACTIONS = frozenset({
+    "plugin-system-set",
+    "plugin-set",
+    "plugin-package-install",
+    "plugin-package-uninstall",
+    "plugin-package-apply",
+    "plugin-package-remove",
+})
 
 
 def main():
@@ -44,7 +57,10 @@ def main():
     handler = handlers.get(action)
     if handler is None:
         raise ValueError("unsupported plugin admin action")
-    print(json.dumps(handler(data), separators=(",", ":")))
+    result = handler(data)
+    if action in FEATURE_RECONCILE_ACTIONS:
+        result["feature_runtime"] = plugin_feature_runtime.reconcile()
+    print(json.dumps(result, separators=(",", ":")))
 
 
 if __name__ == "__main__":

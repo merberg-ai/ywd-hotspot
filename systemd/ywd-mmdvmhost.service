@@ -11,6 +11,7 @@ Type=simple
 User=ywd-hotspot
 Group=ywd-hotspot
 SupplementaryGroups=dialout
+EnvironmentFile=-/etc/ywd-hotspot/mmdvm-voice.env
 ExecStart=/usr/local/bin/MMDVM-Host /etc/ywd-hotspot/MMDVM-Host.ini
 Restart=on-failure
 RestartSec=3

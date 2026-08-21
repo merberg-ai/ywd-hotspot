@@ -44,7 +44,15 @@ diff --git a/DMRSlot.cpp b/DMRSlot.cpp
 index e29035f..b32fa91 100644
 --- a/DMRSlot.cpp
 +++ b/DMRSlot.cpp
-@@ -1404,6 +1404,8 @@ void CDMRSlot::writeNetwork(const CDMRData& dmrData)
+@@ -28,6 +28,7 @@
+ #if defined(USE_DMR)
+ 
+ #include <cassert>
++#include <cstdlib>
+ #include <ctime>
+ #include <algorithm>
+ #include <cstdint>
+@@ -1404,6 +1405,8 @@ void CDMRSlot::writeNetwork(const CDMRData& dmrData)
  		}
  
  		if (m_netState == RPT_NET_STATE::AUDIO) {
@@ -53,7 +61,7 @@ index e29035f..b32fa91 100644
  			unsigned char fid = m_netLC->getFID();
  			if (fid == FID_ETSI || fid == FID_DMRA)
  				m_netErrs += m_fec.regenerateDMR(data + 2U);
-@@ -1442,6 +1444,8 @@ void CDMRSlot::writeNetwork(const CDMRData& dmrData)
+@@ -1442,6 +1445,8 @@ void CDMRSlot::writeNetwork(const CDMRData& dmrData)
  		if (m_netState != RPT_NET_STATE::AUDIO)
  			return;
  
@@ -62,7 +70,7 @@ index e29035f..b32fa91 100644
  		unsigned char fid = m_netLC->getFID();
  		if (fid == FID_ETSI || fid == FID_DMRA)
  			m_netErrs += m_fec.regenerateDMR(data + 2U);
-@@ -2054,9 +2058,6 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
+@@ -2054,9 +2059,6 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
  	if (m_netState != RPT_NET_STATE::IDLE)
  		return;
  
@@ -72,7 +80,7 @@ index e29035f..b32fa91 100644
  	CDMRData dmrData;
  	dmrData.setSlotNo(m_slotNo);
  	dmrData.setDataType(dataType);
-@@ -2072,7 +2073,11 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
+@@ -2072,7 +2074,11 @@ void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType,
  
  	dmrData.setData(data + 2U);
  
@@ -85,13 +93,23 @@ index e29035f..b32fa91 100644
  }
  
  void CDMRSlot::writeNetworkRF(const unsigned char* data, unsigned char dataType, unsigned char errors)
-@@ -2491,6 +2496,41 @@ void CDMRSlot::writeJSONText(const unsigned char* text)
+@@ -2491,6 +2497,49 @@ void CDMRSlot::writeJSONText(const unsigned char* text)
  	WriteJSON("Text", json);
  }
  
 +void CDMRSlot::writeJSONVoice(const char* source, const CDMRData& dmrData)
 +{
 +	assert(source != nullptr);
++
++	// The YWD passive voice tap is deliberately dormant unless the appliance
++	// explicitly enables it before MMDVM-Host starts. Cache the environment
++	// decision once so the disabled hot path is only a function call + branch.
++	static const bool enabled = []() {
++		const char* value = std::getenv("YWD_DMR_VOICE_TAP");
++		return value != nullptr && value[0U] == '1' && value[1U] == '\0';
++	}();
++	if (!enabled)
++		return;
 +
 +	unsigned char payload[DMR_FRAME_LENGTH_BYTES];
 +	dmrData.getData(payload);

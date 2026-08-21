@@ -113,6 +113,7 @@ def _decode_test(count: int) -> dict:
     count = max(1, min(int(count), proto.MAX_FRAMES))
     zero = "0" * 49
     result = public_decode([zero] * count)
+    result.pop("pcm_s16le_b64", None)
     result["requested_frames"] = count
     return result
 

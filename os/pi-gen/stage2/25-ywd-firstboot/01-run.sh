@@ -85,6 +85,13 @@ systemctl enable ywd-factory-provision.service
 systemctl enable ywd-setup.service
 systemctl disable ywd-mmdvmhost.service ywd-dmrgateway.service ywd-oled.service >/dev/null 2>&1 || true
 systemctl enable ywd-headless-oled.service
+
+# Public factory images ship with SSH closed and no reusable server identity.
+# openssh-server remains installed so the authenticated dashboard can enable it
+# later. Unique ssh_host_* keys are generated locally on the appliance the
+# first time SSH is explicitly enabled.
+systemctl disable ssh.service >/dev/null 2>&1 || true
+rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
 EOF
 
 cat > "${ROOTFS_DIR}/etc/ywd-hotspot/m4-safety.txt" <<'EOF'
@@ -105,6 +112,13 @@ normal flow remains authoritative: network onboarding owns Wi-Fi first, then the
 secure HTTPS setup wizard starts on port 8443 and requires the six-digit OLED
 code. RF stays disabled unless the completed configuration explicitly requests
 RF autostart.
+
+Public factory SSH policy:
+  - openssh-server is installed but disabled
+  - no client key is embedded
+  - no reusable ssh_host_* identity key is shipped
+  - enabling SSH from the authenticated dashboard generates unique host keys
+  - SSH authentication is public-key only; password/root SSH stay disabled
 EOF
 
-printf 'Installed current YWD-Hotspot secure first-boot + factory-preconfiguration layer; RF remains gated.\n'
+printf 'Installed current YWD-Hotspot secure first-boot + factory-preconfiguration layer; RF/SSH remain gated.\n'

@@ -3,7 +3,8 @@
 
 A public image must contain only factory/default hotspot settings. Operator or
 builder-specific identity, credentials, Wi-Fi, imported backups, RF autostart,
-and SSH credentials are forbidden.
+and SSH credentials are forbidden. The public RC image intentionally ships the
+recommended/default YWD Extended MMDVM runtime.
 """
 from __future__ import annotations
 
@@ -73,6 +74,15 @@ def check_profile() -> list[str]:
     if str(system.get("update_channel") or "dev") != "main":
         fail("public release update channel must be main", errors)
 
+    runtime_path = LOCAL / "mmdvm-runtime.json"
+    try:
+        runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+        variant = str(runtime.get("variant") or "").strip().lower()
+    except Exception:
+        variant = ""
+    if variant != "ywd-extended":
+        fail("public release MMDVM runtime must be the default/recommended ywd-extended variant", errors)
+
     return errors
 
 
@@ -139,6 +149,7 @@ def main() -> int:
     print("RF first boot: OFF")
     print("SSH: disabled / no operator credential allowed")
     print("Update channel: main")
+    print("MMDVM runtime: ywd-extended (default/recommended)")
     return 0
 
 

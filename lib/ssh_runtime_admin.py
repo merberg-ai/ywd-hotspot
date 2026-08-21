@@ -25,14 +25,19 @@ SSH_UNIT = "ssh.service"
 
 
 def run(args, timeout=8, check=False):
-    proc = subprocess.run(
-        args,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            args,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if check:
+            raise RuntimeError(f"command timed out after {timeout}s: {args[0]}") from exc
+        return subprocess.CompletedProcess(args, 124, stdout="", stderr=f"timed out after {timeout}s")
     if check and proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or f"command failed: {args[0]}").strip()[:800])
     return proc

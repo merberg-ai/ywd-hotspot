@@ -106,6 +106,7 @@ lib/setup_entry.sh
 lib/setup_restore_server.py
 lib/setup_server.py
 lib/ssh_keys_admin.py
+lib/ssh_runtime_admin.py
 lib/system_branding.sh
 lib/telemetry_runtime.py
 lib/update_admin.py

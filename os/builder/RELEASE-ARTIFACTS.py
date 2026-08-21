@@ -111,9 +111,13 @@ def main() -> int:
             "settings_backup_imported": False,
             "rf_autostart": False,
             "ssh_enabled": False,
+            "ssh_server_installed": True,
+            "ssh_host_identity_preconfigured": False,
+            "ssh_enablement": "authenticated dashboard / Settings / SSH Access",
             "setup_ap": "YWD-Hotspot-XXXX",
             "setup_ap_url": "http://10.42.0.1/",
-            "hotspot_setup_url": "https://ywd-hotspot.local:8443/",
+            "hotspot_setup_url": "https://<LAN-IP>:8443/",
+            "mdns_setup_url_optional": "https://ywd-hotspot.local:8443/",
         },
         "mmdvm": {
             "variant": variant,
@@ -143,7 +147,8 @@ THIS IMAGE HAS NO OPERATOR PRECONFIGURATION.
 
 It contains no Wi-Fi credentials, callsign, DMR ID, BrandMeister credentials,
 API key, dashboard password, imported settings backup, or RF autostart state.
-SSH is disabled and no builder authorized key is embedded.
+SSH is disabled, no builder authorized key is embedded, and no reusable SSH
+server host identity is shipped in the image.
 
 MMDVM runtime shipped in this image:
   {variant}
@@ -160,9 +165,17 @@ First boot:
   3. Join the temporary YWD-Hotspot-XXXX Wi-Fi network.
   4. Browse to http://10.42.0.1/ and configure your Wi-Fi.
   5. Reconnect your phone/computer to your normal network.
-  6. Read the six-digit one-time setup code from the hotspot OLED.
-  7. Browse to https://ywd-hotspot.local:8443/ and complete setup.
+  6. The OLED shows the assigned LAN IP and a large six-digit setup code.
+  7. Browse to https://<LAN-IP>:8443/ and complete setup.
+     ywd-hotspot.local is only an optional mDNS convenience when supported.
   8. RF remains off unless you explicitly enable it during/after setup.
+
+SSH after setup:
+  - Factory state: disabled / port 22 closed.
+  - Unlock dashboard controls and open Settings -> SSH Access.
+  - Create/export a client login key for user ywd.
+  - Enable SSH Access. YWD generates unique server host keys on that appliance.
+  - SSH remains public-key-only; password authentication and root SSH are disabled.
 
 Do not apply Raspberry Pi Imager OS customization settings over this appliance
 image. YWD-Hotspot provides its own first-boot network and hotspot setup flow.

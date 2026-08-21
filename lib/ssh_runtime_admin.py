@@ -133,12 +133,28 @@ def failure_detail() -> str:
 
 
 def status() -> dict:
-    out = keys.ssh_status()
-    # Override the two runtime fields with cheap, observable facts rather than
-    # making the status card wait on systemctl is-active/is-enabled.
-    out["active"] = port_listening()
-    out["enabled_at_boot"] = boot_enabled()
-    return out
+    policy_managed = False
+    try:
+        policy_managed = (
+            keys.SSHD_DROPIN.is_file()
+            and keys.SSHD_DROPIN.read_text(encoding="utf-8") == keys.YWD_SSH_POLICY
+        )
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "installed": keys.SSHD.is_file() and keys.SSH_DIR.is_dir(),
+        "active": port_listening(),
+        "enabled_at_boot": boot_enabled(),
+        "port": SSH_PORT,
+        "authentication": "public-key-only",
+        "password_authentication": False,
+        "root_login": False,
+        "policy_managed": policy_managed,
+        "host_key_count": len(keys._host_key_paths()),
+        "login_user": "ywd",
+        "authorized_key_count": keys._authorized_key_count("ywd"),
+    }
 
 
 def configure(data: dict) -> dict:
@@ -149,14 +165,9 @@ def configure(data: dict) -> dict:
         raise ValueError("enabled must be true or false")
 
     if enabled:
-        # Writes the key-only policy, creates unique host keys when absent, and
-        # validates sshd before port 22 can be exposed.
         keys._install_public_key_policy()
         set_boot_enabled(True)
 
-        # `--no-block` queues startup.  Even if the client-side systemctl command
-        # itself is sluggish, the queued job may still complete, so success is
-        # determined by the actual listener rather than command duration.
         start = run(["systemctl", "start", "--no-block", SSH_UNIT], 12)
         if wait_port(True, 14):
             out = status()
@@ -166,7 +177,6 @@ def configure(data: dict) -> dict:
             })
             return out
 
-        # Do not leave boot activation armed when runtime startup failed.
         set_boot_enabled(False)
         detail = failure_detail()
         cmd = (start.stderr or start.stdout or "").strip()

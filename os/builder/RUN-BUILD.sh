@@ -68,14 +68,32 @@ source "$SYSTEM_ENV"
 set +a
 printf '[INFO] System profile: %s\n' "$(python3 "$BUILDER_DIR/SYSTEM-CLI.py" status)"
 
-# Generate/reuse the exact Ed25519 client key BUILD.sh already consumes from
-# os/local/ywd-os-dev_ed25519. Users can export this same key before or after
-# the build with SSH-KEYS.py; the matching public key is what pi-gen bakes into
-# the ywd account whenever SSH policy is key-only.
-python3 "$BUILDER_DIR/SSH-KEYS.py" ensure >/dev/null
-printf '[INFO] SSH login key: %s\n' "$(python3 "$BUILDER_DIR/SSH-KEYS.py" fingerprint)"
+MMDVM_ENV="$(python3 "$BUILDER_DIR/MMDVM-RUNTIME.py" write-env)"
+set -a
+# shellcheck disable=SC1090
+source "$MMDVM_ENV"
+set +a
+printf '[INFO] MMDVM runtime: %s\n' "$(python3 "$BUILDER_DIR/MMDVM-RUNTIME.py" status)"
 
-# A one-shot bypass is useful when deliberately verifying a clean rebuild.  It
+if [[ "${YWD_PUBLIC_RELEASE:-0}" == "1" ]]; then
+  [[ "$YWD_MMDVM_VARIANT" == "ywd-extended" ]] || {
+    echo 'ERROR: public 0.2.0-rc1 image must use the recommended YWD Extended default runtime.' >&2
+    exit 1
+  }
+  python3 "$BUILDER_DIR/PUBLIC-RELEASE-CHECK.py" profile
+  python3 "$BUILDER_DIR/PUBLIC-RELEASE-CHECK.py" generated
+fi
+
+# A public-key login credential is created only when SSH is actually enabled.
+# Public factory images ship SSH disabled and therefore contain no builder key.
+if [[ "${YWD_ENABLE_SSH:-0}" == "1" ]]; then
+  python3 "$BUILDER_DIR/SSH-KEYS.py" ensure >/dev/null
+  printf '[INFO] SSH login key: %s\n' "$(python3 "$BUILDER_DIR/SSH-KEYS.py" fingerprint)"
+else
+  printf '[INFO] SSH disabled: no builder SSH credential will be staged.\n'
+fi
+
+# A one-shot bypass is useful when deliberately verifying a clean rebuild. It
 # is consumed only when RUN-BUILD actually begins, so merely opening/quitting
 # the interactive builder does not lose the request.
 if [[ -f "$BUILDER_DIR/RUNTIME-CACHE.py" ]]; then
@@ -134,6 +152,6 @@ clean_previous_work
 
 # shellcheck disable=SC1090
 source "$GEN_DIR/build.env"
-export YWD_IMG_NAME YWD_OS_VERSION
+export YWD_IMG_NAME YWD_OS_VERSION YWD_MMDVM_VARIANT
 
 bash "$BUILDER_DIR/BUILD.sh"

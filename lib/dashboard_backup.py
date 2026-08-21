@@ -71,7 +71,12 @@ def wrap_handler(base):
                 return
             try:
                 body = self._large_json()
-                timeout = 30 if path.startswith("/api/ssh") else 150
+                if path == "/api/ssh/configure":
+                    timeout = 45
+                elif path.startswith("/api/ssh"):
+                    timeout = 30
+                else:
+                    timeout = 150
                 out = core.admin_call(routes[path], body, timeout)
                 self.send_json(out)
             except ValueError as exc:

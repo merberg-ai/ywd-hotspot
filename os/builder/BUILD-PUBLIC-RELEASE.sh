@@ -12,6 +12,13 @@ BACKUP="$LOCAL/builder-profile.before-public-release.$STAMP.json"
 RUNTIME_BACKUP="$LOCAL/mmdvm-runtime.before-public-release.$STAMP.json"
 HAD_PROFILE=0
 HAD_RUNTIME_PREF=0
+PREPARE_ONLY=0
+
+case "${1:-}" in
+  "") ;;
+  --prepare-only) PREPARE_ONLY=1 ;;
+  *) echo "Usage: bash os/builder/BUILD-PUBLIC-RELEASE.sh [--prepare-only]" >&2; exit 2 ;;
+esac
 
 if [[ "$VERSION" != "0.2.0-rc1" ]]; then
   echo "ERROR: public release wrapper expects VERSION 0.2.0-rc1, got $VERSION" >&2
@@ -92,6 +99,13 @@ python3 "$BUILDER/PUBLIC-RELEASE-CHECK.py" profile
 # before RUN-BUILD regenerates the same deterministic profile.
 python3 "$BUILDER/PREPARE-PROFILE.py"
 python3 "$BUILDER/PUBLIC-RELEASE-CHECK.py" generated
+
+if [[ "$PREPARE_ONLY" == "1" ]]; then
+  printf '\n[OK] PUBLIC RELEASE PREPARE-ONLY CHECK PASSED.\n'
+  printf '     No image build was started.\n'
+  printf '     Your original private builder profile/runtime preference will now be restored.\n'
+  exit 0
+fi
 
 printf '\n[OK] Factory-image gate passed. Starting reproducible public build.\n\n'
 export YWD_PUBLIC_RELEASE=1

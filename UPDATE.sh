@@ -27,7 +27,7 @@ for f in \
   lib/candidate_validate.py \
   lib/update_runner.py lib/update_admin.py lib/oled.py lib/oled_owner.sh \
   lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_update.py lib/plugin_service_manager.py lib/plugin_ui_manager.py \
-  lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py \
+  lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py lib/plugin_feature_runtime.py \
   lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin_upload.py lib/plugin_admin.py \
   lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py lib/plugin_update_safety.py \
   lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
@@ -64,7 +64,7 @@ YWD_PLUGIN_DATA_DIR="$SELF/.plugin-data-does-not-exist" \
 YWD_MMDVM_TELEMETRY="$SELF/.telemetry-does-not-exist" \
 python3 - <<'PY'
 import dashboard_backup, dashboard_plugin_upload
-import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner
+import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner, plugin_feature_runtime
 import plugin_manager, plugin_service_manager, settings_backup
 base = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
 assert base["system"]["enabled"] is False
@@ -127,7 +127,7 @@ set -e
 if (( core_rc != 0 )); then
   echo "Repairing restored admin bridge after core rollback..."
   repair_live_admin_bridge || echo "[WARN] Restored admin bridge needs manual review."
-  echo "Restoring pre-update plugin runtime after core rollback..."
+  echo "Restoring pre-update plugin runtime after target rollback..."
   sudo python3 "$SELF/lib/plugin_update_safety.py" restore \
     --snapshot "$PLUGIN_UPDATE_SNAPSHOT" --lib /opt/ywd-hotspot/app/lib || \
     echo "[WARN] Plugin runtime restore after rollback needs manual review."
@@ -181,4 +181,11 @@ fi
 # package/broker problems must not turn a successful core update into a DMR outage.
 if ! sudo python3 /opt/ywd-hotspot/app/lib/telemetry_runtime.py ensure; then
   echo "[WARN] Passive MMDVM telemetry runtime was not activated. Core hotspot operation is unaffected."
+fi
+
+# Aggregate plugin capabilities own optional high-rate feature runtimes. Keep
+# this fail-soft during an app update: plugin controls can retry reconciliation
+# without turning a successful core update into an RF outage.
+if ! sudo python3 /opt/ywd-hotspot/app/lib/plugin_feature_runtime.py reconcile; then
+  echo "[WARN] Optional plugin feature runtime did not reconcile. Core hotspot operation is unaffected."
 fi

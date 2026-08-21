@@ -1,0 +1,12 @@
+[Unit]
+Description=YWD Vocoder Protocol v1 fake backend socket (development only)
+
+[Socket]
+ListenStream=/run/ywd-vocoder.sock
+SocketMode=0660
+SocketUser=ywd-hotspot
+SocketGroup=ywd-hotspot
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

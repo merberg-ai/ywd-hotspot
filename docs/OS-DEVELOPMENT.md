@@ -6,20 +6,18 @@ YWD-Hotspot keeps the application and appliance-image source in one repository w
 
 ## Current branch model
 
-Application release hardening and image-builder work stay separated:
+Application release work and image-builder work stay separated:
 
 ```text
-main
+main                     stable/promoted release line
   ↑
-dev
-  ├── dev-release-0.1.0   temporary RC/release hardening
-  └── accepted app work
+dev                      physically accepted app integration line
 
 
 dev-builder              isolated image/builder line
 ```
 
-Do not merge builder/image experimentation into a release candidate merely because both ultimately ship the same application. After the final release state is proven, synchronize it forward into `dev-builder` intentionally before resuming image work.
+The completed `dev-release-0.1.0` RC branch is historical release-hardening context. Do not merge builder/image experimentation into a release merely because both ultimately ship the same application. After the final 0.1.0 release state is proven, synchronize it forward into `dev-builder` intentionally before resuming image work.
 
 ## Current builder entry points
 

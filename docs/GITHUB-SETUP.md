@@ -12,29 +12,21 @@ https://github.com/merberg-ai/ywd-hotspot
 
 | Branch | Purpose |
 |---|---|
-| `main` | promoted/conservative release line |
+| `main` | promoted/conservative release line; current stable 0.1.0 |
 | `dev` | physically accepted integrated development baseline |
 | `dev-builder` | isolated OS image/builder work |
 | `dev-plugins` | plugin/framework development line |
-| `dev-release-0.1.0` | temporary 0.1.0 release hardening / RC branch |
 
-The release branch is temporary. During RC testing it may be installed directly while the appliance's persistent update channel remains `dev`. After acceptance, release work flows back through `dev` and then to `main`. Builder/image work remains isolated until intentionally synchronized.
+The completed `dev-release-0.1.0` branch is historical release-hardening context. It was physically accepted, merged into `dev`, then promoted to `main`. It is not a persistent update channel. Builder/image work remains isolated until intentionally synchronized.
 
 Historical `checkpoint-*` branches are rollback/history references, not active development lines.
 
 ## Clone
 
-Promoted line:
+Stable promoted line:
 
 ```bash
 git clone https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-```
-
-Current 0.1.0 RC line:
-
-```bash
-git clone --branch dev-release-0.1.0 https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
@@ -51,6 +43,8 @@ Builder/image line:
 git clone --branch dev-builder https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
+
+The old RC branch can still be cloned deliberately for archaeology/recovery, but it is not the supported install path for 0.1.0.
 
 ## Source vs deployed runtime
 
@@ -70,12 +64,7 @@ branch/ref       where this exact candidate came from
 update channel   persistent operator-selected update line
 ```
 
-A release candidate may therefore correctly report:
-
-```text
-Branch  : dev-release-0.1.0
-Channel : dev
-```
+For example, an explicit checkpoint or temporary-branch test can report that exact branch/ref while the saved update channel remains `main` or `dev` as selected by the operator.
 
 ## Never commit runtime secrets
 
@@ -173,18 +162,20 @@ clean temporary history only after preservation
 
 ## Release workflow
 
-The 0.1.0 release-hardening pattern is:
+The 0.1.0 release established the current promotion pattern:
 
 ```text
 main
   ↑
 dev
-  └── dev-release-0.1.0
-          release hardening / RC only
+  └── temporary release branch
+          release hardening only
           ↓
-       physical RC acceptance
+       physical release-candidate acceptance
           ↓
        merge → dev
+          ↓
+       promotion sanity test
           ↓
        promote → main
 
@@ -192,6 +183,8 @@ dev
 dev-builder
   stays isolated during release hardening
 ```
+
+The completed 0.1.0 path was `dev-release-0.1.0` → accepted RC1 → `dev` → `main`. Future release branches should be temporary and scoped the same way rather than becoming permanent update channels.
 
 Release candidate work should not absorb new feature development merely because a temporary release branch exists.
 

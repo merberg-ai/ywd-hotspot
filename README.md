@@ -17,7 +17,7 @@
 ---
 
 > [!IMPORTANT]
-> **Release status:** `0.1.0-rc1` is the first release candidate for YWD-Hotspot 0.1.0. It is being physically acceptance-tested before promotion to `main`. The exact installed build is always defined by [`VERSION`](VERSION) plus the Git branch/ref and commit shown by `ywd-hotspotctl source` and the About page.
+> **Release status:** `0.1.0` is the first stable YWD-Hotspot release. The release candidate was physically acceptance-tested on the target Pi Zero W + duplex MMDVM hardware before promotion through `dev` to `main`. The exact installed build is always defined by [`VERSION`](VERSION) plus the Git branch/ref and commit shown by `ywd-hotspotctl source` and the About page.
 
 > [!WARNING]
 > The built-in WebUI is plain HTTP for a trusted LAN. Do **not** forward the dashboard port directly to the public Internet.
@@ -60,28 +60,13 @@ Other Pi models may work, but the original Zero W remains the performance target
 
 ## Quick start
 
-### Promoted release line (`main`)
-
-Once RC1 is promoted to `main`, the normal install is:
+The stable release line is `main`:
 
 ```bash
 sudo apt update
 sudo apt install -y git
 cd ~
 git clone https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-sudo ./INSTALL.sh
-```
-
-### Current RC1 test branch
-
-Until RC1 is promoted, testers can install the exact release candidate with:
-
-```bash
-sudo apt update
-sudo apt install -y git
-cd ~
-git clone --branch dev-release-0.1.0 https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
@@ -160,7 +145,7 @@ sudo ywd-hotspotctl update
 
 An unlocked WebUI also provides **ABOUT → SOFTWARE UPDATE** with detached progress that survives dashboard restart.
 
-Persistent update channels are intentionally separate from temporary Git refs. A release-candidate appliance may be installed from `dev-release-0.1.0` while its saved update channel remains `dev`.
+Git branch/ref provenance is intentionally separate from the persistent update channel. Normal stable appliances should follow `main`; explicit checkpoint or temporary-branch tests do not need to redefine the long-term update channel.
 
 ```bash
 sudo ywd-hotspotctl update-channel main
@@ -176,13 +161,12 @@ See **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 
 | Branch | Purpose |
 |---|---|
-| `main` | conservative/promoted releases |
+| `main` | conservative/promoted releases; `0.1.0` stable line |
 | `dev` | physically accepted integrated development baseline |
 | `dev-builder` | isolated OS image/builder work |
 | `dev-plugins` | plugin/framework development line |
-| `dev-release-0.1.0` | temporary 0.1.0 release-hardening / RC branch |
 
-Temporary release/feature branches are not additional release channels. Accepted release work flows back through `dev` and then to `main`; builder work remains isolated until intentionally synchronized.
+Temporary release/feature branches are not additional release channels. The completed `dev-release-0.1.0` RC branch and its `checkpoint-release-*` refs remain useful historical/rollback references, while new accepted release work continues to flow deliberately through `dev` and then `main`.
 
 See **[docs/REPOSITORY.md](docs/REPOSITORY.md)** and **[docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md)**.
 

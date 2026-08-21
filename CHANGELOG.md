@@ -2,13 +2,47 @@
 
 [Project README](README.md) · [Docs](docs/README.md) · [Development](docs/GITHUB-SETUP.md)
 
-YWD-Hotspot is approaching its first 0.1.0 release. Release candidates remain subject to physical acceptance before promotion to `main`.
+YWD-Hotspot `0.1.0` is the first stable release. It was promoted only after the RC1 tree completed physical acceptance on the target Pi Zero W + duplex MMDVM appliance.
 
 ---
 
+## 0.1.0 — First Stable Release
+
+**Status:** physically accepted and promoted through `dev` to `main` after the complete RC1 acceptance matrix passed.
+
+The final stable release keeps the exact tested RF/runtime baseline from RC1 and changes release identity/documentation only. Physical acceptance covered:
+
+- clean Git provenance and update-channel behavior across release, `dev`, and `main` promotion;
+- reboot persistence and zero failed systemd units;
+- duplex RF operation on TS1 and TS2, including BrandMeister Parrot round trips;
+- BrandMeister/Talkgroup Manager add/remove/drop/apply/saved-set behavior with duplex-aware confirmation ownership;
+- RF start/stop/restart and authoritative OLED restart/ownership;
+- Settings Save vs Save & Apply, encrypted `.ywdsettings` export/import/restore, and diagnostics bundle generation;
+- plugin install/uninstall/update/enable/disable plus plugin-state survival through a real application update;
+- RadioID normal due-check and forced refresh;
+- staged invalid-candidate refusal before live services were touched, with MMDVMHost/DMRGateway/Dashboard PIDs unchanged;
+- desktop and mobile WebUI sweeps;
+- duplex-aware CLI status reporting of the hotspot RX/TX frequency pair;
+- final reboot/soak validation.
+
+Pinned RF baseline remains:
+
+```text
+MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
+Optional RX Monitor/passive voice observation continues to use:
+
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
+
+Normal application updates do **not** recompile MMDVM-Host or DMRGateway.
+
 ## 0.1.0-rc1 — First Release Candidate
 
-**Status:** release candidate prepared on `dev-release-0.1.0`; full acceptance testing is still required before promotion to `main`.
+**Status:** physically accepted, promoted through `dev`, and used as the exact runtime tree for the 0.1.0 stable release.
 
 Release hardening since the last Alpha development baseline includes:
 

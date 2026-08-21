@@ -8,25 +8,27 @@ YWD-Hotspot keeps Git history useful without letting temporary development branc
 
 | Branch | Role |
 |---|---|
-| `main` | conservative/promoted releases |
+| `main` | conservative/promoted releases; current stable 0.1.0 |
 | `dev` | physically accepted integrated development baseline |
 | `dev-builder` | isolated OS image/builder work |
 | `dev-plugins` | plugin/framework development line |
 
-Temporary release branches such as `dev-release-0.1.0` are cut from an exact accepted parent and are removed or archived after their accepted work is merged forward.
+Temporary release branches such as the completed `dev-release-0.1.0` line are cut from an exact accepted parent and are removed or archived after their accepted work is merged forward.
 
 ## Promotion model
 
-For the 0.1.0 release:
+The 0.1.0 release established this pattern:
 
 ```text
 dev
-  └── dev-release-0.1.0
-          ↓ physical RC acceptance
+  └── temporary release branch
+          ↓ physical release-candidate acceptance
         dev
-          ↓ separate release decision
+          ↓ promotion sanity test
         main
 ```
+
+For 0.1.0 specifically, the accepted `dev-release-0.1.0` RC tree was merged into `dev`, physically sanity-tested there, then promoted to `main` and tested again before the stable identity bump.
 
 `dev-builder` remains isolated during release hardening. After the final release state is proven, release changes can be intentionally synchronized forward into builder work before image development resumes.
 
@@ -46,7 +48,7 @@ Core remains authoritative for package verification, lifecycle management, capab
 
 A known-good checkpoint is created only after the relevant hardware/runtime behavior has actually been exercised.
 
-Current release hardening uses named `checkpoint-release-*` references as rollback anchors. They are historical safety references, not active development lines.
+The 0.1.0 release hardening used named `checkpoint-release-*` references as rollback anchors, including checkpoints for RC acceptance on the temporary release branch, `dev`, and `main`. They are historical safety references, not active development lines.
 
 Do not delete a checkpoint merely because its name looks old until its commit has been intentionally preserved by the repository's long-term archive/tag policy.
 
@@ -118,7 +120,7 @@ Periodic cleanup should verify:
 - temporary release/feature branches are removed or archived after promotion;
 - checkpoint history is preserved before cleanup;
 - `MANIFEST.txt` matches current trusted runtime files;
-- README/install/build/architecture/plugin/update docs describe the current product rather than an old Alpha phase;
+- README/install/build/architecture/plugin/update docs describe the current product rather than an old Alpha or RC phase;
 - generated/local plugin decoder artifacts remain ignored unless an explicit distribution decision is made;
 - no secrets, runtime config, backups, SSH private keys, or signing private keys are tracked.
 

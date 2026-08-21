@@ -8,7 +8,7 @@
 > YWD-Hotspot can control a radio transmitter. Attach a suitable antenna and verify the configured frequencies before enabling RF.
 
 > [!IMPORTANT]
-> The current release-prep build is **0.1.0-rc1**. Until it is promoted to `main`, install the exact RC with the explicit `dev-release-0.1.0` clone shown below.
+> The current stable release is **0.1.0** on `main`. Normal users should install from the promoted `main` line; use development or checkpoint refs only when intentionally testing or recovering.
 
 ## Supported development baseline
 
@@ -36,9 +36,7 @@ readlink -f /dev/serial0 2>/dev/null || true
 
 ## Fresh install from GitHub
 
-### Promoted release line (`main`)
-
-After RC1 is promoted, normal users should install from `main`:
+### Stable release line (`main`)
 
 ```bash
 sudo apt update
@@ -49,22 +47,9 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-### Current 0.1.0 RC test branch
-
-During RC acceptance:
-
-```bash
-sudo apt update
-sudo apt install -y git
-cd ~
-git clone --branch dev-release-0.1.0 https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-sudo ./INSTALL.sh
-```
-
 ### Development line
 
-For intentionally testing the accepted development baseline instead of a release candidate:
+For intentionally testing the accepted development baseline instead of the stable release:
 
 ```bash
 sudo apt update
@@ -74,6 +59,8 @@ git clone --branch dev https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
+
+The completed `dev-release-0.1.0` RC branch is retained only as release history/rollback context; it is not the normal installation path for 0.1.0.
 
 A normal Git clone preserves executable bits. If source came through a ZIP/Windows copy and modes were lost, invoke the installer through Bash:
 

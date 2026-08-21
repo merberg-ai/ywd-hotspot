@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SSH_DIR = Path("/etc/ssh")
+SSHD = Path("/usr/sbin/sshd")
 SSHD_DROPIN_DIR = SSH_DIR / "sshd_config.d"
 SSHD_DROPIN = SSHD_DROPIN_DIR / "90-ywd-hotspot.conf"
 HOME_ROOT = Path("/home")
@@ -106,6 +107,15 @@ def _archive(filename: str, readme_name: str, readme: bytes, rows: list[tuple[st
     }
 
 
+def _host_key_paths() -> list[Path]:
+    if not SSH_DIR.is_dir():
+        return []
+    try:
+        return [p for p in SSH_DIR.iterdir() if HOST_PRIVATE_RE.fullmatch(p.name) and p.is_file() and not p.is_symlink()]
+    except Exception:
+        return []
+
+
 def _service_state() -> tuple[bool, bool]:
     active = _run(["systemctl", "is-active", "--quiet", SSH_UNIT], 5).returncode == 0
     enabled = _run(["systemctl", "is-enabled", "--quiet", SSH_UNIT], 5).returncode == 0
@@ -129,18 +139,12 @@ def _authorized_key_count(username: str = "ywd") -> int:
 
 def ssh_status() -> dict:
     active, enabled = _service_state()
-    installed = bool(shutil.which("sshd")) and SSH_DIR.is_dir()
+    installed = SSHD.is_file() and SSH_DIR.is_dir()
     policy_managed = False
     try:
         policy_managed = SSHD_DROPIN.is_file() and SSHD_DROPIN.read_text(encoding="utf-8") == YWD_SSH_POLICY
     except Exception:
         policy_managed = False
-    host_keys = 0
-    if SSH_DIR.is_dir():
-        try:
-            host_keys = sum(1 for p in SSH_DIR.iterdir() if HOST_PRIVATE_RE.fullmatch(p.name) and p.is_file())
-        except Exception:
-            pass
     return {
         "ok": True,
         "installed": installed,
@@ -151,16 +155,29 @@ def ssh_status() -> dict:
         "password_authentication": False,
         "root_login": False,
         "policy_managed": policy_managed,
-        "host_key_count": host_keys,
+        "host_key_count": len(_host_key_paths()),
         "login_user": "ywd",
         "authorized_key_count": _authorized_key_count("ywd"),
     }
 
 
+def _ensure_unique_host_keys() -> None:
+    if _host_key_paths():
+        return
+    if not shutil.which("ssh-keygen"):
+        raise ValueError("ssh-keygen is unavailable")
+    # Factory images deliberately delete ssh_host_* before publication so every
+    # appliance creates its own server identity at the moment SSH is first
+    # enabled. Never copy/generate these on the image builder host.
+    _run(["ssh-keygen", "-A"], 30, check=True)
+    if not _host_key_paths():
+        raise RuntimeError("OpenSSH host-key generation completed without creating server identity keys")
+
+
 def _install_public_key_policy() -> None:
     if os.geteuid() != 0:
         raise PermissionError("root required")
-    if not shutil.which("sshd"):
+    if not SSHD.is_file():
         raise ValueError("OpenSSH server is not installed")
     SSHD_DROPIN_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(SSHD_DROPIN_DIR, 0o755)
@@ -169,7 +186,8 @@ def _install_public_key_policy() -> None:
     os.chmod(tmp, 0o644)
     os.chown(tmp, 0, 0)
     os.replace(tmp, SSHD_DROPIN)
-    _run(["/usr/sbin/sshd", "-t"], 10, check=True)
+    _ensure_unique_host_keys()
+    _run([str(SSHD), "-t"], 10, check=True)
 
 
 def configure_ssh(payload: dict) -> dict:
@@ -204,16 +222,14 @@ def export_host_keys() -> dict:
         raise ValueError("/etc/ssh is unavailable")
 
     rows: list[tuple[str, bytes, int, int]] = []
-    for private in sorted(SSH_DIR.iterdir(), key=lambda p: p.name):
-        if not HOST_PRIVATE_RE.fullmatch(private.name):
-            continue
+    for private in sorted(_host_key_paths(), key=lambda p: p.name):
         rows.append((f"etc/ssh/{private.name}", _safe_file(private), 0o600, int(private.stat().st_mtime)))
         public = SSH_DIR / f"{private.name}.pub"
         if public.exists():
             rows.append((f"etc/ssh/{public.name}", _safe_file(public), 0o644, int(public.stat().st_mtime)))
 
     if not rows:
-        raise ValueError("no SSH server identity keys were found")
+        raise ValueError("no SSH server identity keys exist yet; enable SSH once before exporting server identity")
 
     created = datetime.now(timezone.utc).replace(microsecond=0)
     hostname = re.sub(r"[^A-Za-z0-9._-]+", "-", socket.gethostname()).strip("-") or "ywd-hotspot"

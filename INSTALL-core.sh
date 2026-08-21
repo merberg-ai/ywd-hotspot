@@ -15,11 +15,12 @@ if [[ -f /etc/ywd-hotspot/config.json && -d /opt/ywd-hotspot/app ]] && [[ "${YWD
 ============================================================
   1) Adopt existing installation and switch to GitHub updates
      - preserves configuration, credentials, calibration data and RF state
+     - preserves the currently installed MMDVM runtime
      - does NOT rebuild MMDVM-Host or DMRGateway
 
   2) Full/recovery installation
      - runs the complete installer
-     - verifies/builds the canonical YWD-patched MMDVM-Host
+     - verifies/builds the selected MMDVM-Host runtime variant
      - verifies/builds pinned DMRGateway
 
   3) Cancel
@@ -69,21 +70,80 @@ install -d -o ywd-hotspot -g ywd-hotspot -m 0750 /var/lib/ywd-hotspot /var/lib/y
 install -d -o root -g root -m 0700 /var/lib/ywd-hotspot/private /var/lib/ywd-hotspot/private/config-history
 install -d -o root -g root -m 0755 /var/cache/ywd-hotspot/runtime-build
 
+# Preserve the installed runtime choice during recovery unless the operator
+# explicitly selects another variant. Fresh installs default to YWD Extended.
+CURRENT_MMDVM_VARIANT=""
+if [[ -f /etc/ywd-hotspot/mmdvm-runtime.json ]]; then
+  CURRENT_MMDVM_VARIANT="$(python3 - <<'PY'
+import json
+try:
+ d=json.load(open('/etc/ywd-hotspot/mmdvm-runtime.json'))
+ v=str(d.get('variant') or '').strip().lower()
+ print(v if v in {'ywd-extended','upstream'} else '')
+except Exception:
+ print('')
+PY
+)"
+fi
+
+MMDVM_VARIANT="${YWD_MMDVM_VARIANT:-}"
+if [[ -z "$MMDVM_VARIANT" ]]; then
+  echo
+  echo "============================================================"
+  echo " MMDVM-HOST RUNTIME"
+  echo "============================================================"
+  cat <<'EOF'
+YWD-Hotspot can build either of two exact pinned MMDVM-Host variants:
+
+  1) YWD Extended [recommended/default]
+     - exact pinned upstream MMDVM-Host source
+     - applies the verified YWD extension patch
+     - enables passive DMR voice/RX Monitor support
+     - provides capabilities that future compatible plugins may require
+
+  2) Stock Upstream
+     - exact pinned upstream MMDVM-Host source
+     - no YWD MMDVM extensions
+     - plugins requiring extended MMDVM capabilities will be unavailable
+
+The choice is recorded and preserved across normal YWD-Hotspot updates.
+EOF
+  default_choice=1
+  [[ "$CURRENT_MMDVM_VARIANT" == "upstream" ]] && default_choice=2
+  if [[ -n "$CURRENT_MMDVM_VARIANT" ]]; then
+    echo "Currently installed runtime: $CURRENT_MMDVM_VARIANT"
+    echo "Press Enter to preserve that choice."
+  fi
+  read -r -p "Selection [${default_choice}]: " mmdvm_choice
+  mmdvm_choice="${mmdvm_choice:-$default_choice}"
+  case "$mmdvm_choice" in
+    1) MMDVM_VARIANT="ywd-extended";;
+    2) MMDVM_VARIANT="upstream";;
+    *) echo "[FAIL] Invalid MMDVM runtime selection."; exit 1;;
+  esac
+fi
+case "$MMDVM_VARIANT" in ywd-extended|upstream) ;; *) echo "[FAIL] Invalid YWD_MMDVM_VARIANT: $MMDVM_VARIANT"; exit 1;; esac
+export YWD_MMDVM_VARIANT="$MMDVM_VARIANT"
+
 echo
 echo "------------------------------------------------------------"
 echo "Installing canonical pinned runtime binaries"
-echo "MMDVM-Host: pinned upstream + verified YWD passive DMR voice-tap patch"
+if [[ "$MMDVM_VARIANT" == "ywd-extended" ]]; then
+  echo "MMDVM-Host: YWD Extended (pinned upstream + verified YWD extension patch)"
+  echo "Patch API : $MMDVM_YWD_PATCH_API"
+  echo "Patch SHA : $MMDVM_YWD_PATCH_SHA256"
+else
+  echo "MMDVM-Host: Stock Upstream (exact pinned source; no YWD extensions)"
+fi
 echo "DMRGateway : pinned upstream"
 YWD_RUNTIME_BUILD_CACHE=/var/cache/ywd-hotspot/runtime-build \
+YWD_MMDVM_VARIANT="$MMDVM_VARIANT" \
 YWD_BUILD_JOBS=1 \
-python3 "$SELF/lib/runtime_build.py" install
+python3 "$SELF/lib/runtime_build.py" install --mmdvm-variant "$MMDVM_VARIANT"
 
 echo; echo "Installing YWD-Hotspot application..."
 rm -rf /opt/ywd-hotspot/app
 install -d -m 0755 /opt/ywd-hotspot/app
-# Copy only appliance/runtime source. A Git checkout may contain a large .git
-# database plus repository docs/artwork that do not belong in /opt. Keep each
-# presentation wrapper next to its core implementation in the deployed app.
 for item in \
   bin lib web systemd sudoers lab \
   INSTALL.sh INSTALL-core.sh UPDATE.sh UPDATE-core.sh UNINSTALL.sh \
@@ -92,8 +152,6 @@ for item in \
   cp -a "$SELF/$item" /opt/ywd-hotspot/app/
 done
 
-# Ship only the small WebP badge to the appliance; keep the large master artwork
-# in the repository rather than wasting Pi storage/runtime backups.
 install -d -m 0755 /opt/ywd-hotspot/app/assets/branding
 install -m 0644 "$SELF/assets/branding/ywd-hotspot-badge-256.webp" /opt/ywd-hotspot/app/assets/branding/ywd-hotspot-badge-256.webp
 
@@ -117,11 +175,8 @@ if [[ ! -f /etc/ywd-hotspot/config.json ]]; then python3 /opt/ywd-hotspot/app/li
   [[ "$a" =~ ^[Yy]$ ]] && python3 /opt/ywd-hotspot/app/lib/configure.py || python3 /opt/ywd-hotspot/app/lib/generate-config.py
 fi
 
-# Record provenance for the dashboard/About page.
 python3 /opt/ywd-hotspot/app/lib/build_info.py write --source-dir "$SELF" >/dev/null
 
-# A fresh install launched from a Git checkout becomes GitHub-managed
-# automatically. The live runtime remains a clean copy in /opt/ywd-hotspot/app.
 if git -C "$SELF" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   source_origin="$(git -C "$SELF" remote get-url origin 2>/dev/null || true)"
   case "$source_origin" in
@@ -144,7 +199,6 @@ fi
 echo; echo "Initial DMR ID database update (non-fatal if offline)..."
 python3 /opt/ywd-hotspot/app/lib/id-update.py --force || echo "[WARN] RadioID update failed; retry later."
 
-# Persistent journal remains enabled by default so crash evidence survives hard resets.
 read -r JOURNAL_ENABLED JOURNAL_MB < <(python3 - <<'PY'
 import json
 c=json.load(open('/etc/ywd-hotspot/config.json')); m=c.get('maintenance',{})
@@ -213,6 +267,7 @@ Control   : sudo ywd-hotspotctl
 Status    : ywd-hotspotctl status
 Source    : ywd-hotspotctl source
 Updates   : sudo ywd-hotspotctl update --check
+MMDVM     : $MMDVM_VARIANT
 
 Web WRITE controls are locked until you set a local control password:
   sudo ywd-hotspotctl web-password

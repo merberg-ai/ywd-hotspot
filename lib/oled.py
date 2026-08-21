@@ -37,7 +37,7 @@ ACTIVE_OLED = None
 FONT = {
     ' ':[0,0,0,0,0], '-':[8,8,8,8,8], '.':[0,96,96,0,0], '/':[32,16,8,4,2], ':':[0,54,54,0,0],
     '%':[35,19,8,100,98], '?':[2,1,81,9,6], '+':[8,8,62,8,8], '=':[20,20,20,20,20],
-    '0':[62,81,73,69,62], '1':[0,66,127,64,0], '2':[66,97,81,73,70], '3':[33,65,69,75,49],
+    '0':[62,81,73,69,62], '1':[0,66,127,64,0], '2':[66,97,81,73,70], '3':[33,65,69,75,49,],
     '4':[24,20,18,127,16], '5':[39,69,69,69,57], '6':[60,74,73,73,48], '7':[1,113,9,5,3],
     '8':[54,73,73,73,54], '9':[6,73,73,41,30],
     'A':[126,17,17,17,126], 'B':[127,73,73,73,54], 'C':[62,65,65,65,34], 'D':[127,65,65,34,28],
@@ -211,11 +211,19 @@ def lines_frame(rows):
 def first_boot_frame(state):
     setup = json_file(SETUP_RUNTIME)
     code = str(setup.get("code") or "")
-    return lines_frame([
-        "YWD HOTSPOT OS", "M4 FIRST BOOT", "SETUP REQUIRED",
-        f"CODE {code}" if code else "SETUP STARTING", str(state.get("ssid") or ""),
-        str(state.get("ip") or "NO IP"), "HTTPS PORT 8443", "RF OFF",
-    ])
+    ip = str(state.get("ip") or ip_addr() or "")
+    f = Frame()
+    f.center(0, "SETUP CODE")
+    if code:
+        # Six digits at scale 3 are about 108 px wide: intentionally dominant
+        # and readable without needing to put your face on the OLED.
+        f.center(11, code, 3)
+    else:
+        f.center(14, "STARTING", 2)
+    f.center(38, ip or "WAITING FOR IP")
+    f.center(48, "HTTPS :8443")
+    f.center(56, "RF OFF")
+    return f
 
 
 def network_frame(state, runtime=True):

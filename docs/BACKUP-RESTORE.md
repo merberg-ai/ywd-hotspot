@@ -1,6 +1,8 @@
 # YWD-Hotspot encrypted backup / restore
 
-Alpha18.2 adds a portable `.ywdsettings` format for rebuilding a hotspot after a fresh OS flash without manually re-entering the appliance configuration.
+[← Docs index](README.md) · [Installation](INSTALL.md) · [Upgrading](UPGRADING.md) · [Security](../SECURITY.md)
+
+YWD-Hotspot provides a portable `.ywdsettings` format for rebuilding a hotspot after a fresh OS flash without manually re-entering the appliance configuration.
 
 The design goal is:
 
@@ -44,7 +46,7 @@ Uploaded `.ywdplugin` executable/package source is **not embedded** in `.ywdsett
 
 A `.ywdsettings` file is an authenticated encrypted envelope, not plaintext configuration.
 
-Alpha18.2 uses:
+The current `.ywdsettings` v1 format uses:
 
 ```text
 passphrase
@@ -126,7 +128,7 @@ If no usable Wi-Fi profile exists on the new image:
 6. browse https://ywd-hotspot.local:8443/
 ```
 
-Alpha18.2 then adds this choice to the secure setup page:
+The secure setup page then provides:
 
 ```text
 RESTORE FROM .YWDSETTINGS BACKUP
@@ -147,7 +149,7 @@ A successful first-boot restore writes the normal setup-complete state and then 
 
 ### Why Wi-Fi onboarding still comes first
 
-The existing OS architecture intentionally gives the network manager ownership of the temporary setup AP and does not expose the privileged appliance-restore service there. Alpha18.2 keeps that boundary intact.
+The existing OS architecture intentionally gives the network manager ownership of the temporary setup AP and does not expose the privileged appliance-restore service there. The current restore design keeps that boundary intact.
 
 An included Wi-Fi profile is useful when importing on an already-running system or retaining another saved profile, but it does not currently eliminate the initial network-onboarding step on a completely blank image.
 

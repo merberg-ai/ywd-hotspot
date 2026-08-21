@@ -25,6 +25,26 @@
 }
 .system-state-row b{font-size:10px;letter-spacing:.04em;text-align:right}
 .system-runtime-card .buttonrow{align-items:center}
+.system-dmrid-card{border-color:#174553}
+.dmrid-badge{font-size:10px;letter-spacing:.08em;font-weight:700}
+.dmrid-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0 18px;
+  margin:10px 0 12px;
+  border-top:1px solid #17333d;
+}
+.dmrid-grid>div{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  padding:8px 0;
+  border-bottom:1px solid #122c35;
+}
+.dmrid-grid span{color:var(--muted);font-size:9px;letter-spacing:.06em}
+.dmrid-grid b{font-size:10px;text-align:right;overflow-wrap:anywhere}
+.dmrid-actions{margin-top:4px}
 .system-power-card{border-color:#59313a;background:linear-gradient(180deg,#1a0d12ee,#0d090cee)}
 .system-power-card .card-title{color:var(--bad)}
 .system-power-actions .btn{min-width:132px}
@@ -33,5 +53,7 @@
   .bm-quick-actions{width:100%;justify-content:flex-start}
   .ywd-quick-btn{flex:0 1 auto!important;width:auto}
   .system-state-row{align-items:flex-start;flex-direction:column}
+  .dmrid-grid{grid-template-columns:1fr}
+  .dmrid-actions .btn{width:100%}
   .system-power-actions .btn{min-width:0;width:100%}
 }

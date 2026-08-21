@@ -1,8 +1,11 @@
 # 🎧 Passive DMR Voice / RX Monitor Core Path
 
-[← Docs index](README.md) · [Architecture](ARCHITECTURE.md) · [Plugins](PLUGINS.md) · [Plugin UI](PLUGIN-UI.md)
+[← Docs index](README.md) · [Building](BUILDING.md) · [Architecture](ARCHITECTURE.md) · [Plugins](PLUGINS.md) · [Plugin UI](PLUGIN-UI.md)
 
 YWD-Hotspot's passive DMR voice path exists to let an isolated browser plugin observe received DMR voice without ever becoming the modem owner.
+
+> [!IMPORTANT]
+> RX Monitor's passive voice-frame path uses a **patched build of the exact pinned MMDVM-Host commit**. Normal hotspot operation does not require RX Monitor, and ordinary YWD-Hotspot application updates do **not** recompile MMDVM-Host or DMRGateway.
 
 ## Safety invariant
 
@@ -51,11 +54,12 @@ MMDVM modem / BrandMeister
 
 The Pi performs no AMBE speech synthesis. Expensive decode/playout work happens on the browser device.
 
-## Upstream pin and patch
+## Upstream pin and YWD patch
 
-Pinned MMDVM-Host commit:
+Pinned MMDVM-Host repository/commit:
 
 ```text
+https://github.com/g4klx/MMDVM-Host.git
 dea6e9b2c35857fe6f904c5092bebadb86cbf079
 ```
 
@@ -67,20 +71,23 @@ lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
 
 The patch mirrors accepted `DT_VOICE_SYNC` / `DT_VOICE` frames to the loopback observation topic while normal MMDVM processing continues.
 
-## Build/activation model
+This patch is intentionally narrow: it is an observation tap, not a second RF stack and not permission for a plugin to transmit.
+
+## Build / activation model
 
 Preparing the patched MMDVM binary is deliberately **not** part of ordinary RF startup or normal application-update critical path.
 
-```text
-ywd-mmdvm-voice-build.service
-  → low-priority background preparation
-  → exact pinned source + exact patch verification
-  → make -j1 / resumable compatible object build
-  → guarded binary install/activation
-  → fallback to previously working binary on failed activation
+On an installed hotspot:
+
+```bash
+sudo systemctl start ywd-mmdvm-voice-build.service
 ```
 
-The original Pi Zero can take a long time to compile MMDVM-Host, so compiler work must never block normal hotspot startup or the detached application updater.
+Follow progress:
+
+```bash
+sudo journalctl -fu ywd-mmdvm-voice-build.service
+```
 
 Status helper:
 
@@ -88,7 +95,19 @@ Status helper:
 sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
 ```
 
-Normal application updates do not recompile MMDVM-Host.
+The service runs:
+
+```text
+/usr/bin/python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py ensure
+```
+
+and is configured as a low-priority one-shot job with a long timeout because the original Pi Zero W is a single-core ARMv6 machine.
+
+The helper verifies the pinned source and exact patch identity before reusing an interrupted build tree, performs the build conservatively, guards activation, and retains a fallback to the previously working MMDVM-Host binary if activation fails.
+
+Normal application updates do **not** recompile MMDVM-Host.
+
+See **[BUILDING.md](BUILDING.md)** for the step-by-step build guide.
 
 ## Voice-frame envelope
 
@@ -170,20 +189,9 @@ The browser's AudioContext may run at 44.1/48 kHz; the recovered voice PCM remai
 
 ## Physical validation status
 
-Physically exercised on the reference Pi Zero + duplex MMDVM setup:
+The passive RX path has been exercised on the reference Pi Zero + duplex MMDVM setup with normal MMDVM-Host/DMRGateway ownership preserved, including duplex TS1/TS2 operation, RF/network voice-frame recovery, browser-side frame recovery, and live browser audio tests.
 
-- duplex TS1 and TS2 normal DMR operation while the passive observer is present;
-- network-path voice-frame recovery;
-- RF-path voice-frame recovery;
-- 49-bit AMBE+2 recovery with zero gaps/unrecoverable frames on clean captures;
-- offline AMBE→PCM intelligibility proof;
-- browser decoder playback from captured frames;
-- live browser audio from busy network talkgroups;
-- stable AUTO operation on busy Worldwide traffic;
-- live RF-side browser audio heard successfully;
-- normal RF/DMRGateway ownership unchanged.
-
-The passive RX path is therefore functionally proven. Remaining work before a public RX Monitor release is primarily packaging/source canonicalization and the separate mbelib/Wasm distribution/licensing decision—not RF-path architecture.
+The core observation architecture is therefore established. RX Monitor packaging/browser decoder distribution remains a separate concern from the RF ownership model and from normal hotspot operation.
 
 ## Capture diagnostics
 

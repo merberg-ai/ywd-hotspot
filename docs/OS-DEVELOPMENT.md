@@ -1,65 +1,83 @@
 # YWD-Hotspot OS development
 
-[Project README](../README.md) · [OS builder](../os/README.md) · [Architecture](ARCHITECTURE.md)
+[Project README](../README.md) · [Building](BUILDING.md) · [OS builder](../os/README.md) · [Architecture](ARCHITECTURE.md)
 
 YWD-Hotspot keeps the application and appliance-image source in one repository while preserving a strict runtime boundary: normal installs and updates do not depend on `os/`, but fresh images are built from the exact application commit that contains the OS builder.
 
-## Branch model
+## Current branch model
 
-Normal application development stays on `dev`. Large OS changes should use a temporary branch cut from the current `dev`, be physically validated, and then merge back as focused source changes.
+Application release work and image-builder work stay separated:
 
 ```text
-main
-  └─ dev
-      ├─ known-good checkpoints
-      ├─ temporary dev-os-* integration branches
-      └─ future feature branches such as dev-plugins
+main                     stable/promoted release line
+  ↑
+dev                      physically accepted app integration line
+
+
+dev-builder              isolated image/builder line
 ```
 
-The historical long-lived `dev-os` branch is reference/history. Do not merge it wholesale into current `dev`.
+The completed `dev-release-0.1.0` RC branch is historical release-hardening context. Do not merge builder/image experimentation into a release merely because both ultimately ship the same application. After the final 0.1.0 release state is proven, synchronize it forward into `dev-builder` intentionally before resuming image work.
 
-## Current integration workflow
+## Current builder entry points
 
-The unified source work was started from current `dev` on `dev-os-integrate`. The proven `os/` subtree was imported, then modernized so the image consumes current root application assets instead of stale copies.
+- `os/builder/DOCTOR.sh` — preflight the builder machine/source tree
+- `os/builder/BUILD.sh` — canonical image build
+- `os/builder/CONFIGURE-WIFI.sh` — optional local build-time Wi-Fi settings
 
-Important changes in the unified builder:
+Root `VERSION`, application code, WebUI, systemd units, console/branding assets, and canonical config generation are consumed from the same source tree.
 
-- `os/builder/BUILD.sh` is the canonical entry point.
-- `BUILD-M4.sh` is only a compatibility alias.
-- tracked uncommitted source blocks a build.
-- root `VERSION`, app code, WebUI, services and helper layout are packaged from the current commit.
-- root `lib/oled.py` is injected as the headless OLED renderer.
-- root console/branding assets are injected into the image polish stage.
-- factory config is generated from current `lib/config_model.py` rather than a hand-maintained old schema copy.
-- first-boot installs current split admin/setup/update helper paths.
-- the managed Git checkout uses a full branch refspec.
-- experimental build branches fall back to `dev` as the future normal application update channel.
+## Easy image build
 
-## Build
-
-On the builder:
+On the Linux builder machine:
 
 ```bash
-cd ~/ywd-hotspot   # or the repository checkout you use for image builds
+cd ~/ywd-hotspot
+
 git status --short
 git branch --show-current
+
 bash os/builder/DOCTOR.sh
+```
+
+Do not start a long image build until the doctor passes.
+
+Then:
+
+```bash
 bash os/builder/BUILD.sh
 ```
 
-The builder runs syntax/preflight checks before pi-gen and caps MMDVM-Host/DMRGateway compilation at four jobs.
-
-Build-time Wi-Fi remains optional:
+Build-time Wi-Fi is optional:
 
 ```bash
 bash os/builder/CONFIGURE-WIFI.sh
 ```
 
-Local credentials, SSH keys, work directories, pi-gen checkout and deploy images are ignored under `os/local`, `os/work`, `os/.pi-gen` and `os/deploy`.
+The builder performs syntax/preflight checks before pi-gen and uses bounded parallelism for the heavier radio-source builds.
+
+Local credentials, SSH keys, work directories, pi-gen checkout and deploy images are ignored under the builder's local/work/deploy paths and should not be committed.
+
+## Radio build baseline inside the image
+
+The image consumes the same exact pins as a normal source install:
+
+```text
+MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
+The optional RX Monitor/passive voice tap uses the same YWD patch shipped by the application:
+
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
+
+That optional patched binary is still treated as passive observation infrastructure and must not become a second modem owner. Normal application updates remain independent of long MMDVM compilation.
 
 ## Physical acceptance checklist
 
-Do not merge an OS integration branch back to `dev` merely because the image compiled. Validate the target appliance:
+Do not call an image known-good merely because it compiled. Validate the actual target appliance:
 
 ```text
 [ ] builder doctor passes
@@ -78,23 +96,36 @@ Do not merge an OS integration branch back to `dev` merely because the image com
 [ ] handheld -> hotspot RX works
 [ ] hotspot -> handheld TX works
 [ ] Parrot succeeds
-[ ] normal talkgroup RX succeeds
+[ ] duplex TS1 succeeds when using duplex hardware
+[ ] duplex TS2 succeeds when using duplex hardware
 [ ] ywd-headless-oled.service active
-[ ] ywd-oled.service inactive
+[ ] legacy ywd-oled.service inactive on YWD-Hotspot OS
 [ ] reboot preserves setup/config
 [ ] CLI update check/dry-run works
 [ ] About-page application update works
+[ ] another reboot preserves the fully configured state
 ```
 
-An image build is an installation artifact, not the ongoing application update mechanism. Once installed, YWD-Hotspot should continue receiving normal application updates from the saved `main` or `dev` channel without another SD-card image build.
+If the image is intended to ship the passive RX voice feature as ready-to-use, separately verify the guarded voice-tap build/status and normal RF operation while the observer infrastructure is present.
+
+## Image vs application updates
+
+An image build is an installation artifact, not the ongoing application update mechanism. Once installed, YWD-Hotspot should receive normal application updates from its saved update channel without another SD-card image build.
+
+The runtime split remains:
+
+```text
+/opt/ywd-hotspot/repo    managed Git source
+/opt/ywd-hotspot/app     deployed runtime
+```
 
 ## Promotion
 
-After physical validation:
+After an image build is physically validated:
 
-1. merge the focused `dev-os-integrate` source into `dev`
-2. freeze a new integrated known-good checkpoint
-3. leave the historical `dev-os` branch untouched for reference
-4. branch experimental work such as `dev-plugins` from the new unified `dev`
+1. record the exact application/builder commit;
+2. freeze a known-good builder/image checkpoint;
+3. keep release/app promotion decisions separate from image experiments;
+4. only merge/synchronize the focused builder changes into the intended active line after acceptance.
 
-This avoids carrying two divergent application trees while keeping risky image work away from the daily-driver development branch until it is proven.
+This keeps risky image work away from the daily-driver release path while still producing an image from the same canonical application source.

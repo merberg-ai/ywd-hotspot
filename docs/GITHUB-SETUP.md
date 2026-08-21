@@ -1,6 +1,6 @@
 # 🌿 GitHub / Development Notes
 
-[← Docs index](README.md) · [Project README](../README.md) · [Repository Policy](REPOSITORY.md) · [Upgrading](UPGRADING.md)
+[← Docs index](README.md) · [Project README](../README.md) · [Building](BUILDING.md) · [Repository Policy](REPOSITORY.md) · [Upgrading](UPGRADING.md)
 
 Canonical repository:
 
@@ -8,40 +8,43 @@ Canonical repository:
 https://github.com/merberg-ai/ywd-hotspot
 ```
 
-## Branch model
+## Current branch model
 
 | Branch | Purpose |
 |---|---|
-| `main` | promoted/conservative project line |
+| `main` | promoted/conservative release line; current stable 0.1.0 |
 | `dev` | physically accepted integrated development baseline |
-| `dev-plugins` | next-development / experimental integration line |
+| `dev-builder` | isolated OS image/builder work |
+| `dev-plugins` | plugin/framework development line |
 
-`dev-plugins` may advance with scoped work. A physically accepted state can be fast-forwarded into `dev`; `main` moves only through a separate release decision.
+The completed `dev-release-0.1.0` branch is historical release-hardening context. It was physically accepted, merged into `dev`, then promoted to `main`. It is not a persistent update channel. Builder/image work remains isolated until intentionally synchronized.
 
-Some historical Alpha checkpoints still exist as legacy `checkpoint-*` branches. The long-term policy is to preserve known-good/divergent history using immutable checkpoint/archive references and remove redundant temporary branches only after their commit is safely preserved.
+Historical `checkpoint-*` branches are rollback/history references, not active development lines.
 
 ## Clone
 
-Promoted line:
+Stable promoted line:
 
 ```bash
 git clone https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
-Tested development line:
+Accepted development line:
 
 ```bash
 git clone --branch dev https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
-Next-development line:
+Builder/image line:
 
 ```bash
-git clone --branch dev-plugins https://github.com/merberg-ai/ywd-hotspot.git
+git clone --branch dev-builder https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
+
+The old RC branch can still be cloned deliberately for archaeology/recovery, but it is not the supported install path for 0.1.0.
 
 ## Source vs deployed runtime
 
@@ -53,6 +56,15 @@ cd ywd-hotspot
 Do not use the managed appliance checkout as a casual development tree. Develop in a normal clone and let the updater keep its dirty-tree safety guard.
 
 Non-secret source provenance is recorded in `/etc/ywd-hotspot/build-info.json` and exposed by `ywd-hotspotctl source` plus the WebUI.
+
+Important provenance distinction:
+
+```text
+branch/ref       where this exact candidate came from
+update channel   persistent operator-selected update line
+```
+
+For example, an explicit checkpoint or temporary-branch test can report that exact branch/ref while the saved update channel remains `main` or `dev` as selected by the operator.
 
 ## Never commit runtime secrets
 
@@ -88,20 +100,15 @@ Python:
 
 ```bash
 python3 -m py_compile lib/*.py
-```
-
-Current source also includes:
-
-```bash
 python3 lib/candidate_validate.py .
 ```
 
-That check is capability-based: plugin UI/package-update, passive voice, and telemetry runtime markers require their complete companion sets regardless of branch name.
-
-If Node.js is available on the development machine:
+If Node.js is available:
 
 ```bash
-for js in web/*.js; do node --check "$js"; done
+for js in web/*.js; do
+  node --check "$js"
+done
 ```
 
 OS-builder preflight:
@@ -110,14 +117,35 @@ OS-builder preflight:
 bash os/builder/DOCTOR.sh
 ```
 
+See **[BUILDING.md](BUILDING.md)** for the complete easy-to-follow build paths.
+
 Changes touching systemd, sudoers, config generation, updater/install behavior, plugin lifecycle, OLED ownership, passive voice/telemetry, or RF behavior still require a real Pi test before being called known-good.
+
+## Pinned RF and RX Monitor patch
+
+Current pins live in `pins.env`:
+
+```text
+MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
+The optional RX Monitor/passive voice path uses:
+
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
+
+Do not combine a radio-stack pin or patch move with unrelated UI/docs/plugin work. The voice patch mirrors accepted DMR voice frames to the trusted loopback observation path; it does not transfer modem ownership to the plugin.
+
+Normal application updates do **not** recompile MMDVM-Host or DMRGateway. The optional patched voice binary is prepared through `ywd-mmdvm-voice-build.service` and its guarded helper.
 
 ## Development workflow
 
 ```text
-choose active parent
+choose exact verified parent
    ↓
-make scoped change on next-development line / temporary branch
+make one scoped change on the appropriate development/release branch
    ↓
 static + capability validation
    ↓
@@ -125,12 +153,40 @@ compare exact changed-file scope
    ↓
 Pi Zero hardware test when runtime behavior changed
    ↓
-publish/promote intentionally
+freeze a rollback checkpoint after acceptance
    ↓
-preserve accepted checkpoint when useful
+promote intentionally
    ↓
 clean temporary history only after preservation
 ```
+
+## Release workflow
+
+The 0.1.0 release established the current promotion pattern:
+
+```text
+main
+  ↑
+dev
+  └── temporary release branch
+          release hardening only
+          ↓
+       physical release-candidate acceptance
+          ↓
+       merge → dev
+          ↓
+       promotion sanity test
+          ↓
+       promote → main
+
+
+dev-builder
+  stays isolated during release hardening
+```
+
+The completed 0.1.0 path was `dev-release-0.1.0` → accepted RC1 → `dev` → `main`. Future release branches should be temporary and scoped the same way rather than becoming permanent update channels.
+
+Release candidate work should not absorb new feature development merely because a temporary release branch exists.
 
 ## Update trust boundary
 
@@ -142,21 +198,12 @@ Keep these protections unless a stronger replacement is demonstrated:
 - capability-based required-file validation;
 - shell/Python syntax validation;
 - protected pre-update backup;
-- RF-state preservation;
+- RF/service-state preservation;
+- coherent privileged admin-dispatch generation before dashboard restart;
 - plugin quiesce/restore safety;
 - managed checkout advanced only after successful deployment.
 
 Convenience is not a reason to make update failures destructive.
-
-## Upstream RF pins
-
-Do not combine an MMDVM-Host/DMRGateway pin move with unrelated UI/docs/plugin work. Current pins live in:
-
-```text
-pins.env
-```
-
-A radio-stack pin change alters the calibration/stability baseline and should be isolated and regression-tested.
 
 ## Repository layout
 
@@ -174,20 +221,6 @@ web/        static WebUI
 ```
 
 Root `INSTALL.sh`, `UPDATE.sh`, `GITHUB-UPDATE.sh`, migration, and uninstall wrappers are stable public entry points and intentionally remain at repository root.
-
-## Suggested repository metadata
-
-Description:
-
-```text
-Lightweight Raspberry Pi + MMDVM DMR hotspot stack with simplex/duplex BrandMeister controls, sandboxed plugins, browser RX monitoring, diagnostics and safe updates.
-```
-
-Topics:
-
-```text
-ham-radio dmr mmdvm raspberry-pi raspberry-pi-zero brandmeister hotspot amateur-radio
-```
 
 ## License
 

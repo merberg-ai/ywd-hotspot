@@ -35,6 +35,24 @@ for f in UPDATE.sh UPDATE-core.sh INSTALL.sh INSTALL-core.sh GITHUB-UPDATE.sh GI
 done
 python3 -m py_compile "$SELF"/lib/*.py
 
+# Install the privileged bridge as one coherent generation. Newer runtimes use
+# admin_dispatch.sh as the public sudo entry point and keep the historical
+# admin.py helper behind ywd-hotspot-admin-core. Older installations without a
+# dispatcher retain the legacy monolithic layout for rollback compatibility.
+install_admin_bridge_from(){
+  local root="$1"
+  [[ -f "$root/lib/admin.py" ]] || return 0
+  if [[ -f "$root/lib/admin_dispatch.sh" ]]; then
+    install -o root -g root -m 0755 "$root/lib/admin.py" /usr/local/libexec/ywd-hotspot-admin-core
+    [[ -f "$root/lib/setup_admin.py" ]] && install -o root -g root -m 0755 "$root/lib/setup_admin.py" /usr/local/libexec/ywd-hotspot-setup-admin
+    [[ -f "$root/lib/update_admin.py" ]] && install -o root -g root -m 0755 "$root/lib/update_admin.py" /usr/local/libexec/ywd-hotspot-update-admin
+    [[ -f "$root/lib/update_runner.py" ]] && install -o root -g root -m 0755 "$root/lib/update_runner.py" /usr/local/libexec/ywd-update-runner
+    install -o root -g root -m 0755 "$root/lib/admin_dispatch.sh" /usr/local/libexec/ywd-hotspot-admin
+  else
+    install -o root -g root -m 0755 "$root/lib/admin.py" /usr/local/libexec/ywd-hotspot-admin
+  fi
+}
+
 # Capture the current appliance state before replacing units/scripts.
 mmdvm_active=0; gateway_active=0; dashboard_active=0; oled_active=0; activity_active=0; dmrid_active=0
 mmdvm_enabled=0; gateway_enabled=0; dashboard_enabled=0; oled_enabled=0; activity_enabled=0; dmrid_enabled=0
@@ -79,7 +97,7 @@ rollback(){
 
   if [[ -d /opt/ywd-hotspot/app ]]; then
     [[ -f /opt/ywd-hotspot/app/bin/ywd-hotspotctl ]] && install -m 0755 /opt/ywd-hotspot/app/bin/ywd-hotspotctl /usr/local/sbin/ywd-hotspotctl
-    [[ -f /opt/ywd-hotspot/app/lib/admin.py ]] && install -o root -g root -m 0755 /opt/ywd-hotspot/app/lib/admin.py /usr/local/libexec/ywd-hotspot-admin
+    install_admin_bridge_from /opt/ywd-hotspot/app
     [[ -f /opt/ywd-hotspot/app/sudoers/ywd-hotspot ]] && install -o root -g root -m 0440 /opt/ywd-hotspot/app/sudoers/ywd-hotspot /etc/sudoers.d/ywd-hotspot
     for unit in /opt/ywd-hotspot/app/systemd/*.service /opt/ywd-hotspot/app/systemd/*.timer; do
       [[ -e "$unit" ]] && install -m 0644 "$unit" "/etc/systemd/system/$(basename "$unit")"
@@ -142,7 +160,7 @@ chmod +x \
   /opt/ywd-hotspot/app/bin/ywd-hotspotctl /opt/ywd-hotspot/app/bin/ywd-hotspotctl-core \
   /opt/ywd-hotspot/app/bin/ywd-ui.sh /opt/ywd-hotspot/app/lib/*.py /opt/ywd-hotspot/app/lab/mmdvm-diag.sh
 install -m 0755 /opt/ywd-hotspot/app/bin/ywd-hotspotctl /usr/local/sbin/ywd-hotspotctl
-install -o root -g root -m 0755 /opt/ywd-hotspot/app/lib/admin.py /usr/local/libexec/ywd-hotspot-admin
+install_admin_bridge_from /opt/ywd-hotspot/app
 install -o root -g root -m 0440 "$SELF/sudoers/ywd-hotspot" /etc/sudoers.d/ywd-hotspot
 if command -v visudo >/dev/null 2>&1; then visudo -cf /etc/sudoers.d/ywd-hotspot >/dev/null; fi
 for unit in "$SELF"/systemd/*.service "$SELF"/systemd/*.timer; do

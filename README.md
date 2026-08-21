@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="#quick-start">Install</a> ·
-  <a href="#branch-model">Branches</a> ·
+  <a href="docs/BUILDING.md">Build</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="docs/UPGRADING.md">Updates</a> ·
   <a href="SECURITY.md">Security</a>
@@ -17,14 +17,14 @@
 ---
 
 > [!IMPORTANT]
-> **Development status:** YWD-Hotspot is alpha software. The exact build is defined by [`VERSION`](VERSION). `main` is the conservative/promoted line, `dev` is the physically accepted integration baseline, and `dev-plugins` is the next-development line.
+> **Release status:** `0.1.0` is the first stable YWD-Hotspot release. The release candidate was physically acceptance-tested on the target Pi Zero W + duplex MMDVM hardware before promotion through `dev` to `main`. The exact installed build is always defined by [`VERSION`](VERSION) plus the Git branch/ref and commit shown by `ywd-hotspotctl source` and the About page.
 
 > [!WARNING]
 > The built-in WebUI is plain HTTP for a trusted LAN. Do **not** forward the dashboard port directly to the public Internet.
 
 ## What YWD-Hotspot is
 
-YWD-Hotspot is a purpose-built DMR hotspot stack for small Raspberry Pi systems—especially the original **Raspberry Pi Zero W**. The RF path stays on pinned upstream **MMDVM-Host** and **DMRGateway**, while YWD-Hotspot provides a lightweight WebUI, CLI, BrandMeister controls, diagnostics, calibration, OLED presentation, passive telemetry/voice observation, safe GitHub-managed updates, and a sandboxed plugin framework.
+YWD-Hotspot is a purpose-built DMR hotspot stack for small Raspberry Pi systems—especially the original **Raspberry Pi Zero W**. The RF path stays on pinned upstream **MMDVM-Host** and **DMRGateway**, while YWD-Hotspot adds a lightweight WebUI, CLI, BrandMeister controls, diagnostics, calibration, OLED presentation, passive telemetry/voice observation, safe GitHub-managed updates, RadioID maintenance, and a sandboxed plugin framework.
 
 The design rule is simple: **the Pi does radio and small trusted state collection; the browser does the expensive presentation work.** Dashboard, OLED, telemetry, or plugin failures must not take down normal DMR operation.
 
@@ -39,6 +39,7 @@ The design rule is simple: **the Pi does radio and small trusted state collectio
 | RX Monitor | passive browser-side DMR receive decoding through a narrow core capability; no plugin RF ownership |
 | Calibration | baseline save/restore and repeated BER-driven RXOffset workflow |
 | Health | service, Wi-Fi, temperature, journal, diagnostics and support bundle tools |
+| RadioID | local DMR ID database health, scheduled due-checks, and manual update controls |
 | Updates | staged validation, protected backup, detached updater, plugin-state preservation and rollback attempt |
 | OS | reproducible Raspberry Pi OS image builder from the same source tree |
 
@@ -46,7 +47,7 @@ No Node.js runtime, React/Vue, SQL server, Redis, or Docker is required on the h
 
 ## Hardware target
 
-Primary development budget:
+Primary development/test budget:
 
 - original Raspberry Pi Zero W / Zero WH
 - Raspberry Pi OS Lite 32-bit / Raspbian 13 (trixie)
@@ -59,7 +60,7 @@ Other Pi models may work, but the original Zero W remains the performance target
 
 ## Quick start
 
-### Promoted `main`
+The stable release line is `main`:
 
 ```bash
 sudo apt update
@@ -70,25 +71,60 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-### Tested development `dev`
+The installer performs a fresh pinned MMDVM-Host/DMRGateway build when needed, preserves explicit RF-start safety, and establishes GitHub-managed application updates. On a Pi Zero, the first radio-stack compile can take a while.
+
+Full walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)**  
+Build/developer guide: **[docs/BUILDING.md](docs/BUILDING.md)**
+
+## Building: the short version
+
+For most users, **`INSTALL.sh` is the build system**. It checks out the exact upstream radio commits from `pins.env`, builds them with Pi-friendly settings, deploys the application, installs services, and leaves RF enablement as an explicit operator decision.
+
+For source validation without installing anything:
 
 ```bash
-git clone --branch dev https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-sudo ./INSTALL.sh
+python3 lib/candidate_validate.py .
+python3 -m py_compile lib/*.py
+bash -n INSTALL.sh INSTALL-core.sh UPDATE.sh UPDATE-core.sh GITHUB-UPDATE.sh GITHUB-UPDATE-core.sh
 ```
 
-### Next-development `dev-plugins`
+For complete appliance-image builds:
 
 ```bash
-git clone --branch dev-plugins https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
-sudo ./INSTALL.sh
+bash os/builder/DOCTOR.sh
+bash os/builder/BUILD.sh
 ```
 
-A fresh install builds the pinned radio components with `make -j1`; that can take a while on a Pi Zero. Normal YWD application updates do **not** rebuild them. The installer also does not start RF unless the operator explicitly enables it.
+See **[docs/BUILDING.md](docs/BUILDING.md)** for the easy step-by-step build paths.
 
-Full walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)**
+## Patched MMDVM-Host for RX Monitor
+
+Normal DMR operation uses the pinned MMDVM-Host baseline. The optional **RX Monitor / passive DMR voice** path needs a small YWD patch that mirrors accepted DMR voice frames to a **loopback-only observation topic** while MMDVM-Host remains the sole modem/RF owner.
+
+Pinned upstream MMDVM-Host:
+
+```text
+repo    https://github.com/g4klx/MMDVM-Host.git
+commit  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+```
+
+YWD voice-tap patch:
+
+```text
+lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+```
+
+The patched binary is prepared through the guarded background build path:
+
+```bash
+sudo systemctl start ywd-mmdvm-voice-build.service
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_voice_build.py status
+sudo journalctl -u ywd-mmdvm-voice-build.service -f
+```
+
+On the original Pi Zero this compile can be slow, so it is intentionally de-prioritized and kept outside normal RF startup and ordinary application updates. **Normal YWD-Hotspot updates do not recompile MMDVM-Host or DMRGateway.** The RX Monitor plugin never opens the modem serial port and never gets RF TX authority.
+
+Details: **[docs/DMR-VOICE.md](docs/DMR-VOICE.md)** and **[docs/BUILDING.md](docs/BUILDING.md)**.
 
 ## Updating
 
@@ -109,7 +145,7 @@ sudo ywd-hotspotctl update
 
 An unlocked WebUI also provides **ABOUT → SOFTWARE UPDATE** with detached progress that survives dashboard restart.
 
-Update channels:
+Git branch/ref provenance is intentionally separate from the persistent update channel. Normal stable appliances should follow `main`; explicit checkpoint or temporary-branch tests do not need to redefine the long-term update channel.
 
 ```bash
 sudo ywd-hotspotctl update-channel main
@@ -117,21 +153,20 @@ sudo ywd-hotspotctl update-channel dev
 sudo ywd-hotspotctl update-channel dev-plugins
 ```
 
-The updater verifies the canonical origin, refuses dirty managed source, stages the candidate outside the live app, validates the candidate's actual runtime capabilities, preserves RF policy, creates protected backups, quiesces/restores plugin state where appropriate, and advances the managed checkout only after a successful deployment.
+The updater verifies canonical origin, refuses dirty managed source, stages and validates the candidate before touching the live stack, preserves RF/service policy, creates protected backups, keeps the split privileged admin bridge coherent, quiesces/restores plugin state where appropriate, and advances managed source only after a successful deployment.
 
 See **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 
 ## Branch model
 
-Long-lived development branches are intentionally few:
-
 | Branch | Purpose |
 |---|---|
-| `main` | promoted/conservative line |
+| `main` | conservative/promoted releases; `0.1.0` stable line |
 | `dev` | physically accepted integrated development baseline |
-| `dev-plugins` | next-development / experimental integration line |
+| `dev-builder` | isolated OS image/builder work |
+| `dev-plugins` | plugin/framework development line |
 
-The policy target is immutable checkpoint/archive tags for historical milestones. The repository still carries some legacy `checkpoint-*` branches from rapid Alpha development; those are historical cleanup candidates, not additional active development lines.
+Temporary release/feature branches are not additional release channels. The completed `dev-release-0.1.0` RC branch and its `checkpoint-release-*` refs remain useful historical/rollback references, while new accepted release work continues to flow deliberately through `dev` and then `main`.
 
 See **[docs/REPOSITORY.md](docs/REPOSITORY.md)** and **[docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md)**.
 
@@ -141,24 +176,22 @@ The plugin subsystem is optional. Master OFF must return the appliance to normal
 
 Current rules include:
 
-- uploading verifies/reviews a package before any installation action
-- install and enable are separate operator decisions
-- same-ID package updates are explicit transactional operations with rollback on failure
-- uploaded executable service and browser-UI plugins require a trusted Ed25519 signature
-- signer/kind/capability changes are checked during replacement
-- service plugins run through a restrictive shared systemd sandbox
-- UI plugins run in an isolated iframe with a narrow trusted MessageChannel bridge
-- no plugin gets arbitrary sudo, RF serial ownership, broad device access, RF TX authority, or an independent MMDVM instance
-- plugin state/config/data is separate from canonical hotspot configuration
-- core application updates quiesce and restore only previously valid plugin intent
+- upload verifies/reviews a package before installation;
+- install and enable are separate operator decisions;
+- same-ID package updates are explicit transactional operations with rollback on failure;
+- uploaded executable service and browser-UI plugins require a trusted Ed25519 signature;
+- signer/kind/capability changes are checked during replacement;
+- service plugins run through a restrictive shared systemd sandbox;
+- UI plugins run in an isolated iframe with a narrow trusted MessageChannel bridge;
+- no plugin gets arbitrary sudo, RF serial ownership, broad device access, RF TX authority, or an independent MMDVM instance;
+- plugin state/config/data is separate from canonical hotspot configuration;
+- core application updates quiesce and restore only previously valid plugin intent.
 
-The old `system-info` and `service-heartbeat` proof packages remain in source temporarily as framework fixtures while their retirement path is cleaned up; they are not required by the architecture itself.
-
-Guides: **[Plugins](docs/PLUGINS.md)** · **[Plugin Packages](docs/PLUGIN-PACKAGES.md)** · **[Plugin UI](docs/PLUGIN-UI.md)** · **[Telemetry](docs/TELEMETRY.md)**
+Guides: **[Plugins](docs/PLUGINS.md)** · **[Plugin Packages](docs/PLUGIN-PACKAGES.md)** · **[Plugin UI](docs/PLUGIN-UI.md)**
 
 ## Passive DMR voice / RX Monitor
 
-MMDVM-Host remains the only modem/RF owner. The optional YWD voice tap mirrors accepted DMR voice frames to a loopback-only trusted path. Core turns that into a bounded capability-gated frame stream; the RX Monitor performs FEC/AMBE recovery and audio playback in the browser.
+MMDVM-Host remains the only modem/RF owner. The optional YWD voice tap mirrors accepted DMR voice frames to a loopback-only trusted path. Core turns that into a bounded capability-gated frame stream; RX Monitor performs FEC/AMBE recovery and audio playback in the browser.
 
 This architecture intentionally keeps AMBE-to-PCM work off the Pi Zero and gives plugins no direct serial, MQTT, network, or TX authority.
 
@@ -230,7 +263,7 @@ DMRGateway
   commit 2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
 
-Do not casually move these pins during unrelated UI/plugin/cleanup work.
+Do not casually move these pins during unrelated UI/plugin/docs/cleanup work. A pin move changes the tested RF/calibration baseline and requires its own physical regression pass.
 
 ## Documentation
 
@@ -238,18 +271,20 @@ Do not casually move these pins during unrelated UI/plugin/cleanup work.
 |---|---|
 | [Documentation index](docs/README.md) | find the right guide |
 | [Installation](docs/INSTALL.md) | fresh install and migration |
+| [Building](docs/BUILDING.md) | source validation, fresh radio build, patched RX voice build, OS image build |
 | [Upgrading](docs/UPGRADING.md) | channels, WebUI update, rollback/recovery |
 | [Architecture](docs/ARCHITECTURE.md) | RF/runtime boundaries and side services |
 | [Display](docs/DISPLAY.md) | WebUI instrumentation and OLED |
 | [Plugins](docs/PLUGINS.md) | plugin architecture and safety boundaries |
 | [Plugin Packages](docs/PLUGIN-PACKAGES.md) | `.ywdplugin` packaging/signing/update model |
 | [Plugin UI](docs/PLUGIN-UI.md) | browser plugin isolation/bridge |
-| [Passive DMR Voice](docs/DMR-VOICE.md) | RX frame bridge and browser decode path |
+| [Passive DMR Voice](docs/DMR-VOICE.md) | patched MMDVM voice tap, RX frame bridge and browser decode path |
 | [Telemetry](docs/TELEMETRY.md) | local MMDVM telemetry path |
 | [Talkgroups](docs/TALKGROUPS.md) | BrandMeister Talkgroup Manager |
 | [Calibration](docs/CALIBRATION.md) | BER-driven RX workflow |
-| [Repository Policy](docs/REPOSITORY.md) | branch/checkpoint/cleanup policy |
+| [Repository Policy](docs/REPOSITORY.md) | branch/checkpoint/release policy |
 | [Development](docs/GITHUB-SETUP.md) | clone, validation and source workflow |
+| [OS Development](docs/OS-DEVELOPMENT.md) | full image builder workflow |
 | [Security](SECURITY.md) | credentials and exposure rules |
 
 ## Project

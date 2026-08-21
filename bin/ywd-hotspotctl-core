@@ -26,6 +26,8 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 need_root(){ [[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo ywd-hotspotctl $*"; exit 1; }; }
+unit_exists(){ systemctl cat "$1" >/dev/null 2>&1; }
+oled_unit(){ if unit_exists ywd-headless-oled.service; then printf '%s\n' ywd-headless-oled.service; else printf '%s\n' ywd-oled.service; fi; }
 
 channel_value(){
   local c=""
@@ -44,12 +46,15 @@ PY
 }
 
 status(){
+  local ou
+  ou="$(oled_unit)"
   echo "YWD Hotspot $(cat "$APP/VERSION" 2>/dev/null || echo unknown)"
   printf "%-18s %s\n" "MMDVMHost" "$(systemctl is-active ywd-mmdvmhost.service 2>/dev/null || true)"
   printf "%-18s %s\n" "DMRGateway" "$(systemctl is-active ywd-dmrgateway.service 2>/dev/null || true)"
   printf "%-18s %s\n" "Dashboard" "$(systemctl is-active ywd-dashboard.service 2>/dev/null || true)"
   printf "%-18s %s\n" "Activity" "$(systemctl is-active ywd-activity.service 2>/dev/null || true)"
-  printf "%-18s %s\n" "OLED" "$(systemctl is-active ywd-oled.service 2>/dev/null || true)"
+  printf "%-18s %s\n" "OLED" "$(systemctl is-active "$ou" 2>/dev/null || true)"
+  printf "%-18s %s\n" "OLED owner" "$ou"
   python3 - <<'PY'
 import json
 try:
@@ -228,7 +233,25 @@ os.replace(t,p)
 PY
 }
 
-restart_running(){ need_root restart; python3 "$APP/lib/generate-config.py"; echo "Restarting only currently-running services..."; ga=0; systemctl is-active --quiet ywd-dmrgateway.service && ga=1 || true; ((ga)) && systemctl stop ywd-dmrgateway.service || true; systemctl try-restart ywd-mmdvmhost.service || true; ((ga)) && { sleep 1; systemctl start ywd-dmrgateway.service; }; systemctl try-restart ywd-activity.service ywd-oled.service || true; status; }
+restart_running(){
+  need_root restart
+  python3 "$APP/lib/generate-config.py"
+  echo "Restarting only currently-running services..."
+  local ga=0 ou oa=0
+  ou="$(oled_unit)"
+  systemctl is-active --quiet ywd-dmrgateway.service && ga=1 || true
+  systemctl is-active --quiet "$ou" && oa=1 || true
+  ((ga)) && systemctl stop ywd-dmrgateway.service || true
+  systemctl try-restart ywd-mmdvmhost.service || true
+  ((ga)) && { sleep 1; systemctl start ywd-dmrgateway.service; }
+  systemctl try-restart ywd-activity.service || true
+  if ((oa)); then
+    if ! printf '{"service":"oled"}\n' | "$ADMIN" service-restart >/dev/null; then
+      echo "[WARN] OLED restart failed; current owner: $ou"
+    fi
+  fi
+  status
+}
 start_rf(){ need_root start; echo "Verify antenna/frequency before RF start."; read -r -p "Type ENABLE-RF to start AND enable RF at boot: " a; [[ "$a" == ENABLE-RF ]] || { echo Cancelled.; return; }; set_autostart 1; python3 "$APP/lib/generate-config.py"; systemctl enable --now ywd-mmdvmhost.service; sleep 1; systemctl enable --now ywd-dmrgateway.service; printf '{}\n' | "$ADMIN" init-applied >/dev/null; status; }
 stop_rf(){ need_root stop; systemctl disable --now ywd-dmrgateway.service ywd-mmdvmhost.service || true; set_autostart 0; printf '{}\n' | "$ADMIN" init-applied >/dev/null; echo "RF/network path stopped and disabled at boot."; }
 backup(){ need_root backup; mkdir -p /var/backups/ywd-hotspot; out="/var/backups/ywd-hotspot/ywd-hotspot-$(date +%Y%m%d-%H%M%S).tar.gz"; tar -czf "$out" /etc/ywd-hotspot 2>/dev/null; chmod 600 "$out"; echo "Backup: $out"; echo "NOTE: protected backup contains credentials."; }

@@ -397,6 +397,11 @@
     const el = e.target.closest('button,[data-revert],[data-del-tg],[data-set-del]');
     if (!el || !document.body.contains(el) || overlay.contains(el)) return;
 
+    // Talkgroup Manager owns its own confirmations because it has the authoritative
+    // duplex/timeslot context. Do not intercept these controls in the generic layer.
+    if (el.id === 'dropDyn' || el.id === 'tgDropDynamic' || el.id === 'tgApplyPlan' ||
+        el.id === 'tgSaveSet' || el.matches('[data-set-del]')) return;
+
     // Leaving dirty Settings gets a themed in-app dialog. Browser close/reload
     // remains the native beforeunload prompt by browser design.
     if (el.matches('.tabs button')) {

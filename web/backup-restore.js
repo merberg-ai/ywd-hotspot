@@ -196,9 +196,14 @@
       const d=await api('/api/settings/import',{backup_b64:importB64,passphrase:el('backupPass').value,start_rf:!!el('backupStartRf').checked,restore_wifi:!!el('backupWifiRestore').checked,first_boot:false});
       const warns=(d.warnings||[]).length; const missing=(d.missing_plugins||[]).length;
       setBusy(false, 'RESTORE SETTINGS'); closeModal();
-      notify(`Settings restored${warns?` · ${warns} warning(s)`:''}${missing?` · ${missing} missing plugin package(s)`:''}`);
+      const restart=!!d.dashboard_restart_deferred;
+      notify(`Settings restored${warns?` · ${warns} warning(s)`:''}${missing?` · ${missing} missing plugin package(s)`:''}${restart?' · dashboard restart pending':''}`);
       importB64=null; importFile=null;
-      setTimeout(()=>location.reload(),1800);
+      const target=d.dashboard||location.href;
+      // When restored WebUI/instrumentation settings require a dashboard
+      // restart, the backend deliberately waits eight seconds so this request
+      // can finish. Follow the returned IP-first URL after that restart.
+      setTimeout(()=>{location.href=target}, restart?9500:1800);
     } catch(e) {
       setBusy(false, 'RESTORE SETTINGS'); modalError(e.message || 'Settings restore failed.', 'backupPass');
     }

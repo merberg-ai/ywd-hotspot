@@ -137,12 +137,31 @@ def set_hotspot_password(data):
 
 
 def config_apply(data):
-    # Alpha18.2.3: core_admin owns OLED arbitration. Its oled_owner.sh helper
-    # writes the canonical live renderer, retires the legacy unit non-blocking,
-    # and starts/stops the sole OS owner. Do not wrap it in a second stop/restart
-    # transition here; the old wrapper could time out after a successful apply
-    # and strand the WebUI in saved-but-not-applied state.
-    return core_admin.config_apply(data)
+    # Preserve the safety rule: Save & Apply may reconcile services that are
+    # already part of a running RF stack, but it must never start a stopped RF
+    # stack merely because BrandMeister was enabled in the form.
+    rf_was_running = core_admin.active("ywd-mmdvmhost.service")
+
+    # core_admin owns OLED arbitration and the canonical config/INI apply.
+    out = core_admin.config_apply(data)
+
+    bm_enabled = bool(core_admin.current().get("brandmeister", {}).get("enabled", True))
+    gateway_running = core_admin.active("ywd-dmrgateway.service")
+
+    if rf_was_running and bm_enabled and not gateway_running:
+        # This covers the important transition BM disabled -> enabled while RF
+        # is already running. Previously DMRGateway stayed down until reboot or
+        # an explicit RF restart.
+        core_admin.run(["systemctl", "start", "ywd-dmrgateway.service"], 15, check=True)
+        out.setdefault("restarted", []).append("DMRGateway")
+        out["brandmeister_reconciled"] = "started"
+    elif (not bm_enabled or not rf_was_running) and gateway_running:
+        # BM disabled means DMRGateway should not remain running. Likewise, a
+        # stopped MMDVM stack must not be partially activated by Save & Apply.
+        core_admin.run(["systemctl", "stop", "ywd-dmrgateway.service"], 15, check=False)
+        out["brandmeister_reconciled"] = "stopped"
+
+    return out
 
 
 def config_revert(data):

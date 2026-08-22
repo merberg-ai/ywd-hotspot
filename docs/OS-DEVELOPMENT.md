@@ -1,38 +1,49 @@
 # YWD-Hotspot OS development
 
-[Project README](../README.md) · [Building](BUILDING.md) · [SSH / SFTP](SSH.md) · [OS builder](../os/README.md) · [RC1 acceptance record](RELEASE-PLAN-0.2.0-rc1.md)
+[Project README](../README.md) · [Building](BUILDING.md) · [SSH / SFTP](SSH.md) · [OS builder](../os/README.md) · [Repository policy](REPOSITORY.md)
 
 YWD-Hotspot keeps the application and appliance-image source in one repository. Fresh images are built from the exact application commit that contains the builder; installed appliances then use the normal GitHub update mechanism rather than requiring another SD-card image for routine application updates.
 
-## 0.2.0-rc1 completed release flow
+## Accepted public release line
+
+### 0.2.0-rc1
+
+RC1 established the current factory-image/runtime baseline:
 
 ```text
-checkpoint-builder-0.1.0-image-boot-proven
-        │ physically proven baseline
-        ▼
-release/0.2.0-rc1
-        │ release hardening + public factory image
-        ▼ exact factory-image physical acceptance
-checkpoint-release-0.2.0-rc1-image-proven
-        ▼
-       dev
-        ▼
-       main
-        ▼
-   v0.2.0-rc1
-```
+source
+  v0.2.0-rc1
+  1575344d732994a7b54d5afc7f15a88040a274ec
 
-Accepted source/image identity:
-
-```text
-source commit
-1575344d732994a7b54d5afc7f15a88040a274ec
+checkpoint
+  checkpoint-release-0.2.0-rc1-image-proven
 
 image SHA256
-f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
+  f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
 ```
 
-The release tag/checkpoint remain immutable evidence of the tested artifact. Later documentation-only commits on moving branches do not change that accepted source/image identity.
+### 0.2.0-rc2
+
+RC2 intentionally retained RC1 RF/runtime behavior and proved both the fresh-image and updater paths:
+
+```text
+source
+  v0.2.0-rc2
+  5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+
+checkpoint
+  checkpoint-release-0.2.0-rc2-image-updater-proven
+
+published image
+  ywd-hotspot-0.2.0-rc2.img.xz
+
+image SHA256
+  60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+```
+
+The exact RC2 image passed a fresh flash/test. A published RC1 appliance then updated to RC2 through the dashboard updater, rebooted cleanly, and reported zero failed systemd units.
+
+The release tags/checkpoints remain immutable evidence of the tested artifacts.
 
 ## Builder entry points
 
@@ -47,6 +58,8 @@ os/builder/BUILD-PUBLIC-RELEASE.sh    factory-clean release build
 os/builder/PUBLIC-RELEASE-CHECK.py    fail-closed release gate
 os/builder/RELEASE-ARTIFACTS.py       release metadata/readme generator
 ```
+
+Historical milestone-specific builder aliases are not current entry points. Use the unified builder commands above.
 
 ## Normal image build
 
@@ -81,13 +94,13 @@ The two variants have separate compile-cache identities. DMRGateway remains the 
 
 ## Public factory image
 
-For RC1, the public artifact was built only through:
+Public artifacts are built only through:
 
 ```bash
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-The wrapper temporarily replaces local builder state with release defaults and restores the developer's original local settings afterward.
+The wrapper is release-identity-specific and fail-closed. It temporarily replaces local builder state with release defaults and restores the developer's original local settings afterward.
 
 The public image is required to contain:
 
@@ -134,7 +147,7 @@ The LAN IP shown by the appliance is the authoritative setup target. `ywd-hotspo
 
 ## Public SSH lifecycle
 
-`openssh-server` is present in the image so no package installation is required later, but first-boot staging explicitly disables `ssh.service` and deletes factory `ssh_host_*` keys.
+`openssh-server` is present in the appliance image so no package installation is required later, but first-boot staging disables `ssh.service` and ships no reusable server host identity.
 
 After setup, authenticated dashboard **SYSTEM -> SSH ACCESS** can:
 
@@ -148,7 +161,7 @@ Password/root SSH login remains disabled. See **[SSH.md](SSH.md)**.
 
 ## Release artifacts
 
-A successful public build places the image/checksum artifacts under `os/deploy/` and generates:
+A successful public build places image/checksum artifacts under `os/deploy/` and generates:
 
 ```text
 BUILD-METADATA.json
@@ -157,7 +170,7 @@ README-FIRST.txt
 
 Metadata records source commit, target architecture, factory-clean state, MMDVM variant/upstream/patch identity, DMRGateway pin, image filename/size, and image SHA-256.
 
-The accepted RC1 artifact set includes the exact tested `.img.xz`, `.bmap`, `.info`, checksum file, metadata and first-readme files.
+The exact tested compressed image is the release artifact. A publication-time filename cleanup is acceptable only when the copy remains byte-identical and SHA-256 is reverified.
 
 ## Physical acceptance checklist
 
@@ -181,22 +194,27 @@ A successful compile is not enough. For an artifact intended for publication ver
 [ ] reboot persists configuration
 [ ] RF comes up on reboot only after explicit operator autostart enablement
 [ ] SSH is factory OFF and optional enablement works when part of the release scope
-[ ] authoritative ywd-headless-oled service owns display
+[ ] authoritative OLED service owns the display
 [ ] systemctl --failed reports zero failed units
 ```
 
-RC1 passed the release-blocking physical checks on the exact published/tested image candidate.
+For a release intended to exercise the updater, also test a supported prior public release -> candidate transition and reboot the upgraded appliance before calling the updater path proven.
 
-## Promotion policy
+## Release freeze / promotion policy
 
-For future releases:
+While releases are frozen, `main` stays at the exact accepted public commit so normal appliances do not see unpublished development as an available update. Ongoing docs/repository/development work goes to `dev`.
 
-1. record exact release commit and artifact SHA-256;
-2. physically test the exact artifact to be published;
-3. freeze an image-proven checkpoint;
-4. promote moving integration/public branches only after acceptance;
-5. tag the accepted source;
-6. upload the exact tested artifacts;
-7. never rebuild a different binary under the same release identity.
+For a future release:
 
-See **[REPOSITORY.md](REPOSITORY.md)** for immutable release-history policy.
+1. start from the intended `dev` baseline;
+2. record exact release source/version;
+3. build and hash the exact candidate artifact;
+4. physically test the exact artifact to be published;
+5. exercise updater transition when that is part of the release goal;
+6. freeze a proven checkpoint;
+7. promote `main` deliberately;
+8. tag the accepted source;
+9. upload the exact tested artifact set;
+10. never rebuild a different image under the same release identity.
+
+See **[REPOSITORY.md](REPOSITORY.md)** for immutable release-history policy and **[history/RELEASE-PLAN-0.2.0-rc1.md](history/RELEASE-PLAN-0.2.0-rc1.md)** for the completed RC1 acceptance record.

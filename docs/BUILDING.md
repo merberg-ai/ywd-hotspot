@@ -2,7 +2,7 @@
 
 [← Docs index](README.md) · [Installation](INSTALL.md) · [Development](GITHUB-SETUP.md) · [OS Development](OS-DEVELOPMENT.md)
 
-YWD-Hotspot separates four build paths: source validation, source installation, MMDVM runtime selection, and complete appliance images.
+YWD-Hotspot separates source validation, source installation, MMDVM runtime selection, normal appliance images, and public factory-release images.
 
 ## 1. Source validation
 
@@ -29,7 +29,7 @@ If Node.js is available:
 for js in web/*.js; do node --check "$js"; done
 ```
 
-These checks do not replace hardware acceptance. Candidate validation also covers release-critical dynamic/static assets such as the duplex dashboard controls, SSH UI route and LIVE DMR layout route.
+These checks do not replace hardware acceptance. Candidate validation also covers release-critical dynamic/static assets such as duplex dashboard controls, SSH UI assets, and LIVE DMR layout routes.
 
 ## 2. Build/install from GitHub source
 
@@ -46,11 +46,11 @@ The full installer asks which MMDVM runtime to build.
 
 ### YWD Extended — default/recommended
 
-Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. It advertises capabilities used by passive DMR voice/RX Monitor and future compatible plugins.
+Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. It advertises capabilities used by passive DMR voice/RX Monitor and compatible plugins.
 
 ### Stock Upstream
 
-Exact pinned upstream MMDVM-Host with no YWD MMDVM extensions. Normal DMR hotspot operation remains supported; plugins declaring extension requirements are refused cleanly.
+Exact pinned upstream MMDVM-Host with no YWD MMDVM extensions. Normal DMR hotspot operation remains supported; extension-dependent plugins are refused cleanly.
 
 Noninteractive selection:
 
@@ -59,11 +59,9 @@ sudo YWD_MMDVM_VARIANT=ywd-extended ./INSTALL.sh
 sudo YWD_MMDVM_VARIANT=upstream ./INSTALL.sh
 ```
 
-Recovery installs preserve the existing runtime variant by default. Ordinary app updates do not rebuild or switch it.
+Recovery installs preserve the existing runtime variant by default. Ordinary application updates do not rebuild or switch it.
 
 ## 3. Runtime builders and cache identity
-
-Dispatcher:
 
 ```bash
 sudo python3 lib/runtime_build.py install --mmdvm-variant ywd-extended
@@ -75,7 +73,7 @@ YWD Extended uses `lib/mmdvm_voice_build.py`. Stock uses `lib/mmdvm_upstream_bui
 
 The variants have separate cache namespaces/signatures. Extended cache identity includes the extension API/hash, so an unpatched binary cannot satisfy a patched cache lookup.
 
-Pinned RC1 identities:
+Accepted RC1/RC2 radio identities remain:
 
 ```text
 MMDVM-Host
@@ -99,18 +97,13 @@ Run builder doctor first:
 bash os/builder/DOCTOR.sh
 ```
 
-Review/select the MMDVM runtime:
+Review/select the MMDVM runtime and builder profile:
 
 ```bash
 python3 os/builder/MMDVM-RUNTIME.py review
 python3 os/builder/MMDVM-RUNTIME.py set ywd-extended
-# or
-python3 os/builder/MMDVM-RUNTIME.py set upstream
-```
+# or: python3 os/builder/MMDVM-RUNTIME.py set upstream
 
-Review the builder profile, then build:
-
-```bash
 python3 os/builder/PROFILE-CLI.py review
 python3 os/builder/PROFILE-CLI.py validate
 bash os/builder/RUN-BUILD.sh
@@ -126,57 +119,72 @@ Normal/development images can intentionally include private Wi-Fi, station setti
 
 ## 5. Public factory release image
 
-Public release images use the fail-closed wrapper:
+Public releases use the fail-closed wrapper:
 
 ```bash
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-For `0.2.0-rc1` the wrapper requires the exact release branch/version and clean source. It:
+The wrapper is intentionally pinned to a specific release identity rather than acting as a generic "publish whatever branch is checked out" command. For the accepted RC2 source it requires:
 
-1. saves the developer's private local builder profile/runtime preference;
-2. resets hotspot configuration to canonical defaults;
-3. removes Wi-Fi/operator/credential/imported-backup preconfiguration;
-4. sets RF first boot OFF;
-5. sets update channel `main`;
-6. disables SSH and embeds no builder authorized key;
-7. ensures no reusable SSH server host identity is shipped;
-8. selects default/recommended `ywd-extended`;
-9. runs the factory-release checker before and after profile generation;
-10. runs the normal image build/cache path;
-11. validates factory state again;
-12. writes `BUILD-METADATA.json` and `README-FIRST.txt` beside the image;
-13. restores the developer's original local profile.
+```text
+VERSION   0.2.0-rc2
+branch    release/0.2.0-rc2
+```
+
+A future release must intentionally update that release identity before building.
+
+The public wrapper:
+
+1. requires clean tracked source;
+2. saves the developer's private builder profile/runtime preference;
+3. resets hotspot configuration to canonical defaults;
+4. removes Wi-Fi/operator/credential/imported-backup preconfiguration;
+5. sets RF first boot OFF;
+6. sets update channel `main`;
+7. disables SSH and embeds no builder authorized key;
+8. ensures no reusable SSH server host identity ships;
+9. selects default/recommended `ywd-extended`;
+10. runs the factory-release checker before and after generated profile creation;
+11. runs the normal image build/cache path;
+12. validates factory state again;
+13. writes `BUILD-METADATA.json` and `README-FIRST.txt`;
+14. restores the developer's original local builder settings.
 
 The release gate refuses personalized images rather than trying to sanitize them after the fact.
 
-Expected release assets:
+## Accepted RC2 build
 
 ```text
-*.img.xz
-*.bmap
-*.info
-SHA256SUMS-YWD-HOTSPOT-OS
+source / tag
+  v0.2.0-rc2
+  5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+
+published image
+  ywd-hotspot-0.2.0-rc2.img.xz
+
+SHA256
+  60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+```
+
+The GitHub-facing image was a byte-for-byte copy of the physically tested compressed artifact. The SHA matched before publication; no rebuild/recompression was performed after acceptance.
+
+RC2 was also exercised as an in-place dashboard update from the published RC1 image and passed a subsequent reboot with zero failed systemd units.
+
+## Publication assets
+
+For RC2 the published GitHub assets are:
+
+```text
+ywd-hotspot-0.2.0-rc2.img.xz
+ywd-hotspot-0.2.0-rc2.bmap
+ywd-hotspot-0.2.0-rc2.info
+SHA256SUMS
 BUILD-METADATA.json
 README-FIRST.txt
 ```
 
-## 0.2.0-rc1 accepted build
-
-The physically accepted RC1 source/image pair is:
-
-```text
-source commit
-1575344d732994a7b54d5afc7f15a88040a274ec
-
-image
-image_2026-08-22-ywd-hotspot-0.2.0-rc1-pi-zero-lite.img.xz
-
-SHA256
-f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
-```
-
-Do not rebuild a different image and call it the same RC1 artifact. Use the tag `v0.2.0-rc1` to inspect/reproduce the exact source that generated the accepted image.
+Local builder/deploy filenames may reflect implementation-specific staging names. Artifact identity is established by exact source metadata and SHA-256, not by preserving an awkward local filename.
 
 ## Release-image acceptance
 
@@ -206,4 +214,4 @@ A successful compile is not enough. For a future exact artifact intended for pub
 
 Only after the exact public artifact passes should source be checkpointed/promoted/tagged and the exact tested assets published.
 
-See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)** and **[RELEASE-PLAN-0.2.0-rc1.md](RELEASE-PLAN-0.2.0-rc1.md)**.
+See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)**, **[REPOSITORY.md](REPOSITORY.md)** and the completed **[RC1 acceptance record](history/RELEASE-PLAN-0.2.0-rc1.md)**.

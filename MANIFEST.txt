@@ -26,7 +26,6 @@ bin/ywd-hotspotctl-core
 bin/ywd-ui.sh
 docs/README.md
 docs/ARCHITECTURE.md
-docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
 docs/BACKUP-RESTORE.md
 docs/BUILDING.md
 docs/CALIBRATION.md
@@ -41,12 +40,14 @@ docs/PLUGIN-UI.md
 docs/PLUGINS.md
 docs/RELEASE-NOTES-0.2.0-rc1.md
 docs/RELEASE-NOTES-0.2.0-rc2.md
-docs/RELEASE-PLAN-0.2.0-rc1.md
 docs/REPOSITORY.md
 docs/SSH.md
 docs/TALKGROUPS.md
 docs/TELEMETRY.md
 docs/UPGRADING.md
+docs/history/README.md
+docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
+docs/history/RELEASE-PLAN-0.2.0-rc1.md
 lab/mmdvm-diag.sh
 lib/activity.py
 lib/admin.py

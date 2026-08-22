@@ -1,95 +1,124 @@
 # 🌿 Repository Policy
 
-[← Docs index](README.md) · [Development](GITHUB-SETUP.md) · [RC1 acceptance record](RELEASE-PLAN-0.2.0-rc1.md)
+[← Docs index](README.md) · [Development](GITHUB-SETUP.md) · [Historical records](history/README.md)
 
-YWD-Hotspot keeps release history trustworthy: active branches move deliberately, while release tags/checkpoints remain evidence of what was actually tested.
+YWD-Hotspot keeps public release history trustworthy by separating immutable release evidence from moving development branches.
 
-## Current roles after 0.2.0-rc1 acceptance
+## Current roles after 0.2.0-rc2 acceptance
 
 | Ref | Role |
 |---|---|
-| `main` | promoted public line; may receive post-release documentation/maintenance commits |
-| `dev` | accepted integrated development baseline |
+| `main` | public/update line, intentionally frozen at the accepted RC2 commit while releases are frozen |
+| `dev` | active integrated development and repository housekeeping |
+| `dev-plugins` | specialized plugin/framework development; kept independent unless an intentional integration is performed |
+| `v0.2.0-rc2` | immutable tag for the physically tested and updater-proven RC2 source |
+| `release/0.2.0-rc2` | frozen RC2 source branch |
+| `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for the accepted RC2 image and RC1 -> RC2 updater transition |
 | `v0.2.0-rc1` | immutable tag for the physically tested RC1 source |
-| `release/0.2.0-rc1` | frozen RC1 hardening/source branch |
-| `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for the accepted public RC1 image |
+| `release/0.2.0-rc1` | frozen RC1 source branch |
+| `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for the accepted RC1 factory image |
 | `checkpoint-builder-0.1.0-image-boot-proven` | earlier physically proven builder/appliance baseline |
-| `dev-builder` | isolated builder development history/future work |
-| `dev-plugins` | specialized plugin/framework development when needed |
 
-Historical `checkpoint-*`, release tags and accepted release branches are not rewritten merely because moving branches later advance.
+Plugin-development checkpoints associated with `dev-plugins` are intentionally retained and are not part of ordinary repository cleanup.
 
-## Exact RC1 release identity
+## Accepted RC2 identity
 
 ```text
-v0.2.0-rc1
-1575344d732994a7b54d5afc7f15a88040a274ec
+v0.2.0-rc2
+5f0d2967ce0ed728169f7819d2bc227687d6a9b2
 
-checkpoint-release-0.2.0-rc1-image-proven
-1575344d732994a7b54d5afc7f15a88040a274ec
+checkpoint-release-0.2.0-rc2-image-updater-proven
+5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+
+published image
+  ywd-hotspot-0.2.0-rc2.img.xz
 
 image SHA256
-f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
+  60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
 ```
 
-The image associated with that identity was built, flashed and physically tested before promotion/tagging.
+RC2 passed both a fresh-image physical test and an in-place `0.2.0-rc1 -> 0.2.0-rc2` dashboard update. The upgraded appliance then rebooted cleanly with zero failed systemd units.
 
-## 0.2.0-rc1 promotion record
+## Release freeze policy
+
+When releases are frozen:
+
+- keep `main` at the exact accepted public release commit so normal `main`-channel appliances do not see unpublished housekeeping as an available update;
+- perform ordinary development/documentation/repository cleanup on `dev`;
+- keep release tags, release branches and proven checkpoints unchanged;
+- do not rebuild or republish a different artifact under an existing version/tag;
+- move `main` only as part of an intentional future release/update event.
+
+This supersedes the older practice of putting post-release wording fixes directly on `main`.
+
+## Promotion policy
+
+A normal future release flow is:
 
 ```text
-checkpoint-builder-0.1.0-image-boot-proven
-        ↓
-release/0.2.0-rc1
-        ↓ source/static/factory validation
-clean public factory image
-        ↓ physical acceptance of exact artifact
-checkpoint-release-0.2.0-rc1-image-proven
-        ↓
-dev fast-forward
-        ↓
-main fast-forward
-        ↓
-v0.2.0-rc1
+dev
+  ↓ scoped candidate/release branch when needed
+source/static/factory validation
+  ↓
+exact artifact build
+  ↓
+physical acceptance of exact artifact
+  ↓
+proven checkpoint
+  ↓
+main promotion
+  ↓
+immutable release tag
+  ↓
+publish exact tested artifact
 ```
 
-Both `dev` and `main` were clean descendants of the accepted release source, so promotion was performed as non-forced fast-forwards.
-
-## Post-release documentation rule
-
-Documentation can discover wording drift only after the exact appliance is exercised—especially around UI paths, optional hardware telemetry and recovery behavior.
-
-After a release is frozen:
-
-- fix current documentation on moving `main`/`dev`;
-- do **not** retag or rewrite the physically tested commit;
-- do **not** silently rebuild a different image under the same release identity;
-- clearly distinguish release-source facts from later documentation corrections.
-
-That lets public docs improve without corrupting the audit trail for the actual RC artifact.
+For updater-focused releases, also exercise the supported prior-release -> candidate transition before calling the updater path proven.
 
 ## Public image policy
 
-A GitHub release image is not a developer image. It must be built through `os/builder/BUILD-PUBLIC-RELEASE.sh` and contain factory/default onboarding state only—no operator Wi-Fi, radio identity, secrets, imported backup, RF autostart, builder SSH client key, or reusable SSH server host identity.
+A GitHub release image is not a developer image. It must be built through the fail-closed public release path and contain factory/default onboarding state only—no operator Wi-Fi, radio identity, secrets, imported backup, RF autostart, builder SSH client key, or reusable SSH server host identity.
 
-The exact artifact tested is the artifact published. Do not rebuild another image after physical acceptance and reuse the same release identity.
+The exact artifact tested is the artifact published. Renaming a tested compressed artifact for a cleaner GitHub-facing filename is acceptable only when byte identity is verified by SHA-256; recompressing/rebuilding it after acceptance is not.
 
 ## Checkpoint policy
 
-Create a known-good checkpoint only after the relevant behavior has been exercised. Checkpoints are rollback/audit anchors, not update channels.
+Create a checkpoint only when it carries real rollback or audit value. Checkpoints are evidence, not update channels.
 
-Critical anchors:
+Current non-plugin anchors intentionally retained:
 
 ```text
 checkpoint-builder-0.1.0-image-boot-proven
-a5a6d9483a7cad519ee5288661447875f346b4e7
-
 checkpoint-release-0.2.0-rc1-image-proven
-1575344d732994a7b54d5afc7f15a88040a274ec
+checkpoint-release-0.2.0-rc2-image-updater-proven
 ```
+
+Do not accumulate per-step checkpoint branches once the same history is fully contained by a later accepted release/checkpoint. Intermediate cleanup should preserve commits through normal Git history while removing redundant branch labels.
+
+## Plugin branch separation
+
+`dev-plugins` and its related plugin/RX/voice/vocoder checkpoints are a specialized development line. Ordinary core/docs/repository cleanup must not rewrite, delete or silently merge those refs.
+
+Integration from plugin work into core branches should be explicit, scoped, reviewed against runtime capability boundaries, and hardware-tested where RF/passive-voice behavior is involved.
+
+## Temporary branches
+
+Normal lifecycle:
+
+1. branch from the exact verified parent;
+2. make the scoped change;
+3. run source/candidate validation;
+4. compare exact changed-file scope;
+5. hardware-test runtime changes;
+6. create a checkpoint only if the result has durable audit value;
+7. promote intentionally;
+8. delete temporary working branches after their commits are safely reachable from a retained ref.
+
+Intentionally invalid/audit candidates should normally be deleted once the refusal behavior has been proven and recorded; they are test scaffolding, not release history.
 
 ## MMDVM runtime policy
 
-The active release supports:
+The accepted release supports:
 
 ```text
 ywd-extended   default/recommended; verified YWD extension patch
@@ -100,28 +129,17 @@ The radio upstream pin remains fixed unless an isolated RF regression task inten
 
 Runtime-variant support requires coherent canonical builders/dispatcher/capability files in candidate validation and `MANIFEST.txt`.
 
-## Plugin requirement policy
-
-Plugins may use trusted declarative requirement tokens for the selected MMDVM runtime. Requirement handling remains core-owned; plugins cannot run custom dependency installers or switch the MMDVM runtime themselves.
-
-## Temporary branches
-
-Normal lifecycle:
-
-1. branch from exact verified parent;
-2. make the scoped change;
-3. run source/candidate validation;
-4. compare exact changed-file scope;
-5. hardware-test runtime changes;
-6. freeze accepted checkpoint when useful;
-7. promote intentionally;
-8. clean temporary branches only after history is preserved.
-
 ## Manifest / candidate validation
 
 `MANIFEST.txt` inventories trusted runtime/release/documentation files. Capability-based candidate validation requires coherent core/plugin/voice/telemetry/runtime-variant/UI payloads regardless of branch name.
 
-Do not weaken this to make an incomplete candidate easier to deploy.
+Do not weaken validation to make an incomplete candidate easier to deploy.
+
+## Documentation history
+
+Current operating/development instructions stay directly under `docs/`. Completed release plans and implementation archaeology belong under `docs/history/` so they remain available without being mistaken for current instructions.
+
+See [Historical Documentation](history/README.md).
 
 ## Secrets
 

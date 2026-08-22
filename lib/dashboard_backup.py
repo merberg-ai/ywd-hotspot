@@ -46,6 +46,9 @@ def wrap_handler(base):
             if path == "/backup-restore.js":
                 self._serve_backup_js()
                 return
+            if path == "/ssh-key-export.js":
+                self.serve_static("ssh-key-export.js", "application/javascript; charset=utf-8")
+                return
             if path == "/backup-restore.css":
                 self.serve_static("backup-restore.css", "text/css; charset=utf-8")
                 return

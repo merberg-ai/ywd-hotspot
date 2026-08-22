@@ -80,6 +80,7 @@ CORE_REQUIRED = (
     "web/instrumentation.js",
     "web/instrumentation-bootstrap.js",
     "web/instrumentation.css",
+    "web/instrumentation-layout.css",
 )
 
 PLUGIN_MARKERS = (
@@ -222,9 +223,23 @@ def validate(root: Path) -> list[str]:
     )
     _require_text_markers(
         root,
+        "LIVE DMR layout static route",
+        "lib/dashboard_backup.py",
+        ('path == "/instrumentation-layout.css"', 'self.serve_static("instrumentation-layout.css"'),
+        errors,
+    )
+    _require_text_markers(
+        root,
         "dashboard instrumentation loader",
         "web/app.js",
         ("/instrumentation.js", "/instrumentation-bootstrap.js", "/instrumentation.css"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "dashboard instrumentation layout loader",
+        "web/instrumentation-bootstrap.js",
+        ("instrumentation-layout.css", "hasUsableRssi", "rssi-unavailable"),
         errors,
     )
     for rel in ("systemd/ywd-setup.service", "systemd/ywd-activity.service"):

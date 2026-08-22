@@ -75,12 +75,15 @@
       }
     }
 
-    const enable = el('sshEnable');
-    const disable = el('sshDisable');
+    const toggle = el('sshToggle');
     const create = el('sshClientCreate');
     const exportBtn = el('sshKeysExport');
-    if (enable) enable.disabled = !auth || busy || active;
-    if (disable) disable.disabled = !auth || busy || !active;
+    if (toggle) {
+      toggle.disabled = !auth || busy || !sshState;
+      toggle.textContent = active ? 'DISABLE SSH ACCESS' : 'ENABLE SSH ACCESS';
+      toggle.className = active ? 'btn danger' : 'btn good';
+      toggle.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
     if (create) create.disabled = !auth || busy;
     if (exportBtn) exportBtn.disabled = !auth || busy;
 
@@ -183,7 +186,7 @@
     const ok = await window.ywdConfirm({
       title: 'CREATE SSH CLIENT LOGIN KEY',
       kicker: 'YWD // CLIENT ENROLLMENT',
-      message: `Create a new Ed25519 login key for local user ${username}?\n\nThe public key will be added to that user’s authorized_keys. The private key will be downloaded once and NOT retained by YWD-Hotspot.\n\nCreating a key does not itself enable SSH; use ENABLE SSH ACCESS when you are ready to open port 22.`,
+      message: `Create a new Ed25519 login key for local user ${username}?\n\nThe public key will be added to that user’s authorized_keys. The private key will be downloaded once and NOT retained by YWD-Hotspot.\n\nCreating a key does not itself enable SSH; use the SSH access toggle when you are ready to open port 22.`,
       confirmText: 'CREATE & DOWNLOAD KEY',
       cancelText: 'CANCEL',
       tone: 'danger',
@@ -212,12 +215,9 @@
   }
 
   function ensureUi() {
-    const page = el('settings');
+    const page = el('system');
     if (!page) return false;
     if (el('sshAccessCard')) return true;
-
-    const backup = page.querySelector('.backup-card');
-    if (!backup) return false;
 
     const card = document.createElement('article');
     card.className = 'card';
@@ -235,8 +235,7 @@
       </div>
       <div id="sshAccessNote" class="notice">Unlock dashboard controls to view or change SSH access.</div>
       <div class="buttonrow wrap">
-        <button class="btn good" id="sshEnable" type="button">ENABLE SSH ACCESS</button>
-        <button class="btn danger" id="sshDisable" type="button">DISABLE SSH ACCESS</button>
+        <button class="btn good" id="sshToggle" type="button" aria-pressed="false">ENABLE SSH ACCESS</button>
       </div>
       <hr>
       <div class="field">
@@ -249,10 +248,9 @@
       </div>
       <div class="buttonrow wrap"><button class="btn" id="sshKeysExport" type="button">EXPORT SERVER IDENTITY</button></div>
       <div class="hint">Server identity export is recovery-only and cannot be used as a client login key.</div>`;
-    backup.insertAdjacentElement('afterend', card);
+    page.appendChild(card);
 
-    el('sshEnable').onclick = () => configure(true);
-    el('sshDisable').onclick = () => configure(false);
+    el('sshToggle').onclick = () => configure(!sshState?.active);
     el('sshClientCreate').onclick = createClientKey;
     el('sshKeysExport').onclick = exportServerIdentity;
 

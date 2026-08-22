@@ -26,20 +26,23 @@ fi
 for f in \
   lib/candidate_validate.py \
   lib/update_runner.py lib/update_admin.py lib/oled.py lib/oled_owner.sh \
+  lib/mmdvm_runtime_state.py \
   lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_update.py lib/plugin_service_manager.py lib/plugin_ui_manager.py \
   lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py lib/plugin_feature_runtime.py \
   lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin_upload.py lib/plugin_admin.py \
-  lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py lib/plugin_update_safety.py \
+  lib/dashboard_plugins.py lib/dashboard_plugin_upload.py lib/dashboard_plugin_vocoder.py lib/dashboard_plugin_wasm.py lib/dashboard_backup.py lib/plugin_update_safety.py \
   lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
   lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/mmdvm_session.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
   lib/mmdvm_voice.py lib/mmdvm_voice_bridge.py lib/mmdvm_voice_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
+  lib/vocoder_protocol.py lib/vocoder_client.py lib/vocoder_fake_backend.py \
   web/update.js web/update.css web/update-progress.js \
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css \
   web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js \
   web/plugin-ui-host.js web/plugin-ui-runtime.js web/plugin-ui.css \
   web/backup-restore.js web/backup-restore.css \
   systemd/ywd-update.service systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service \
-  systemd/ywd-mmdvm-voice.service systemd/ywd-mmdvm-voice-build.service; do
+  systemd/ywd-mmdvm-voice.service systemd/ywd-mmdvm-voice-build.service \
+  systemd/ywd-vocoder-fake.service systemd/ywd-vocoder-fake.socket; do
   [[ -f "$SELF/$f" ]] || { echo "[FAIL] Update source missing $f" >&2; exit 1; }
 done
 
@@ -63,7 +66,8 @@ YWD_PLUGIN_CONFIG_DIR="$SELF/.plugin-config-does-not-exist" \
 YWD_PLUGIN_DATA_DIR="$SELF/.plugin-data-does-not-exist" \
 YWD_MMDVM_TELEMETRY="$SELF/.telemetry-does-not-exist" \
 python3 - <<'PY'
-import dashboard_backup, dashboard_plugin_upload
+import dashboard_backup, dashboard_plugin_upload, dashboard_plugin_vocoder
+import mmdvm_runtime_state, vocoder_client, vocoder_protocol
 import plugin_catalog_overlay, plugin_package_archive, plugin_service_runner, plugin_feature_runtime
 import plugin_manager, plugin_service_manager, settings_backup
 base = plugin_manager.snapshot({"hostname":"candidate","uptime_s":1,"temperature_c":25,"load":[0,0,0]})
@@ -181,6 +185,12 @@ fi
 # package/broker problems must not turn a successful core update into a DMR outage.
 if ! sudo python3 /opt/ywd-hotspot/app/lib/telemetry_runtime.py ensure; then
   echo "[WARN] Passive MMDVM telemetry runtime was not activated. Core hotspot operation is unaffected."
+fi
+
+# Refresh persisted MMDVM capability identity from the exact installed binary.
+# This is metadata-only: no compile, install, or RF restart is performed.
+if ! sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py refresh >/dev/null; then
+  echo "[WARN] MMDVM runtime capability metadata could not be refreshed. Exact observed checks remain authoritative."
 fi
 
 # Aggregate plugin capabilities own optional high-rate feature runtimes. Keep

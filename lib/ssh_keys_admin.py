@@ -374,7 +374,7 @@ def create_client_key(payload: dict) -> dict:
             "The private key is NOT retained by YWD-Hotspot after this response.\n"
             "Keep it private. Anyone with this unencrypted private key can authenticate\n"
             f"as {username} while its matching public line remains authorized.\n\n"
-            "If SSH is disabled in Settings, enable SSH Access before connecting.\n\n"
+            "If SSH is disabled, unlock the dashboard and open SYSTEM -> SSH ACCESS before connecting.\n\n"
             "To revoke this key, remove the authorized_keys line ending with:\n"
             f"  {comment}\n"
         ).encode("utf-8")

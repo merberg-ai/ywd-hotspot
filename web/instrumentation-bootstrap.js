@@ -1,5 +1,15 @@
 'use strict';
 (() => {
+  function ensureLayoutStyle() {
+    if (document.querySelector('link[data-ywd-instrument-layout="1"]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/instrumentation-layout.css?v=rc1.1';
+    link.dataset.ywdInstrumentLayout = '1';
+    link.onerror = () => console.error('YWD-Hotspot failed to load instrumentation layout CSS');
+    document.head.appendChild(link);
+  }
+
   function hasUsableRssi(d) {
     const rows = [];
     const cur = d?.activity?.current;
@@ -44,6 +54,7 @@
   }
 
   function wire() {
+    ensureLayoutStyle();
     if (!window.YWDInstrumentation) return;
     if (typeof window.render === 'function' && !window.render.__ywdInstrumented) {
       const base = window.render;

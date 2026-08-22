@@ -73,6 +73,12 @@ YWD-Hotspot will:
 3. return a `.tar.gz` archive containing the private/public client key pair and a README;
 4. discard its temporary copy of the private key after the response.
 
+The archive name contains the current hotspot hostname, selected username and creation timestamp, for example:
+
+```text
+ywd-hotspot-ywd-ssh-client-login-20260822-070000.tar.gz
+```
+
 The private key is generated **without a passphrase** so it can be imported by common SSH/SFTP clients. Store it accordingly. Anyone who obtains it can authenticate while the matching public key remains authorized.
 
 Creating a key does **not** open port 22, so creating/downloading the key first is the preferred order.
@@ -101,7 +107,7 @@ Policy   PUBLIC KEY ONLY
 Extract the downloaded archive, protect the private key, and connect:
 
 ```bash
-tar -xzf ywd-hotspot-ywd-ssh-client-login-*.tar.gz
+tar -xzf *-ywd-ssh-client-login-*.tar.gz
 chmod 600 ywd_hotspot_client_ed25519
 ssh -i ./ywd_hotspot_client_ed25519 ywd@HOTSPOT-IP
 ```
@@ -125,7 +131,7 @@ The first connection to a newly initialized appliance normally asks you to trust
 Recent Windows includes the `ssh` and `sftp` clients. In PowerShell, extract the archive and place the private key somewhere private, for example under your user `.ssh` directory:
 
 ```powershell
-tar -xzf .\ywd-hotspot-ywd-ssh-client-login-*.tar.gz
+tar -xzf .\*-ywd-ssh-client-login-*.tar.gz
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.ssh" | Out-Null
 Move-Item .\ywd_hotspot_client_ed25519 "$env:USERPROFILE\.ssh\ywd_hotspot_client_ed25519"
 ssh -i "$env:USERPROFILE\.ssh\ywd_hotspot_client_ed25519" ywd@HOTSPOT-IP

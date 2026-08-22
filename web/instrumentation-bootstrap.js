@@ -16,9 +16,12 @@
     // RSSI is optional at the modem-firmware layer. Some otherwise fully
     // compatible MMDVM_HS builds report BER/voice normally but return no RSSI.
     // In that case hide RSSI-only presentation instead of leaving a permanent
-    // SAMPLING/blank meter. If a later call provides a real RSSI value, the
-    // normal instrumentation renderer will automatically make the meter usable.
-    if (hasUsableRssi(d)) return;
+    // SAMPLING/blank meter. If a later call provides a real RSSI value, remove
+    // the fallback layout and let the normal instrumentation renderer take over.
+    const available = hasUsableRssi(d);
+    const panel = document.getElementById('instrumentPanel');
+    if (panel) panel.classList.toggle('rssi-unavailable', !available);
+    if (available) return;
 
     const signal = document.querySelector('#instrumentPanel .signal-side');
     if (signal) signal.hidden = true;
@@ -29,9 +32,6 @@
     const history = document.getElementById('instrumentHistory');
     const berTrace = document.getElementById('berTraceRow');
     if (history && (!berTrace || berTrace.hidden)) history.hidden = true;
-
-    const panel = document.getElementById('instrumentPanel');
-    if (panel) panel.classList.add('rssi-unavailable');
   }
 
   function renderInstrumentation(d) {

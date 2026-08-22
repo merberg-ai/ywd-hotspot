@@ -8,13 +8,20 @@
 > YWD-Hotspot can control a radio transmitter. Attach a suitable antenna and verify the configured frequencies before enabling RF.
 
 > [!IMPORTANT]
-> `0.2.0-rc1` is the current public-testing release. The exact factory image was physically tested on the reference Pi Zero W + duplex MMDVM appliance before promotion/tagging.
+> `0.2.0-rc2` is the current public-testing release. Its exact factory image was physically tested on the reference Pi Zero W + duplex MMDVM appliance, and a published RC1 appliance successfully updated to RC2 through the normal dashboard updater before rebooting cleanly with zero failed systemd units.
 
 ## Recommended tester install: prebuilt factory image
 
 The prerelease image is attached to:
 
-**https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc1**
+**https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc2**
+
+Current published image:
+
+```text
+ywd-hotspot-0.2.0-rc2.img.xz
+SHA256 60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+```
 
 The release `.img.xz` is intentionally not personalized. It contains no:
 
@@ -32,7 +39,7 @@ SSH and RF both ship disabled. Only application defaults and first-boot onboardi
 
 ### Flash
 
-1. Download the `.img.xz` and `SHA256SUMS-YWD-HOTSPOT-OS`/`BUILD-METADATA.json` release assets.
+1. Download `ywd-hotspot-0.2.0-rc2.img.xz`, `SHA256SUMS`, and optionally `BUILD-METADATA.json` from the RC2 release.
 2. Verify the SHA-256 checksum.
 3. Write the `.img.xz` directly with Raspberry Pi Imager.
 4. Do **not** apply Raspberry Pi Imager OS customization settings over the YWD appliance image.
@@ -140,7 +147,7 @@ A fresh/full installation makes the MMDVM runtime explicit before compiling.
 - verified YWD extension patch;
 - extension API and patch SHA recorded in provenance;
 - passive DMR voice/RX Monitor capability;
-- foundation for future plugins that explicitly require YWD MMDVM capabilities.
+- foundation for plugins that explicitly require YWD MMDVM capabilities.
 
 ### 2. Stock Upstream
 
@@ -200,7 +207,7 @@ See **[DMR-VOICE.md](DMR-VOICE.md)**.
 
 The original Pi Zero W is slow at compiling the radio stack. Normal application updates do **not** repeat the compile and do not change the selected MMDVM runtime.
 
-## Existing install → GitHub management
+## Existing install -> GitHub management
 
 To adopt an existing appliance without rebuilding the RF stack:
 

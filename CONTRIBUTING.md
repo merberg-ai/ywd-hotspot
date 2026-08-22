@@ -10,14 +10,14 @@ Thanks for helping with YWD-Hotspot. The priority order is intentionally unglamo
 
 ## 🧭 Current phase
 
-The physically tested `0.2.0-rc1` source is preserved by:
+The physically tested and updater-proven `0.2.0-rc2` source is preserved by:
 
 ```text
-v0.2.0-rc1
-checkpoint-release-0.2.0-rc1-image-proven
+v0.2.0-rc2
+checkpoint-release-0.2.0-rc2-image-updater-proven
 ```
 
-`main` is the promoted public line and `dev` is the accepted integration baseline. Post-release documentation-only corrections may move `main`/`dev` beyond the immutable RC tag without changing the source/image that was physically accepted.
+`main` is intentionally frozen at that accepted public source while releases are frozen. `dev` is the active integrated development/housekeeping line. `dev-plugins` remains a specialized plugin/RX/voice/vocoder line and is not implicitly merged or cleaned up with ordinary core work.
 
 New runtime/RF work should branch deliberately from the appropriate current baseline and earn its own hardware acceptance before being described as known-good.
 
@@ -58,6 +58,8 @@ Keep managed source separate from deployed runtime:
 
 Keep canonical-origin verification, dirty-content refusal, candidate staging/validation, protected backups, rollback behavior, privileged-bridge coherence, plugin quiesce/restore, and RF-state preservation unless a stronger replacement is demonstrated.
 
+While releases are frozen, do not advance `main` merely for documentation/repository housekeeping; use `dev` so public `main`-channel appliances do not see unpublished work as an available update.
+
 ## ⚙️ Configuration rules
 
 Canonical configuration:
@@ -84,7 +86,7 @@ Do not casually update `pins.env` in the same change as unrelated UI/docs/applic
 
 An upstream radio-stack pin move or YWD extension patch/API move changes the calibration/stability baseline and should be isolated and hardware-tested.
 
-Current RC1 identities are documented in `README.md`, `docs/DMR-VOICE.md`, and `docs/BUILDING.md`.
+Current RC1/RC2 identities are documented in `README.md`, `docs/DMR-VOICE.md`, and `docs/BUILDING.md`.
 
 ## 🔑 SSH changes
 
@@ -155,6 +157,12 @@ For UI polish:
 
 RSSI in particular is optional modem-firmware data; a UI must work cleanly with BER and no RSSI.
 
+## 🧩 Plugin-line changes
+
+`dev-plugins` and its related checkpoints are intentionally separate. Do not delete, rewrite, or silently merge those refs as part of ordinary core/docs cleanup.
+
+When plugin work is intentionally integrated, verify capability requirements, package/update behavior, passive-voice boundaries, and real hardware behavior where relevant.
+
 ## 🐛 Bug reports
 
 Useful reports include:
@@ -179,9 +187,9 @@ A typical runtime change should:
 3. pass source/candidate validation;
 4. be compared for exact changed-file scope;
 5. be exercised on real hardware if it affects runtime/RF/system behavior;
-6. gain a checkpoint when the known-good state is valuable;
+6. gain a checkpoint only when the known-good state has durable audit value;
 7. be promoted intentionally.
 
-Release tags/checkpoints remain immutable evidence. Documentation fixes after a release belong on moving branches and do not rewrite what was actually flashed/tested.
+Release tags/checkpoints remain immutable evidence. Current development happens on moving development refs without rewriting what was actually flashed/tested.
 
 See **[docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md)** for the branch/update model.

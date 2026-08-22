@@ -66,6 +66,7 @@ lib/dashboard.py
 lib/dashboard_backup.py
 lib/dashboard_core.py
 lib/dashboard_plugin_upload.py
+lib/dashboard_plugin_vocoder.py
 lib/dashboard_plugin_wasm.py
 lib/dashboard_plugins.py
 lib/dashboard_update.py
@@ -73,6 +74,7 @@ lib/generate-config.py
 lib/health.py
 lib/id-update.py
 lib/migrate.py
+lib/mmdvm_runtime_state.py
 lib/mmdvm_session.py
 lib/mmdvm_telemetry.py
 lib/mmdvm_telemetry_bridge.py
@@ -111,6 +113,9 @@ lib/system_branding.sh
 lib/telemetry_runtime.py
 lib/update_admin.py
 lib/update_runner.py
+lib/vocoder_client.py
+lib/vocoder_fake_backend.py
+lib/vocoder_protocol.py
 lib/web_auth.py
 lib/ywd-mosquitto.conf
 os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
@@ -130,6 +135,8 @@ systemd/ywd-oled.service
 systemd/ywd-plugin@.service
 systemd/ywd-setup.service
 systemd/ywd-update.service
+systemd/ywd-vocoder-fake.service
+systemd/ywd-vocoder-fake.socket
 tools/ywdplugin-build.py
 web/app-core.js
 web/app.js

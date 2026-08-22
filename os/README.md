@@ -88,13 +88,13 @@ The cache is reused only when strict build signatures match. For YWD Extended th
 
 ## Public GitHub release image
 
-For `0.2.0-rc1`, the accepted artifact was built only with:
+The accepted `0.2.0-rc2` public artifact was built with:
 
 ```bash
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-The wrapper requires the release branch/version and a clean tracked checkout. It saves the developer's local builder profile/runtime preference, resets to release defaults, builds, verifies factory state, writes provenance assets, then restores the original local state.
+The wrapper requires the intended release branch/version and a clean tracked checkout. It saves the developer's local builder profile/runtime preference, resets to release defaults, builds, verifies factory state, writes provenance assets, then restores the original local state.
 
 ### Factory-image invariant
 
@@ -173,23 +173,30 @@ A private builder profile may intentionally enable key-only SSH and stage a buil
 
 Custom/development images are never interchangeable with the factory public release artifact.
 
-## 0.2.0-rc1 accepted artifact
+## 0.2.0-rc2 accepted artifact
 
 ```text
 source
-1575344d732994a7b54d5afc7f15a88040a274ec
+5f0d2967ce0ed728169f7819d2bc227687d6a9b2
 
 tag
-v0.2.0-rc1
+v0.2.0-rc2
 
-image
-image_2026-08-22-ywd-hotspot-0.2.0-rc1-pi-zero-lite.img.xz
+published image
+ywd-hotspot-0.2.0-rc2.img.xz
 
 SHA256
-f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
+60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
 ```
 
-The image was physically tested after flashing on the reference Pi Zero W + duplex MMDVM setup before source promotion/tagging.
+The exact compressed image bytes were flashed and tested on the reference Pi Zero W + duplex MMDVM setup. The same image was then published under the cleaner GitHub-facing filename after byte-for-byte SHA-256 verification. The RC1 -> RC2 dashboard updater path and a post-update reboot were also exercised successfully with zero failed systemd units.
+
+Immutable accepted refs:
+
+```text
+checkpoint-release-0.2.0-rc2-image-updater-proven
+v0.2.0-rc2
+```
 
 ## Release artifacts
 
@@ -219,4 +226,4 @@ The compressed `.img.xz` is integrity-tested with `xz -t` before acceptance.
 
 A release image is not known-good because it compiled. The **exact file to be uploaded** must pass setup AP, Wi-Fi handoff, OLED code, first-boot wizard, MMDVM provenance, BrandMeister, Parrot, RF, duplex TS1/TS2 where configured, telemetry/dashboard behavior, graceful optional-RSSI behavior, reboot persistence, explicit RF-autostart persistence, factory SSH policy, OLED ownership and zero-failed-units testing.
 
-See [`docs/OS-DEVELOPMENT.md`](../docs/OS-DEVELOPMENT.md) and [`docs/RELEASE-PLAN-0.2.0-rc1.md`](../docs/RELEASE-PLAN-0.2.0-rc1.md).
+See [`docs/OS-DEVELOPMENT.md`](../docs/OS-DEVELOPMENT.md) and the archived [`RC1 release acceptance record`](../docs/history/RELEASE-PLAN-0.2.0-rc1.md).

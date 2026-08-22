@@ -248,6 +248,20 @@ def validate(root: Path) -> list[str]:
             errors.append("passive DMR voice runtime requires the plugin/UI capability runtime")
     if telemetry_runtime:
         _require(root, "MMDVM telemetry runtime", TELEMETRY_REQUIRED, errors)
+        _require_text_markers(
+            root,
+            "MQTT telemetry listener",
+            "lib/ywd-mosquitto.conf",
+            ("listener 18883 127.0.0.1",),
+            errors,
+        )
+        _require_text_markers(
+            root,
+            "MQTT telemetry readiness probe",
+            "systemd/ywd-mqtt.service",
+            ("/dev/tcp/127.0.0.1/18883",),
+            errors,
+        )
 
     if plugin_runtime and voice_runtime and not _present(root, "lib/dashboard_plugin_wasm.py"):
         errors.append("plugin + voice runtime is missing lib/dashboard_plugin_wasm.py")

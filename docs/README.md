@@ -3,7 +3,7 @@
 [← Back to project README](../README.md)
 
 > [!IMPORTANT]
-> `0.2.0-rc1` is the current public-testing release. Its factory-clean image was physically tested on the reference Pi Zero W + duplex MMDVM appliance before promotion/tagging.
+> `0.2.0-rc1` remains the current physically accepted public-testing release. `0.2.0-rc2` is a documentation/update-system candidate derived from that accepted runtime baseline; its purpose is to exercise the normal updater path with intentionally low-risk changes.
 
 ## Documentation map
 
@@ -27,7 +27,8 @@
 | 🧱 Understand RF/runtime boundaries | **[Architecture](ARCHITECTURE.md)** |
 | 🌿 Understand branches/checkpoints/releases | **[Repository Policy](REPOSITORY.md)** |
 | 🧰 Develop safely | **[GitHub / Development](GITHUB-SETUP.md)** |
-| 📋 Review the RC1 release record | **[0.2.0-rc1 Release Plan](RELEASE-PLAN-0.2.0-rc1.md)** |
+| 🧪 Review the RC2 updater-test candidate | **[0.2.0-rc2 Release Notes](RELEASE-NOTES-0.2.0-rc2.md)** |
+| 📋 Review the accepted RC1 release record | **[0.2.0-rc1 Release Plan](RELEASE-PLAN-0.2.0-rc1.md)** |
 | 🔐 Review security/exposure rules | **[Security](../SECURITY.md)** |
 | 🗒️ Review release history | **[Changelog](../CHANGELOG.md)** |
 
@@ -59,11 +60,12 @@ The release image contains **no operator preconfiguration**: no Wi-Fi, callsign/
 
 | Ref | Purpose |
 |---|---|
+| `release/0.2.0-rc2` | current documentation/updater-test candidate; not promoted until accepted |
 | `v0.2.0-rc1` | immutable physically tested RC1 tag |
 | `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for the accepted RC1 factory image |
 | `release/0.2.0-rc1` | frozen RC1 hardening/source branch |
-| `dev` | accepted integrated baseline; may move with post-release docs/development |
-| `main` | promoted public line; may move with post-release documentation fixes |
+| `dev` | accepted integrated baseline; remains on the post-RC1 docs head until RC2 acceptance |
+| `main` | promoted public line; remains on the post-RC1 docs head until RC2 acceptance |
 | `checkpoint-builder-0.1.0-image-boot-proven` | earlier immutable physically proven baseline |
 
 ## Useful commands

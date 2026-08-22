@@ -7,6 +7,12 @@
   let resolveReady;
   const ready = new Promise(resolve => { resolveReady = resolve; });
 
+  function timeoutFor(op) {
+    if (op === 'plugin.vocoderStatus' || op === 'plugin.vocoderReset') return 20000;
+    if (op === 'plugin.vocoderDecode') return 1500;
+    return 5000;
+  }
+
   function request(op, args = {}) {
     return ready.then(() => new Promise((resolve, reject) => {
       if (!port) return reject(new Error('YWD plugin bridge is unavailable'));
@@ -14,7 +20,7 @@
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new Error(`YWD plugin bridge timed out: ${op}`));
-      }, 5000);
+      }, timeoutFor(op));
       pending.set(id, {resolve, reject, timer});
       port.postMessage({type:'request', id, op:String(op || ''), args:args && typeof args === 'object' ? args : {}});
     }));
@@ -29,6 +35,9 @@
     getConfig: () => request('plugin.getConfig'),
     ping: () => request('plugin.ping'),
     readDmrVoice: options => request('plugin.readDmrVoice', options || {}),
+    vocoderStatus: () => request('plugin.vocoderStatus'),
+    vocoderReset: () => request('plugin.vocoderReset'),
+    vocoderDecode: frames => request('plugin.vocoderDecode', {frames:Array.isArray(frames) ? frames : []}),
   });
 
   window.addEventListener('message', event => {

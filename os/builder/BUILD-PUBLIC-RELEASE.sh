@@ -20,14 +20,14 @@ case "${1:-}" in
   *) echo "Usage: bash os/builder/BUILD-PUBLIC-RELEASE.sh [--prepare-only]" >&2; exit 2 ;;
 esac
 
-if [[ "$VERSION" != "0.2.0-rc1" ]]; then
-  echo "ERROR: public release wrapper expects VERSION 0.2.0-rc1, got $VERSION" >&2
+if [[ "$VERSION" != "0.2.0-rc2" ]]; then
+  echo "ERROR: public release wrapper expects VERSION 0.2.0-rc2, got $VERSION" >&2
   exit 1
 fi
 
 BRANCH="$(git -C "$ROOT_DIR" branch --show-current)"
-if [[ "$BRANCH" != "release/0.2.0-rc1" ]]; then
-  echo "ERROR: public release image must be built from release/0.2.0-rc1; current branch: $BRANCH" >&2
+if [[ "$BRANCH" != "release/0.2.0-rc2" ]]; then
+  echo "ERROR: public release image must be built from release/0.2.0-rc2; current branch: $BRANCH" >&2
   exit 1
 fi
 
@@ -75,8 +75,8 @@ trap restore_local_state EXIT INT TERM
 python3 "$BUILDER/PROFILE-CLI.py" reset
 python3 "$BUILDER/SYSTEM-CLI.py" reset
 python3 "$BUILDER/MMDVM-RUNTIME.py" reset
-python3 "$BUILDER/PROFILE-CLI.py" set image.image_name str "ywd-hotspot-0.2.0-rc1-pi-zero"
-python3 "$BUILDER/PROFILE-CLI.py" set image.os_version str "YWD-Hotspot OS 0.2.0-rc1"
+python3 "$BUILDER/PROFILE-CLI.py" set image.image_name str "ywd-hotspot-0.2.0-rc2-pi-zero"
+python3 "$BUILDER/PROFILE-CLI.py" set image.os_version str "YWD-Hotspot OS 0.2.0-rc2"
 printf '%s' main | python3 "$BUILDER/SYSTEM-CLI.py" set-stdin update_channel
 printf '%s' disabled | python3 "$BUILDER/SYSTEM-CLI.py" set-stdin ssh_policy
 

@@ -20,6 +20,8 @@ import vocoder_protocol as proto
 
 SOCKET_PATH = Path(os.environ.get("YWD_VOCODER_SOCKET", "/run/ywd-vocoder.sock"))
 DEFAULT_TIMEOUT = 0.30
+STATUS_TIMEOUT = 3.0
+MAX_TIMEOUT = 5.0
 
 
 class VocoderUnavailable(RuntimeError):
@@ -33,7 +35,11 @@ class VocoderBackendError(RuntimeError):
 def _request(opcode: int, payload: bytes = b"", timeout: float = DEFAULT_TIMEOUT) -> bytes:
     request_id = random.SystemRandom().randrange(1, 0xFFFFFFFF)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.settimeout(max(0.05, min(float(timeout), 2.0)))
+    # DECODE callers keep the 300 ms default.  STATUS may use a longer timeout
+    # because a cold socket activation on a Pi Zero must start the Python backend
+    # before it can answer; that startup latency is not part of the live audio
+    # backpressure budget.
+    sock.settimeout(max(0.05, min(float(timeout), MAX_TIMEOUT)))
     try:
         sock.connect(str(SOCKET_PATH))
         sock.sendall(proto.packet(proto.KIND_REQUEST, opcode, 0, request_id, payload))
@@ -61,7 +67,7 @@ def _request(opcode: int, payload: bytes = b"", timeout: float = DEFAULT_TIMEOUT
     return response
 
 
-def status(timeout: float = 1.0) -> dict:
+def status(timeout: float = STATUS_TIMEOUT) -> dict:
     """Probe the backend, allowing extra time for a cold socket activation."""
     try:
         doc = proto.parse_json_payload(_request(proto.OP_STATUS, timeout=timeout))

@@ -20,8 +20,8 @@ import vocoder_protocol as proto
 
 SOCKET_PATH = Path(os.environ.get("YWD_VOCODER_SOCKET", "/run/ywd-vocoder.sock"))
 DECODE_TIMEOUT = 0.30
-CONTROL_TIMEOUT = 3.0
-MAX_TIMEOUT = 5.0
+CONTROL_TIMEOUT = 15.0
+MAX_TIMEOUT = 15.0
 
 
 class VocoderUnavailable(RuntimeError):

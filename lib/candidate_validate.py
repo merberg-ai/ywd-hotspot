@@ -57,6 +57,7 @@ CORE_REQUIRED = (
     "systemd/ywd-dmrgateway.service",
     "systemd/ywd-dashboard.service",
     "systemd/ywd-activity.service",
+    "systemd/ywd-setup.service",
     "systemd/ywd-oled.service",
     "systemd/ywd-update.service",
     "systemd/ywd-dmrid-update.service",
@@ -224,6 +225,13 @@ def validate(root: Path) -> list[str]:
         "dashboard instrumentation loader",
         "web/app.js",
         ("/instrumentation.js", "/instrumentation-bootstrap.js", "/instrumentation.css"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "first-boot runtime state preservation",
+        "systemd/ywd-setup.service",
+        ("RuntimeDirectory=ywd-hotspot", "RuntimeDirectoryPreserve=yes"),
         errors,
     )
 

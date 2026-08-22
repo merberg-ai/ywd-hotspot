@@ -1,6 +1,6 @@
 # 🧪 DMR Calibration
 
-[← Docs index](README.md) · [Project README](../README.md) · [Architecture](ARCHITECTURE.md)
+[← Docs index](README.md) · [Project README](../README.md) · [Display](DISPLAY.md) · [Telemetry](TELEMETRY.md) · [Architecture](ARCHITECTURE.md)
 
 ---
 
@@ -38,24 +38,24 @@ That makes **RXOffset** the first calibration target.
 
 Recommended setup:
 
-- use BrandMeister Parrot for repeatable voice tests
-- keep the handheld on low power
-- keep distance/orientation/location unchanged between runs
-- use several similar 5–10 second transmissions per offset
-- avoid touching RXLevel until RXOffset behavior is understood
+- use BrandMeister Parrot for repeatable voice tests;
+- keep the handheld on low power;
+- keep distance/orientation/location unchanged between runs;
+- use several similar 5–10 second transmissions per offset;
+- avoid touching RXLevel until RXOffset behavior is understood.
 
 ## 📊 Sample rule
 
-Recorded calls are grouped by RXOffset and summarized as:
+Recorded calls are grouped by RXOffset and summarized with the measurements actually available, including:
 
 ```text
 sample count
 average BER
 best BER
-average RSSI
+average RSSI (only when supplied by modem firmware)
 ```
 
-A single low-BER packet is not enough to produce an apply recommendation.
+A single low-BER call is not enough to produce an apply recommendation.
 
 Current threshold:
 
@@ -63,16 +63,30 @@ Current threshold:
 3 samples per RX offset
 ```
 
-Until an offset has at least three samples, the UI can show a **provisional** best but will not offer it as the supported recommendation.
+Until an offset has enough samples, the UI can show a provisional best but should not treat it as the supported recommendation.
 
-The ranking uses lowest **average BER** first. Sample count and distance from zero are only tie-breakers; they are not additional RF quality measurements.
+The ranking uses lowest **average BER** first. Sample count and distance from zero are tie-breakers; RSSI is context rather than the optimization target.
+
+## RSSI is optional
+
+A compatible MMDVM HAT can operate normally and report useful BER while its firmware provides no usable RSSI. The `0.2.0-rc1` reference duplex HAT behaved exactly that way: RF/Parrot/BER worked, but RSSI values were zero/unavailable.
+
+Therefore:
+
+- calibration does **not** require RSSI;
+- missing RSSI does not invalidate a BER sample;
+- BER remains the primary objective receive-quality measurement;
+- YWD does not estimate dBm from BER;
+- any RSSI column/average should be treated as optional context.
+
+If your modem firmware does provide real RSSI, use it to detect obvious receive-level/environment changes between runs—not as a substitute for BER optimization.
 
 ## 🧭 Controlled RXOffset sequence
 
 1. Save the calibration baseline.
 2. Start a new calibration session.
 3. Record at least three similar Parrot transmissions at RXOffset `0`.
-4. Note average BER, best BER, and RSSI context.
+4. Note average BER, best BER, and RSSI only if available.
 5. Change **only RXOffset** by a controlled step.
 6. Repeat the same number/approximate duration of transmissions.
 7. Compare average BER across repeated samples.
@@ -99,7 +113,7 @@ ywd-hotspotctl calibration
 
 The command may transparently request sudo because calibration/config data lives in protected appliance paths.
 
-Example shape:
+On RSSI-capable firmware a summary may look like:
 
 ```text
 RX OFFSET    N   AVG BER   BEST BER   AVG RSSI
@@ -107,7 +121,7 @@ RX OFFSET    N   AVG BER   BEST BER   AVG RSSI
          0    3    2.100%     1.600%      -53.0
 ```
 
-An asterisk marks the current supported recommendation.
+On firmware without usable RSSI, the RSSI value may be blank/unavailable while BER statistics remain valid.
 
 ## 📤 Export results
 
@@ -122,14 +136,14 @@ sudo ywd-hotspotctl calibration export csv  > calibration.csv
 
 The WebUI also provides **EXPORT JSON** and **EXPORT CSV**.
 
-- JSON: raw samples + aggregate groups + recommendation metadata
-- CSV: individual recorded samples for external analysis
+- JSON: raw samples + aggregate groups + recommendation metadata;
+- CSV: individual recorded samples for external analysis.
 
 ## 📶 RSSI vs BER
 
-RSSI is useful context. BER is the primary objective receive-quality measurement for this workflow.
+When present, RSSI is useful context. BER is the primary objective receive-quality measurement for this workflow.
 
-A strong-looking RSSI does not automatically mean modem slicing/offset is optimal.
+A strong-looking RSSI does not automatically mean modem slicing/offset is optimal, and an unavailable RSSI does not mean DMR receive quality is unknown when BER is available.
 
 ## 🎚️ RXLevel
 
@@ -147,23 +161,21 @@ hotspot → HT
 
 TXOffset/TXLevel therefore require evidence from the receiving side, such as:
 
-- a handheld that exposes useful BER/error information
-- a second suitable receiver/instrument
-- carefully controlled subjective playback when no better measurement exists
+- a handheld that exposes useful BER/error information;
+- a second suitable receiver/instrument;
+- carefully controlled subjective playback when no better measurement exists.
 
 Do not mix TX conclusions into the RX BER table.
 
 ## 🛡️ Stability during calibration
 
-The project previously experienced one unexplained hard reboot/lock event during DMR testing. No root cause was proven.
+Keep RF tests controlled, especially on compact Pi Zero/HAT builds:
 
-During early calibration:
-
-- use the HT at low power
-- initially keep it roughly 10–15 ft from the Pi/HAT
-- keep a ping running if practical
-- watch uptime
-- if the Pi reboots, inspect the previous persistent journal before more RF tests
+- use the HT at low power;
+- initially keep some physical separation from the Pi/HAT;
+- keep a ping running if practical;
+- watch uptime/temperature/throttling;
+- if the Pi reboots, inspect the previous persistent journal before continuing.
 
 Useful commands:
 
@@ -176,4 +188,4 @@ sudo journalctl -b -1 -k -e
 vcgencmd get_throttled
 ```
 
-If a test gets weird, restore the saved calibration baseline rather than trying to remember which knob got turned three experiments ago.
+If a test gets weird, restore the saved calibration baseline rather than trying to reconstruct which variables changed.

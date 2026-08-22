@@ -22,9 +22,13 @@
 Persistent first-party channels are:
 
 ```text
-main   promoted public line
-dev    physically accepted integrated development line
+main   promoted public/release line
+dev    development/preview line
 ```
+
+`main` is the normal public channel. While releases are frozen it stays at the exact accepted public commit so stable testers do not receive unpublished repository housekeeping.
+
+`dev` may move ahead of `main` and should be treated as a development channel; a `dev` commit is not automatically hardware-accepted merely because it exists.
 
 Temporary release/checkpoint/feature refs are explicit test targets, not persistent channels.
 
@@ -32,6 +36,25 @@ Temporary release/checkpoint/feature refs are explicit test targets, not persist
 ywd-hotspotctl update-channel
 sudo ywd-hotspotctl update-channel main
 sudo ywd-hotspotctl update-channel dev
+```
+
+## Current proven transition
+
+`0.2.0-rc2` established the first published-image updater proof:
+
+```text
+0.2.0-rc1
+  -> normal dashboard update on main
+  -> 0.2.0-rc2
+  -> clean managed source
+  -> reboot
+  -> zero failed systemd units
+```
+
+Accepted RC2 source:
+
+```text
+5f0d2967ce0ed728169f7819d2bc227687d6a9b2
 ```
 
 ## Check / dry-run / apply
@@ -42,7 +65,7 @@ sudo ywd-hotspotctl update --dry-run
 sudo ywd-hotspotctl update
 ```
 
-The About page provides the same saved-channel update workflow when WebUI controls are unlocked.
+The dashboard provides the same saved-channel update workflow when WebUI controls are unlocked.
 
 ## Candidate validation
 
@@ -91,6 +114,7 @@ Verify after an update:
 
 ```bash
 ywd-hotspotctl status
+ywd-hotspotctl source
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
 systemctl --failed --no-pager
 ```
@@ -99,7 +123,7 @@ systemctl --failed --no-pager
 
 YWD-Hotspot OS keeps `ywd-headless-oled.service` as the authoritative physical display owner. Generic installs may use `ywd-oled.service`. Update paths preserve that split.
 
-## Existing install → GitHub management
+## Existing install -> GitHub management
 
 ```bash
 sudo apt update
@@ -133,3 +157,5 @@ sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
 ```
 
 Application provenance and MMDVM runtime provenance are deliberately separate, so an application update cannot disguise a radio-runtime change.
+
+See **[REPOSITORY.md](REPOSITORY.md)** for the current release-freeze and branch-promotion policy.

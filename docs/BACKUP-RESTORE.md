@@ -1,6 +1,6 @@
 # YWD-Hotspot encrypted backup / restore
 
-[← Docs index](README.md) · [Installation](INSTALL.md) · [Upgrading](UPGRADING.md) · [Security](../SECURITY.md)
+[← Docs index](README.md) · [Installation](INSTALL.md) · [SSH / SFTP](SSH.md) · [Upgrading](UPGRADING.md) · [Security](../SECURITY.md)
 
 YWD-Hotspot provides a portable `.ywdsettings` format for rebuilding a hotspot after a fresh OS flash without manually re-entering the appliance configuration.
 
@@ -39,6 +39,18 @@ The encrypted payload can contain:
 - optionally, the currently active Wi-Fi SSID/security profile when NetworkManager can read it
 
 The backup deliberately excludes volatile appliance state such as logs, Last Heard, MMDVM telemetry/session history, update progress, diagnostics, downloaded caches and RadioID data.
+
+### SSH state is deliberately separate
+
+`.ywdsettings` v1 does **not** contain:
+
+- SSH client private keys;
+- `/home/ywd/.ssh/authorized_keys`;
+- OpenSSH `ssh_host_*` server identity keys.
+
+A newly flashed public image therefore returns to factory SSH state: disabled, port 22 closed, no client key authorized by YWD, and no reusable server identity shipped. After restoring normal YWD settings, create a new client login key and enable SSH from **SYSTEM -> SSH ACCESS** if needed.
+
+The separate **EXPORT SERVER IDENTITY** action in the SSH card is recovery-only for preserving an SSH server fingerprint. It is not part of `.ywdsettings` and its archive contains unencrypted private server host keys. See **[SSH.md](SSH.md)**.
 
 Uploaded `.ywdplugin` executable/package source is **not embedded** in `.ywdsettings` v1. If a backup refers to an uploaded plugin whose package is not present on the fresh OS, its configuration is preserved and the restore reports the missing package. Re-upload the package, then install/enable it as appropriate.
 
@@ -125,7 +137,8 @@ If no usable Wi-Fi profile exists on the new image:
 3. select/enter Wi-Fi
 4. the Pi hands wlan0 to station mode
 5. OLED displays the six-digit secure setup code
-6. browse https://ywd-hotspot.local:8443/
+6. browse https://<LAN-IP>:8443/
+   (ywd-hotspot.local is optional when mDNS works)
 ```
 
 The secure setup page then provides:
@@ -146,6 +159,8 @@ The restore page still requires the six-digit OLED code. After it is unlocked:
 8. press **RESTORE HOTSPOT**
 
 A successful first-boot restore writes the normal setup-complete state and then shuts down the temporary setup service. The resulting dashboard uses the restored WebUI authentication record from the old hotspot.
+
+SSH remains independent of that restore and stays off until explicitly configured from the dashboard.
 
 ### Why Wi-Fi onboarding still comes first
 

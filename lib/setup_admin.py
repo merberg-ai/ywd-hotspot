@@ -44,6 +44,20 @@ def complete():
         return False
 
 
+def lan_ipv4():
+    p = core_admin.run(["hostname", "-I"], 5)
+    if p.returncode == 0:
+        for item in (p.stdout or "").split():
+            if ":" not in item and not item.startswith("127.") and item != "10.42.0.1":
+                return item
+    return ""
+
+
+def dashboard_url(port):
+    host = lan_ipv4() or "ywd-hotspot.local"
+    return f"http://{host}:{int(port)}/"
+
+
 def validate(data):
     raw_cfg = data.get("config")
     if not isinstance(raw_cfg, dict):
@@ -133,7 +147,8 @@ def finish(data):
         "apply": applied,
         "rf_started": rf_started,
         "rf_error": rf_error,
-        "dashboard": f"http://ywd-hotspot.local:{candidate['web']['port']}/",
+        "dashboard": dashboard_url(candidate["web"]["port"]),
+        "mdns_dashboard": f"http://ywd-hotspot.local:{candidate['web']['port']}/",
     }
 
 

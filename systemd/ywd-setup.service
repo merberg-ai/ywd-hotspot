@@ -12,6 +12,10 @@ User=ywd-hotspot
 Group=ywd-hotspot
 RuntimeDirectory=ywd-hotspot
 RuntimeDirectoryMode=0750
+# ywd-activity.service shares /run/ywd-hotspot for live activity state. Keep
+# the runtime directory when first-boot setup exits so the still-running
+# activity collector does not lose its writable state path.
+RuntimeDirectoryPreserve=yes
 ExecStartPre=/usr/bin/sudo -n /usr/local/libexec/ywd-hotspot-admin rf-stop
 ExecStart=/opt/ywd-hotspot/app/lib/setup_entry.sh
 Restart=on-failure

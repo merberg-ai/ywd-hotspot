@@ -45,7 +45,12 @@
 .dmrid-grid span{color:var(--muted);font-size:9px;letter-spacing:.06em}
 .dmrid-grid b{font-size:10px;text-align:right;overflow-wrap:anywhere}
 .dmrid-actions{margin-top:4px}
-.system-power-card{border-color:#59313a;background:linear-gradient(180deg,#1a0d12ee,#0d090cee)}
+.system-power-card{
+  align-self:start;
+  height:auto;
+  border-color:#59313a;
+  background:linear-gradient(180deg,#1a0d12ee,#0d090cee);
+}
 .system-power-card .card-title{color:var(--bad)}
 .system-power-actions .btn{min-width:132px}
 @media(max-width:520px){

@@ -1,0 +1,113 @@
+/* RC1 instrumentation composition refinements.
+ * Keep the animated DMR state as the visual anchor. When modem firmware does
+ * not report RSSI, collapse the dead signal column and present BER/quality as a
+ * compact horizontal instrument instead of a skinny vertical gauge.
+ */
+.instrument-panel.rssi-unavailable:not(.mode-tx){
+  grid-template-columns:1fr;
+  gap:10px;
+  align-items:stretch;
+  min-height:0;
+}
+
+.instrument-panel.rssi-unavailable .signal-side{
+  display:none!important;
+}
+
+.instrument-panel.rssi-unavailable .instrument-center{
+  grid-column:1;
+  min-height:126px;
+  padding:2px 0 0;
+}
+
+.instrument-panel.rssi-unavailable .instrument-energy{
+  margin-bottom:0;
+}
+
+.instrument-panel.rssi-unavailable .quality-side{
+  grid-column:1;
+  display:grid;
+  grid-template-columns:auto minmax(150px,1fr) auto;
+  grid-template-areas:
+    "label meter value"
+    "label meter grade";
+  align-items:center;
+  justify-items:stretch;
+  column-gap:12px;
+  row-gap:2px;
+  padding:9px 12px;
+  border:1px solid #173d49;
+  border-radius:7px;
+  background:linear-gradient(180deg,#06141a,#040d12);
+}
+
+.instrument-panel.rssi-unavailable .quality-side .instrument-label{
+  grid-area:label;
+  text-align:left;
+  white-space:nowrap;
+}
+
+.instrument-panel.rssi-unavailable .quality-meter{
+  grid-area:meter;
+  width:100%;
+  height:11px;
+  border-radius:999px;
+}
+
+.instrument-panel.rssi-unavailable .quality-meter .quality-fill{
+  top:0;
+  right:auto;
+  bottom:auto;
+  left:0;
+  width:0;
+  height:100%!important;
+  background:linear-gradient(90deg,#ff6c7d 0,#ffd166 42%,#6bf4a5 72%,#62e9ff 100%);
+  transition:width var(--instrument-frame,100ms) linear;
+}
+
+.instrument-panel.rssi-unavailable .quality-side .instrument-value{
+  grid-area:value;
+  text-align:right;
+  white-space:nowrap;
+}
+
+.instrument-panel.rssi-unavailable .quality-side .instrument-sub{
+  grid-area:grade;
+  min-height:0;
+  text-align:right;
+  white-space:nowrap;
+}
+
+.instrument-panel.rssi-unavailable .instrument-history,
+.instrument-panel.rssi-unavailable .instrument-metrics{
+  grid-column:1;
+}
+
+.instrument-panel.rssi-unavailable .instrument-history{
+  margin-top:0;
+}
+
+@media(max-width:760px){
+  .instrument-panel.rssi-unavailable:not(.mode-tx){
+    grid-template-columns:1fr;
+  }
+  .instrument-panel.rssi-unavailable .quality-side{
+    grid-template-columns:auto 1fr auto;
+    column-gap:8px;
+    padding:8px 9px;
+  }
+}
+
+@media(max-width:480px){
+  .instrument-panel.rssi-unavailable .quality-side{
+    grid-template-columns:1fr auto;
+    grid-template-areas:
+      "label value"
+      "meter meter"
+      "grade grade";
+    row-gap:5px;
+  }
+  .instrument-panel.rssi-unavailable .quality-side .instrument-sub{
+    text-align:left;
+  }
+}

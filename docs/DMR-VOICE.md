@@ -1,6 +1,6 @@
 # 🎧 YWD Extended MMDVM / Passive DMR Voice
 
-[← Docs index](README.md) · [Building](BUILDING.md) · [Architecture](ARCHITECTURE.md) · [Plugins](PLUGINS.md)
+[← Docs index](README.md) · [Building](BUILDING.md) · [Telemetry](TELEMETRY.md) · [Architecture](ARCHITECTURE.md) · [Plugins](PLUGINS.md)
 
 YWD-Hotspot supports two explicit MMDVM-Host runtime variants. Passive DMR voice and RX Monitor use the **YWD Extended** variant; Stock Upstream intentionally omits that observation capability.
 
@@ -86,7 +86,7 @@ MMDVM modem / BrandMeister
              loopback MQTT only
                     │
                     ▼
-          trusted voice bridge
+          trusted bounded voice bridge
                     │
                     ▼
           read:dmr-voice capability
@@ -94,7 +94,7 @@ MMDVM modem / BrandMeister
                     ▼
           sandboxed RX Monitor iframe
                     │
-                    └─ browser FEC/AMBE/audio work
+                    └─ browser FEC / AMBE recovery / PCM playback
 ```
 
 The Pi does not perform AMBE speech synthesis. Browser-side decode/playout keeps the expensive work off the Pi Zero.
@@ -147,7 +147,7 @@ An RX Monitor package can therefore declare, for example:
 
 ## Voice-frame envelope
 
-The passive copy carries metadata plus the existing 33-byte DMR voice burst, for example:
+The passive copy carries metadata plus the existing 33-byte DMR voice burst. A representative envelope is:
 
 ```json
 {
@@ -155,24 +155,48 @@ The passive copy carries metadata plus the existing 33-byte DMR voice burst, for
     "source": "rf",
     "slot": 2,
     "src_id": 3196104,
-    "dst_id": 9,
-    "group": "yes",
+    "dst_id": 9990,
+    "group": "no",
     "seq_no": 12,
     "n": 4,
-    "ber": 0,
-    "rssi": 57,
+    "ber": 1,
+    "rssi": 0,
     "frame_hex": "...66 lowercase hex characters..."
   }
 }
 ```
 
-`source` is `rf` or `network`; session/header/end events stay on the separate telemetry/session path.
+`source` is `rf` or `network`. Session/header/end events stay on the separate low-rate telemetry/session path.
+
+### RSSI field semantics
+
+The voice envelope carries the RSSI value MMDVM-Host receives from the modem data path; YWD does not manufacture it.
+
+On compatible HAT firmware with RSSI reporting enabled, an RF frame may contain a positive RSSI magnitude that the normal MMDVM mapping converts to dBm context. On firmware that does **not** report RSSI, the field may remain `0` even while BER and DMR voice data are healthy.
+
+That behavior was physically proven during RC1 acceptance: the reference duplex HAT delivered hundreds of valid voice frames with zero bridge parse errors and valid BER, while every RF/network voice RSSI field was `0`. This is treated as **RSSI unavailable**, not `0 dBm`.
+
+Enabling real RSSI may require a compatible MMDVM_HS **HAT firmware** build with its optional RSSI reporting support. Recompiling only MMDVM-Host on the Pi cannot create a measurement the modem firmware does not send. YWD-Hotspot does not automatically flash HAT firmware.
+
+See **[TELEMETRY.md](TELEMETRY.md)** and **[DISPLAY.md](DISPLAY.md)**.
+
+## Trusted voice bridge
+
+`ywd-mmdvm-voice.service` subscribes only to the local `ywd-mmdvm/voice` topic and writes a bounded runtime ring under:
+
+```text
+/run/ywd-hotspot-voice/voice.json
+```
+
+The bridge validates/normalizes frame fields, uses bounded capacity, and coalesces snapshot writes to remain suitable for the Pi Zero. It does not own the modem or transmit.
+
+A long call plus network playback can exceed the in-memory frame capacity, so the voice ring is a recent-frame transport rather than permanent call history. Session/history consumers should use the normalized telemetry/activity layers for durable-enough bounded summaries.
 
 ## Browser recovery path
 
-RX Monitor's established browser path performs DMR A/B/C deinterleave, Golay/FEC correction, AMBE+2 descrambling, 49-bit vocoder recovery, bounded diagnostics, and browser-side audio playback. Three AMBE codewords are recovered per DMR voice burst.
+RX Monitor's browser path performs DMR burst recovery/FEC/AMBE+2 preparation and browser-side audio playback. The architecture keeps AMBE/audio work on the browser device and the trusted Pi-side bridge narrow.
 
-The architecture has been physically exercised on the reference Pi Zero + duplex MMDVM setup while normal MMDVM-Host/DMRGateway ownership remained intact.
+The path has been physically exercised on the reference Pi Zero + duplex MMDVM setup while normal MMDVM-Host/DMRGateway ownership remained intact.
 
 ## Distribution boundary
 

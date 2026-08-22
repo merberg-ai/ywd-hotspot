@@ -2,6 +2,7 @@
 Description=YWD-Hotspot loopback MQTT telemetry broker
 After=network.target
 Before=ywd-mmdvmhost.service ywd-mmdvm-telemetry.service
+Conflicts=mosquitto.service
 ConditionPathExists=/opt/ywd-hotspot/app/lib/ywd-mosquitto.conf
 
 [Service]
@@ -9,6 +10,12 @@ Type=simple
 User=mosquitto
 Group=mosquitto
 ExecStart=/usr/sbin/mosquitto -c /opt/ywd-hotspot/app/lib/ywd-mosquitto.conf
+# Type=simple only proves the Mosquitto process was spawned; on a Pi Zero the
+# dependent MMDVM processes can otherwise reach localhost:18883 before the
+# broker has bound its socket. Hold service startup briefly until the listener
+# is genuinely ready so YWD Extended passive voice/telemetry is deterministic.
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do if exec 3<>/dev/tcp/127.0.0.1/18883; then exec 3>&-; exec 3<&-; exit 0; fi; sleep 0.1; done; exit 1'
+TimeoutStartSec=10
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true

@@ -26,7 +26,6 @@ bin/ywd-hotspotctl-core
 bin/ywd-ui.sh
 docs/README.md
 docs/ARCHITECTURE.md
-docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
 docs/BACKUP-RESTORE.md
 docs/BUILDING.md
 docs/CALIBRATION.md
@@ -40,11 +39,15 @@ docs/PLUGIN-PACKAGES.md
 docs/PLUGIN-UI.md
 docs/PLUGINS.md
 docs/RELEASE-NOTES-0.2.0-rc1.md
-docs/RELEASE-PLAN-0.2.0-rc1.md
+docs/RELEASE-NOTES-0.2.0-rc2.md
 docs/REPOSITORY.md
+docs/SSH.md
 docs/TALKGROUPS.md
 docs/TELEMETRY.md
 docs/UPGRADING.md
+docs/history/README.md
+docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
+docs/history/RELEASE-PLAN-0.2.0-rc1.md
 lab/mmdvm-diag.sh
 lib/activity.py
 lib/admin.py
@@ -109,6 +112,7 @@ lib/setup_entry.sh
 lib/setup_restore_server.py
 lib/setup_server.py
 lib/ssh_keys_admin.py
+lib/ssh_runtime_admin.py
 lib/system_branding.sh
 lib/telemetry_runtime.py
 lib/update_admin.py
@@ -147,6 +151,7 @@ web/index.html
 web/instrumentation-bootstrap.js
 web/instrumentation.css
 web/instrumentation.js
+web/instrumentation-layout.css
 web/plugin-config-actions.js
 web/plugin-manager.css
 web/plugin-manager-render.js
@@ -160,6 +165,8 @@ web/plugin-ui-runtime.js
 web/plugin-ui.css
 web/ssh-key-export.js
 web/style.css
+web/system-ui.css
+web/system-ui.js
 web/talkgroups.js
 web/ui-polish.css
 web/ui-polish.js

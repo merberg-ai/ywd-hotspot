@@ -187,7 +187,7 @@ class SetupServer(ThreadingHTTPServer):
 
 
 class SetupHandler(BaseHTTPRequestHandler):
-    server_version = "YWD-Hotspot-Setup/0.2"
+    server_version = "YWD-Hotspot-Setup/0.3"
 
     def log_message(self, fmt, *args):
         return
@@ -235,8 +235,11 @@ class SetupHandler(BaseHTTPRequestHandler):
             MANAGER.message_page(
                 "Trying Wi-Fi",
                 f"Trying {html.escape(ssid)}. This setup network will disappear briefly. "
-                "If the connection succeeds, reconnect your phone to normal Wi-Fi and open "
-                "http://ywd-hotspot.local:8080/. If it fails, the YWD setup AP will return.",
+                "If the connection succeeds, reconnect your phone/computer to your normal Wi-Fi. "
+                "The OLED will show the hotspot's assigned LAN IP and large six-digit setup code. "
+                "Open https://&lt;LAN-IP&gt;:8443/ to continue setup. "
+                "ywd-hotspot.local may also work when your network supports mDNS. "
+                "If Wi-Fi connection fails, the YWD setup AP will return automatically.",
             ),
             202,
         )
@@ -503,7 +506,7 @@ class NetworkManager:
     <label class="check"><input type="checkbox" name="hidden" value="1"> Hidden network</label>
     <button type="submit">Save &amp; Connect</button>
   </form>
-  <p class="small">The AP disappears while YWD-Hotspot tries the new network. If it fails, recovery AP returns automatically.</p>
+  <p class="small">The AP disappears while YWD-Hotspot tries the new network. If it succeeds, use the LAN IP shown on the OLED to continue setup at HTTPS port 8443. If it fails, recovery AP returns automatically.</p>
 </div>
 """
         return self._page("YWD-Hotspot Wi-Fi Setup", body)

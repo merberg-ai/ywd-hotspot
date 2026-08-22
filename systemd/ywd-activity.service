@@ -11,6 +11,10 @@ Group=ywd-hotspot
 SupplementaryGroups=systemd-journal
 RuntimeDirectory=ywd-hotspot
 RuntimeDirectoryMode=0750
+# The first-boot setup service shares /run/ywd-hotspot for setup state. Preserve
+# the directory across activity restarts/stops so neither service can remove the
+# other service's runtime state while the appliance is up.
+RuntimeDirectoryPreserve=yes
 ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/activity.py
 Restart=on-failure
 RestartSec=2

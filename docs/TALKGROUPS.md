@@ -14,8 +14,8 @@ Static talkgroup changes happen only after the operator reviews a change plan, p
 
 BrandMeister distinguishes between:
 
-- **Static** talkgroups — remain subscribed until removed
-- **Dynamic** talkgroups — created by RF activity and can be cleared with **DROP ALL DYNAMIC**
+- **Static** talkgroups — remain subscribed until removed;
+- **Dynamic** talkgroups — created by RF activity and can be cleared with **DROP ALL DYNAMIC**.
 
 YWD-Hotspot uses the BrandMeister API v2 key configured with:
 
@@ -25,7 +25,22 @@ sudo ywd-hotspotctl bm-api-key
 
 The API key stays on the Pi and is never returned to browser JavaScript.
 
-For this simplex hotspot, BrandMeister API talkgroup operations use slot `0`.
+### Simplex vs duplex slot routing
+
+YWD-Hotspot supports both radio modes:
+
+```text
+simplex
+  one RF frequency
+  BrandMeister static-TG API operations use the simplex slot convention (0)
+
+duplex
+  separate hotspot RX/TX frequencies
+  TS1 + TS2 available
+  talkgroup operations are slot-aware and preserve the selected TS1/TS2 routing
+```
+
+The dashboard/configuration is the source of the hotspot's operating mode. Do not assume a duplex HAT should be treated as simplex merely because one timeslot happens to be active.
 
 ## 🧭 Talkgroup Manager page
 
@@ -41,7 +56,7 @@ The dedicated **TALKGROUPS** tab includes:
 | Static Change Plan | Preview desired adds/removals before apply |
 | Drop All Dynamic | Clear dynamic subscriptions with confirmation |
 
-The older direct static-TG controls remain available on the Control page.
+Quick **DROP QSO** / **DROP ALL DYNAMIC** actions are also surfaced with the live BrandMeister status area when controls are unlocked.
 
 ## 🔎 Directory search + Pi Zero performance
 
@@ -49,18 +64,18 @@ The browser searches through the local YWD dashboard; it does not talk directly 
 
 To stay lightweight on the original Pi Zero W:
 
-- the full directory is downloaded only on demand
-- normalized data is cached at `/var/lib/ywd-hotspot/talkgroup-directory.json`
-- normal cache lifetime is 24 hours
-- repeated searches use the local cache
-- **REFRESH DIRECTORY** is available while control mode is unlocked
-- a stale cache can still be used if BrandMeister directory lookup is temporarily unavailable
+- the full directory is downloaded only on demand;
+- normalized data is cached at `/var/lib/ywd-hotspot/talkgroup-directory.json`;
+- normal cache lifetime is 24 hours;
+- repeated searches use the local cache;
+- **REFRESH DIRECTORY** is available while control mode is unlocked;
+- a stale cache can still be used if BrandMeister directory lookup is temporarily unavailable.
 
 The cache contains public TG IDs/names only. It contains no API key or hotspot password.
 
 ## 📝 Static change plan
 
-Opening the manager initializes the desired plan from the hotspot's current static subscriptions.
+Opening the manager initializes the desired plan from the hotspot's current static subscriptions for the relevant routing context.
 
 Adding/removing a TG in the manager edits only the local browser plan.
 
@@ -104,6 +119,8 @@ Saved sets are also browser-local.
 
 Loading a set changes the **plan only**. It does not alter BrandMeister until **APPLY PLAN** is confirmed.
 
+On duplex systems, review the intended timeslot before applying a saved plan.
+
 ## 💻 CLI controls
 
 Direct BrandMeister controls remain available:
@@ -116,16 +133,18 @@ sudo ywd-hotspotctl bm dropqso
 sudo ywd-hotspotctl bm dropdyn
 ```
 
+Use the WebUI when you need the full duplex/slot-aware planning presentation.
+
 ## 🔐 Security boundary
 
 Directory search is read-only and does not require exposing the BrandMeister API key to the browser.
 
 Changing subscriptions or clearing dynamic routes requires:
 
-1. a configured BrandMeister API key
-2. an unlocked YWD-Hotspot control session
-3. the authenticated local dashboard API
-4. explicit confirmation for destructive/batch actions
+1. a configured BrandMeister API key;
+2. an unlocked YWD-Hotspot control session;
+3. the authenticated local dashboard API;
+4. explicit confirmation for destructive/batch actions.
 
 The Talkgroup Manager never returns the BrandMeister API key to browser JavaScript.
 
@@ -133,11 +152,12 @@ The Talkgroup Manager never returns the BrandMeister API key to browser JavaScri
 
 When testing a new build:
 
-1. verify Current Static/Dynamic state
-2. search a known TG by number
-3. search a TG by name
-4. add/remove TGs from the plan and verify live state does not change
-5. cancel an **APPLY PLAN** confirmation
-6. apply a harmless intended change
-7. confirm live BrandMeister state refreshes correctly
-8. save/load a named set and verify it changes the plan only
+1. verify simplex/duplex mode and, for duplex, both slot contexts;
+2. verify Current Static/Dynamic state;
+3. search a known TG by number;
+4. search a TG by name;
+5. add/remove TGs from the plan and verify live state does not change;
+6. cancel an **APPLY PLAN** confirmation;
+7. apply a harmless intended change on the intended slot;
+8. confirm live BrandMeister state refreshes correctly;
+9. save/load a named set and verify it changes the plan only.

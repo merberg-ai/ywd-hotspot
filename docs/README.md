@@ -3,13 +3,14 @@
 [← Back to project README](../README.md)
 
 > [!IMPORTANT]
-> `0.2.0-rc1` is the current public-testing candidate. Its release image is a factory-clean appliance artifact and is published only after the exact image passes physical smoke testing.
+> `0.2.0-rc2` is the current physically accepted public-testing release. It was validated both as a freshly flashed factory image and through an in-place `0.2.0-rc1 -> 0.2.0-rc2` dashboard update, followed by a clean reboot with zero failed systemd units.
 
 ## Documentation map
 
 | I want to… | Guide |
 |---|---|
 | 🚀 Flash/install a new hotspot | **[Installation](INSTALL.md)** |
+| 🔑 Enable SSH/SFTP and connect | **[SSH / SFTP Access](SSH.md)** |
 | 🛠️ Validate/build source, MMDVM variants, or images | **[Building](BUILDING.md)** |
 | 🥧 Understand the appliance/public-image workflow | **[OS Development](OS-DEVELOPMENT.md)** |
 | 🔄 Check/apply updates | **[Upgrading](UPGRADING.md)** |
@@ -26,40 +27,74 @@
 | 🧱 Understand RF/runtime boundaries | **[Architecture](ARCHITECTURE.md)** |
 | 🌿 Understand branches/checkpoints/releases | **[Repository Policy](REPOSITORY.md)** |
 | 🧰 Develop safely | **[GitHub / Development](GITHUB-SETUP.md)** |
-| 📋 Review the current RC plan | **[0.2.0-rc1 Release Plan](RELEASE-PLAN-0.2.0-rc1.md)** |
+| 🧪 Review the accepted RC2 release | **[0.2.0-rc2 Release Notes](RELEASE-NOTES-0.2.0-rc2.md)** |
+| 📦 Review RC1 release notes | **[0.2.0-rc1 Release Notes](RELEASE-NOTES-0.2.0-rc1.md)** |
+| 🗄️ Browse completed plans / Alpha archaeology | **[Historical Documentation](history/README.md)** |
 | 🔐 Review security/exposure rules | **[Security](../SECURITY.md)** |
 | 🗒️ Review release history | **[Changelog](../CHANGELOG.md)** |
 
+## Current accepted public release
+
+```text
+Version
+  0.2.0-rc2
+
+Tag / source
+  v0.2.0-rc2
+  5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+
+Image SHA256
+  60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+
+Acceptance
+  fresh-image boot/test PASS
+  RC1 -> RC2 dashboard updater PASS
+  post-update reboot PASS
+  failed systemd units: 0
+```
+
+The published image is the exact tested compressed artifact; its GitHub-facing filename is `ywd-hotspot-0.2.0-rc2.img.xz`.
+
 ## Core operating rules
 
-- RF does not start merely because install/update/restore/plugin work happened.
+- RF does not start merely because install/update/restore/plugin/SSH work happened.
 - `/etc/ywd-hotspot/config.json` is canonical; generated MMDVM/DMRGateway INIs are outputs.
 - MMDVM-Host remains the only modem/RF owner.
 - Simplex/duplex are explicit; duplex has separate hotspot RX/TX and TS1/TS2.
 - `ywd-extended` is the recommended/default MMDVM runtime; `upstream` is the supported stock opt-out.
-- Runtime choice/provenance persists across ordinary app updates.
+- Runtime choice/provenance persists across ordinary application updates.
 - Stock and Extended binaries use separate compile-cache identities.
 - Plugins may declare trusted MMDVM runtime/API/capability requirements but cannot switch the runtime themselves.
 - `/opt/ywd-hotspot/repo` is managed source; `/opt/ywd-hotspot/app` is deployed runtime.
-- credentials stay out of browser-readable state and public diagnostics.
-- executable service/UI plugins require trusted Ed25519 signatures.
-- no current plugin gets independent modem ownership or RF TX authority.
+- Credentials stay out of browser-readable state and public diagnostics.
+- Executable service/UI plugins require trusted Ed25519 signatures.
+- No current plugin gets independent modem ownership or RF TX authority.
 - YWD-Hotspot OS keeps one authoritative OLED owner.
-- the original Pi Zero W remains the performance budget.
-- branch/ref and persistent update channel are distinct provenance fields.
+- RSSI is displayed only when modem firmware actually supplies a usable value; BER is never converted into fake dBm.
+- Factory SSH is OFF; when enabled from the authenticated dashboard it is public-key-only and root/password SSH remain disabled.
+- The original Pi Zero W remains the performance budget.
+- Branch/ref identity and persistent update channel are distinct provenance fields.
 
 ## Public factory-image invariant
 
-The release image contains **no operator preconfiguration**: no Wi-Fi, callsign/DMR ID, BM credentials/API key, dashboard password, imported settings, RF autostart, or builder SSH authorized key. It boots into the setup AP/OLED-code onboarding flow.
+Public images contain **no operator preconfiguration**: no Wi-Fi, callsign/DMR ID, BM credentials/API key, dashboard password, imported settings, RF autostart, builder SSH authorized key, or reusable SSH server host identity. They boot into the setup AP/OLED-code onboarding flow.
 
-## Current release refs
+## Current repository refs
 
 | Ref | Purpose |
 |---|---|
-| `release/0.2.0-rc1` | current RC/factory-image preparation |
-| `checkpoint-builder-0.1.0-image-boot-proven` | immutable physically proven baseline |
-| `dev` | accepted integrated baseline; promotion target after image acceptance |
-| `main` | promoted public line; promotion target after image acceptance |
+| `main` | frozen public/update line at accepted RC2 while releases are frozen |
+| `dev` | active integrated development and repository housekeeping |
+| `dev-plugins` | specialized plugin development; intentionally independent from this cleanup |
+| `v0.2.0-rc2` | immutable updater-proven RC2 tag |
+| `release/0.2.0-rc2` | frozen RC2 source branch |
+| `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for accepted RC2 image/updater test |
+| `v0.2.0-rc1` | immutable physically tested RC1 tag |
+| `release/0.2.0-rc1` | frozen RC1 source branch |
+| `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for accepted RC1 image |
+| `checkpoint-builder-0.1.0-image-boot-proven` | earlier immutable builder/appliance baseline |
+
+See [Repository Policy](REPOSITORY.md) for the branch/ref rules.
 
 ## Useful commands
 
@@ -76,4 +111,6 @@ Sanitized support bundle:
 sudo ywd-hotspotctl diagnostics
 ```
 
-Never post protected backups, raw credential files, signing private keys, `.ywdsettings` passphrases, or unsanitized appliance state.
+Never post protected backups, raw credential files, SSH client/server private keys, signing private keys, `.ywdsettings` passphrases, or unsanitized appliance state.
+
+Historical implementation notes and completed release plans live under `docs/history/` and are intentionally separated from current operating documentation.

@@ -2,7 +2,7 @@
 
 [Docs index](README.md) · [Architecture](ARCHITECTURE.md) · [Display](DISPLAY.md) · [MMDVM Sessions](MMDVM-SESSIONS.md)
 
-YWD-Hotspot keeps a passive structured MMDVM telemetry path as **trusted core infrastructure**. The old `mmdvm-live-telemetry` proof plugin has been retired; the telemetry bridge itself remains because dashboard instrumentation, normalized session state, diagnostics, and future capability-gated consumers use it independently of that plugin.
+YWD-Hotspot keeps a passive structured MMDVM telemetry path as **trusted core infrastructure**. The old `mmdvm-live-telemetry` proof plugin is retired; the broker/telemetry/session infrastructure remains because dashboard instrumentation, normalized session state, diagnostics, RX Monitor support, and future capability-gated consumers use it independently of that plugin.
 
 This path never owns the modem or RF configuration.
 
@@ -28,6 +28,8 @@ trusted YWD bridge
    └─ explicit future capability consumers
 ```
 
+YWD Extended also emits per-frame passive DMR voice envelopes on a separate `ywd-mmdvm/voice` topic consumed by `ywd-mmdvm-voice.service`.
+
 No telemetry consumer receives modem serial ownership or RF TX authority merely because it can read this state.
 
 ## MMDVM-Host configuration
@@ -43,13 +45,19 @@ Keepalive=60
 Name=ywd-mmdvm
 ```
 
-The structured JSON topic is:
+Structured low-rate JSON topic:
 
 ```text
 ywd-mmdvm/json
 ```
 
-The passive DMR voice tap uses a separate topic so per-frame voice data does not pass through the low-rate telemetry snapshot path.
+YWD Extended passive voice topic:
+
+```text
+ywd-mmdvm/voice
+```
+
+Per-frame voice traffic is kept separate from the low-rate telemetry snapshot path.
 
 ## Loopback broker boundary
 
@@ -61,9 +69,9 @@ allow_anonymous true
 persistence false
 ```
 
-There is no YWD LAN/WAN telemetry listener. `ywd-mqtt.service` owns this dedicated loopback broker instance/configuration.
+There is no YWD LAN/WAN telemetry listener. `ywd-mqtt.service` owns the dedicated loopback broker instance/configuration and conflicts with the distro `mosquitto.service` so both brokers are not left competing for service ownership.
 
-If the OS already has Mosquitto for another purpose, YWD does not use package removal as a cleanup shortcut for shared software.
+The image/runtime dependencies include `mosquitto` and `mosquitto-clients`; normal runtime reconciliation can also install/repair the required broker/client packages when needed. The broker is still a local implementation detail, not a user-facing MQTT service.
 
 ## Trusted bridge
 
@@ -79,7 +87,9 @@ Runtime snapshot:
 
 The file lives under tmpfs runtime state, is recreated at boot, and contains no plugin configuration or reusable credentials.
 
-## RSSI normalization
+The MMDVMHost unit requests the YWD MQTT broker and telemetry bridge so the passive structured path is available whenever that runtime starts. Side-infrastructure failure remains diagnostic; it is not permission to seize RF/modem ownership.
+
+## RSSI normalization and hardware reality
 
 Supported MMDVM_HS ADF7021 firmware may report the positive magnitude of received dBm in its RSSI bytes. YWD generates the matching normalization map:
 
@@ -88,21 +98,27 @@ Supported MMDVM_HS ADF7021 firmware may report the positive magnitude of receive
 255 -255
 ```
 
-and configures MMDVM-Host to use it through:
+and configures MMDVM-Host to use:
 
 ```ini
 [Modem]
 RSSIMappingFile=/etc/ywd-hotspot/mmdvm-hs-rssi.dat
 ```
 
-This converts values such as `62` to approximately `-62 dBm`. It does not invent RSSI when firmware does not provide RSSI data and is not a replacement for a board-specific calibrated RF measurement system.
+A reported magnitude such as `62` can therefore normalize to approximately `-62 dBm`.
+
+**This mapping cannot create RSSI that the modem firmware never sends.** RSSI reporting is optional in MMDVM_HS firmware builds (commonly associated with the firmware-side `SEND_RSSI_DATA` option). Recompiling MMDVM-Host on the Pi does not make a HAT firmware that reports zero RSSI suddenly produce a real measurement.
+
+During `0.2.0-rc1` physical acceptance, the reference duplex HAT produced healthy DMR voice/BER telemetry but all RF voice-frame RSSI fields were `0`. That established the expected unsupported behavior for that firmware: BER works, RSSI remains unavailable, and the WebUI hides RSSI-only instrumentation instead of inventing dBm.
+
+YWD-Hotspot does not automatically flash MMDVM HAT firmware because board/clone/duplex/oscillator variants make that unsafe as a generic appliance action.
 
 ## DMR/session information
 
 Trusted telemetry/session normalization can expose bounded state such as:
 
 - current MMDVM mode;
-- latest RSSI and BER samples with age/source semantics;
+- latest usable RSSI and BER samples with age/source semantics;
 - DMR source/destination IDs;
 - group/private status;
 - timeslot;
@@ -111,28 +127,30 @@ Trusted telemetry/session normalization can expose bounded state such as:
 - completed duration/BER/loss/RSSI summaries when supplied upstream;
 - bridge heartbeat/message/error counters.
 
-RSSI is an RF receive measurement. Network-originated audio does not magically acquire a new local RF RSSI sample, so consumers must respect sample age and direction.
+RSSI is an RF receive measurement. Network-originated audio does not acquire a local RF RSSI sample, and RF RSSI remains absent when the modem firmware supplies no usable value.
 
 See **[MMDVM-SESSIONS.md](MMDVM-SESSIONS.md)** for normalized call/session semantics.
 
 ## Dashboard relationship
 
-The dashboard does **not** depend on an MMDVM telemetry plugin. It reads trusted core status/telemetry/session state directly.
+The dashboard does **not** depend on an MMDVM telemetry plugin. It reads trusted core activity/telemetry/session state through the normal dashboard API.
 
-This is why removing the old `mmdvm-live-telemetry` plugin did not remove or disable:
+That is why retiring the old proof plugin did not remove:
 
 ```text
 ywd-mqtt.service
 ywd-mmdvm-telemetry.service
 ```
 
-The old plugin-specific presentation/polling code is a separate cleanup candidate after the current pre-main hardening build is physically validated.
+The current LIVE DMR panel uses measurements honestly: BER can remain visible even when RSSI is unavailable, and RSSI presentation is suppressed until a usable RSSI value exists.
 
 ## Update / boot behavior
 
-Telemetry runtime is provisioned as passive side infrastructure. Failure to activate it should be reported diagnostically but must not be treated as permission to break otherwise healthy DMR operation.
+Telemetry runtime is provisioned as passive side infrastructure. Normal application updates reinstall the trusted units while preserving RF active/enabled policy and the selected MMDVM runtime.
 
-Normal application updates preserve RF enabled/active policy while reinstalling trusted runtime units. Candidate validation now treats telemetry as a capability set: if telemetry markers are present in a candidate, the broker config, bridge/session/runtime helpers, and systemd units must be present coherently regardless of branch name.
+Candidate validation treats telemetry as a coherent capability set: if telemetry markers are present in a candidate, the broker config, bridge/session/runtime helpers, package/runtime assumptions, and systemd units must be present coherently regardless of branch name.
+
+Shared runtime state under `/run/ywd-hotspot` uses preservation where required so completion of one-shot first-boot setup cannot remove the live activity collector's runtime directory.
 
 ## Basic diagnostics
 
@@ -140,14 +158,19 @@ Normal application updates preserve RF enabled/active policy while reinstalling 
 echo '===== TELEMETRY SERVICES ====='
 systemctl is-active ywd-mqtt.service
 systemctl is-active ywd-mmdvm-telemetry.service
+systemctl is-active ywd-mmdvm-voice.service || true
 
 echo
 echo '===== LOOPBACK LISTENER ====='
 sudo ss -ltnp | grep 18883 || true
 
 echo
-echo '===== SNAPSHOT ====='
+echo '===== TELEMETRY SNAPSHOT ====='
 sudo python3 -m json.tool /run/ywd-hotspot-telemetry/telemetry.json 2>/dev/null || true
+
+echo
+echo '===== VOICE BRIDGE SNAPSHOT ====='
+sudo python3 -m json.tool /run/ywd-hotspot-voice/voice.json 2>/dev/null || true
 
 echo
 echo '===== RSSI MAPPING ====='
@@ -165,10 +188,12 @@ echo '===== FAILURES ====='
 systemctl --failed --no-pager
 ```
 
-Expected listener scope is `127.0.0.1:18883`, not a public/LAN address.
+Expected broker scope is `127.0.0.1:18883`, not a public/LAN address.
+
+A short `mosquitto_sub` window that receives no message merely means no matching MMDVM event occurred during that window; inspect service/listener state and perform a controlled RF test before calling the bridge broken.
 
 ## Relationship to plugins
 
-Telemetry established a reusable observation boundary, but current plugins still require explicit declared capabilities and do not receive raw modem/network ownership. A future telemetry-oriented plugin can consume a narrow core capability rather than opening its own MQTT or modem connection.
+Telemetry establishes a reusable observation boundary, but plugins still require explicit declared capabilities and never receive raw modem/network ownership merely because telemetry exists. Rich consumers should use a narrow core capability or normalized API rather than opening their own modem/MQTT connection.
 
 Any future RF-control plugin remains a separate architectural problem requiring trusted-core ownership/arbitration, explicit operator intent, safe state capture/restore, and failure recovery.

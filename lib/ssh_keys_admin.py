@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Privileged SSH identity/client-key helper for the locked WebUI.
+"""Privileged SSH runtime/key helper for the locked YWD-Hotspot WebUI.
 
-Server identity export reads only OpenSSH host identity files from /etc/ssh.
-Client enrollment creates a fresh Ed25519 login key for one existing normal
-local user, installs only the public key into that user's authorized_keys, and
-returns the private/public pair once. The generated private client key is never
-stored persistently on the hotspot.
+Public YWD-Hotspot OS images intentionally ship with the SSH server disabled.
+The authenticated dashboard may explicitly enable/disable SSH after first boot,
+but YWD always enforces public-key-only authentication: no SSH passwords and no
+root SSH login. Client enrollment creates a fresh Ed25519 key for one existing
+normal local user, installs only the public key into that user's authorized_keys,
+and returns the private/public pair once. The generated private client key is
+never stored persistently on the hotspot.
 """
 from __future__ import annotations
 
@@ -26,12 +28,42 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SSH_DIR = Path("/etc/ssh")
+SSHD = Path("/usr/sbin/sshd")
+SSHD_DROPIN_DIR = SSH_DIR / "sshd_config.d"
+SSHD_DROPIN = SSHD_DROPIN_DIR / "90-ywd-hotspot.conf"
 HOME_ROOT = Path("/home")
 HOST_PRIVATE_RE = re.compile(r"^ssh_host_[A-Za-z0-9_-]+_key$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 MAX_FILE = 128 * 1024
 MAX_TOTAL = 512 * 1024
 MAX_AUTHORIZED_KEYS = 1024 * 1024
+SSH_UNIT = "ssh.service"
+SSH_PORT = 22
+
+YWD_SSH_POLICY = """# Managed by YWD-Hotspot. Local edits may be replaced.
+# SSH remains public-key only whenever enabled from the YWD dashboard.
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+AuthenticationMethods publickey
+"""
+
+
+def _run(args, timeout=20, check=False):
+    proc = subprocess.run(
+        args,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        check=False,
+    )
+    if check and proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout or f"command failed: {args[0]}").strip()[:800])
+    return proc
 
 
 def _safe_file(path: Path) -> bytes:
@@ -75,6 +107,114 @@ def _archive(filename: str, readme_name: str, readme: bytes, rows: list[tuple[st
     }
 
 
+def _host_key_paths() -> list[Path]:
+    if not SSH_DIR.is_dir():
+        return []
+    try:
+        return [p for p in SSH_DIR.iterdir() if HOST_PRIVATE_RE.fullmatch(p.name) and p.is_file() and not p.is_symlink()]
+    except Exception:
+        return []
+
+
+def _service_state() -> tuple[bool, bool]:
+    active = _run(["systemctl", "is-active", "--quiet", SSH_UNIT], 5).returncode == 0
+    enabled = _run(["systemctl", "is-enabled", "--quiet", SSH_UNIT], 5).returncode == 0
+    return active, enabled
+
+
+def _authorized_key_count(username: str = "ywd") -> int:
+    try:
+        entry = pwd.getpwnam(username)
+    except KeyError:
+        return 0
+    auth = Path(entry.pw_dir) / ".ssh" / "authorized_keys"
+    if not auth.is_file() or auth.is_symlink() or auth.stat().st_size > MAX_AUTHORIZED_KEYS:
+        return 0
+    try:
+        return sum(1 for line in auth.read_text(encoding="utf-8", errors="replace").splitlines()
+                   if line.strip() and not line.lstrip().startswith("#"))
+    except Exception:
+        return 0
+
+
+def ssh_status() -> dict:
+    active, enabled = _service_state()
+    installed = SSHD.is_file() and SSH_DIR.is_dir()
+    policy_managed = False
+    try:
+        policy_managed = SSHD_DROPIN.is_file() and SSHD_DROPIN.read_text(encoding="utf-8") == YWD_SSH_POLICY
+    except Exception:
+        policy_managed = False
+    return {
+        "ok": True,
+        "installed": installed,
+        "active": active,
+        "enabled_at_boot": enabled,
+        "port": SSH_PORT,
+        "authentication": "public-key-only",
+        "password_authentication": False,
+        "root_login": False,
+        "policy_managed": policy_managed,
+        "host_key_count": len(_host_key_paths()),
+        "login_user": "ywd",
+        "authorized_key_count": _authorized_key_count("ywd"),
+    }
+
+
+def _ensure_unique_host_keys() -> None:
+    if _host_key_paths():
+        return
+    if not shutil.which("ssh-keygen"):
+        raise ValueError("ssh-keygen is unavailable")
+    # Factory images deliberately delete ssh_host_* before publication so every
+    # appliance creates its own server identity at the moment SSH is first
+    # enabled. Never copy/generate these on the image builder host.
+    _run(["ssh-keygen", "-A"], 30, check=True)
+    if not _host_key_paths():
+        raise RuntimeError("OpenSSH host-key generation completed without creating server identity keys")
+
+
+def _install_public_key_policy() -> None:
+    if os.geteuid() != 0:
+        raise PermissionError("root required")
+    if not SSHD.is_file():
+        raise ValueError("OpenSSH server is not installed")
+    SSHD_DROPIN_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(SSHD_DROPIN_DIR, 0o755)
+    tmp = SSHD_DROPIN.with_name(SSHD_DROPIN.name + ".tmp")
+    tmp.write_text(YWD_SSH_POLICY, encoding="utf-8")
+    os.chmod(tmp, 0o644)
+    os.chown(tmp, 0, 0)
+    os.replace(tmp, SSHD_DROPIN)
+    _ensure_unique_host_keys()
+    _run([str(SSHD), "-t"], 10, check=True)
+
+
+def configure_ssh(payload: dict) -> dict:
+    if os.geteuid() != 0:
+        raise PermissionError("root required")
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ValueError("enabled must be true or false")
+
+    if enabled:
+        _install_public_key_policy()
+        _run(["systemctl", "enable", "--now", SSH_UNIT], 20, check=True)
+    else:
+        # Keep host identity and authorized_keys intact. Disabling SSH closes the
+        # listener and boot activation without destroying credentials the user
+        # may want to re-enable later.
+        _run(["systemctl", "disable", "--now", SSH_UNIT], 20, check=False)
+
+    out = ssh_status()
+    out["changed"] = True
+    out["message"] = (
+        "SSH enabled in public-key-only mode" if enabled
+        else "SSH disabled; saved keys were preserved"
+    )
+    return out
+
+
 def export_host_keys() -> dict:
     if os.geteuid() != 0:
         raise PermissionError("root required")
@@ -82,16 +222,14 @@ def export_host_keys() -> dict:
         raise ValueError("/etc/ssh is unavailable")
 
     rows: list[tuple[str, bytes, int, int]] = []
-    for private in sorted(SSH_DIR.iterdir(), key=lambda p: p.name):
-        if not HOST_PRIVATE_RE.fullmatch(private.name):
-            continue
+    for private in sorted(_host_key_paths(), key=lambda p: p.name):
         rows.append((f"etc/ssh/{private.name}", _safe_file(private), 0o600, int(private.stat().st_mtime)))
         public = SSH_DIR / f"{private.name}.pub"
         if public.exists():
             rows.append((f"etc/ssh/{public.name}", _safe_file(public), 0o644, int(public.stat().st_mtime)))
 
     if not rows:
-        raise ValueError("no SSH server identity keys were found")
+        raise ValueError("no SSH server identity keys exist yet; enable SSH once before exporting server identity")
 
     created = datetime.now(timezone.utc).replace(microsecond=0)
     hostname = re.sub(r"[^A-Za-z0-9._-]+", "-", socket.gethostname()).strip("-") or "ywd-hotspot"
@@ -236,6 +374,7 @@ def create_client_key(payload: dict) -> dict:
             "The private key is NOT retained by YWD-Hotspot after this response.\n"
             "Keep it private. Anyone with this unencrypted private key can authenticate\n"
             f"as {username} while its matching public line remains authorized.\n\n"
+            "If SSH is disabled, unlock the dashboard and open SYSTEM -> SSH ACCESS before connecting.\n\n"
             "To revoke this key, remove the authorized_keys line ending with:\n"
             f"  {comment}\n"
         ).encode("utf-8")
@@ -259,6 +398,7 @@ def create_client_key(payload: dict) -> dict:
         "private_key_retained": False,
         "created_at": created.isoformat().replace("+00:00", "Z"),
         "kind": "client-login",
+        "ssh": ssh_status(),
     })
     return out
 
@@ -279,12 +419,18 @@ def _payload() -> dict:
 def main() -> None:
     action = sys.argv[1] if len(sys.argv) > 1 else ""
     payload = _payload()
-    if action == "ssh-keys-export":
+    if action == "ssh-status":
+        out = ssh_status()
+    elif action == "ssh-configure":
+        out = configure_ssh(payload)
+    elif action == "ssh-keys-export":
         out = export_host_keys()
     elif action == "ssh-client-key-create":
         out = create_client_key(payload)
     else:
-        raise SystemExit("usage: ssh_keys_admin.py {ssh-keys-export|ssh-client-key-create}")
+        raise SystemExit(
+            "usage: ssh_keys_admin.py {ssh-status|ssh-configure|ssh-keys-export|ssh-client-key-create}"
+        )
     print(json.dumps(out, separators=(",", ":")))
 
 

@@ -227,13 +227,14 @@ def validate(root: Path) -> list[str]:
         ("/instrumentation.js", "/instrumentation-bootstrap.js", "/instrumentation.css"),
         errors,
     )
-    _require_text_markers(
-        root,
-        "first-boot runtime state preservation",
-        "systemd/ywd-setup.service",
-        ("RuntimeDirectory=ywd-hotspot", "RuntimeDirectoryPreserve=yes"),
-        errors,
-    )
+    for rel in ("systemd/ywd-setup.service", "systemd/ywd-activity.service"):
+        _require_text_markers(
+            root,
+            "shared runtime state preservation",
+            rel,
+            ("RuntimeDirectory=ywd-hotspot", "RuntimeDirectoryPreserve=yes"),
+            errors,
+        )
 
     plugin_runtime = any(_present(root, path) for path in PLUGIN_MARKERS)
     voice_runtime = any(_present(root, path) for path in VOICE_MARKERS)

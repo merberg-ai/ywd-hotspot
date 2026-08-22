@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fast SSH runtime controller for the authenticated YWD-Hotspot dashboard.
 
-Factory images ship with SSH disabled.  The dashboard prepares the strict
+Factory images ship with SSH disabled. The dashboard prepares the strict
 public-key-only sshd policy and unique host keys, manages boot persistence with
 the native systemd wants symlink, then asks systemd only to start/stop the
-service.  This deliberately avoids `systemctl enable/disable`, which is slow
+service. This deliberately avoids `systemctl enable/disable`, which is slow
 enough on a Pi Zero to exceed an interactive dashboard request.
 """
 from __future__ import annotations
@@ -25,6 +25,7 @@ import ssh_keys_admin as keys
 
 SSH_UNIT = "ssh.service"
 SSH_PORT = 22
+SSHD_PRIVSEP_DIR = Path("/run/sshd")
 WANTS_DIR = Path("/etc/systemd/system/multi-user.target.wants")
 UNIT_CANDIDATES = (
     Path("/lib/systemd/system/ssh.service"),
@@ -96,6 +97,23 @@ def set_boot_enabled(enabled: bool) -> None:
         link.unlink()
 
 
+def ensure_privsep_dir() -> None:
+    """Recreate OpenSSH's ephemeral privilege-separation directory when needed.
+
+    Debian's ssh.service may remove /run/sshd when the service is stopped. YWD
+    validates sshd configuration before asking systemd to start it, and `sshd -t`
+    itself requires this directory to exist. Recreate it as the normal root-owned
+    0755 runtime directory so disable -> enable works without a reboot.
+    """
+    if os.path.lexists(SSHD_PRIVSEP_DIR):
+        if SSHD_PRIVSEP_DIR.is_symlink() or not SSHD_PRIVSEP_DIR.is_dir():
+            raise RuntimeError(f"unsafe SSH privilege-separation path: {SSHD_PRIVSEP_DIR}")
+    else:
+        SSHD_PRIVSEP_DIR.mkdir(parents=True, mode=0o755)
+    os.chmod(SSHD_PRIVSEP_DIR, 0o755)
+    os.chown(SSHD_PRIVSEP_DIR, 0, 0)
+
+
 def port_listening() -> bool:
     try:
         with socket.create_connection(("127.0.0.1", SSH_PORT), timeout=0.25):
@@ -165,6 +183,7 @@ def configure(data: dict) -> dict:
         raise ValueError("enabled must be true or false")
 
     if enabled:
+        ensure_privsep_dir()
         keys._install_public_key_policy()
         set_boot_enabled(True)
 

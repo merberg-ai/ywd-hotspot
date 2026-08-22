@@ -19,8 +19,8 @@ from pathlib import Path
 import vocoder_protocol as proto
 
 SOCKET_PATH = Path(os.environ.get("YWD_VOCODER_SOCKET", "/run/ywd-vocoder.sock"))
-DEFAULT_TIMEOUT = 0.30
-STATUS_TIMEOUT = 3.0
+DECODE_TIMEOUT = 0.30
+CONTROL_TIMEOUT = 3.0
 MAX_TIMEOUT = 5.0
 
 
@@ -32,13 +32,13 @@ class VocoderBackendError(RuntimeError):
     pass
 
 
-def _request(opcode: int, payload: bytes = b"", timeout: float = DEFAULT_TIMEOUT) -> bytes:
+def _request(opcode: int, payload: bytes = b"", timeout: float = DECODE_TIMEOUT) -> bytes:
     request_id = random.SystemRandom().randrange(1, 0xFFFFFFFF)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    # DECODE callers keep the 300 ms default.  STATUS may use a longer timeout
-    # because a cold socket activation on a Pi Zero must start the Python backend
-    # before it can answer; that startup latency is not part of the live audio
-    # backpressure budget.
+    # DECODE callers keep the 300 ms default. STATUS/RESET may use a longer
+    # timeout because a cold socket activation on a Pi Zero must start the
+    # Python backend before it can answer; that startup latency is not part of
+    # the live audio backpressure budget.
     sock.settimeout(max(0.05, min(float(timeout), MAX_TIMEOUT)))
     try:
         sock.connect(str(SOCKET_PATH))
@@ -67,7 +67,7 @@ def _request(opcode: int, payload: bytes = b"", timeout: float = DEFAULT_TIMEOUT
     return response
 
 
-def status(timeout: float = STATUS_TIMEOUT) -> dict:
+def status(timeout: float = CONTROL_TIMEOUT) -> dict:
     """Probe the backend, allowing extra time for a cold socket activation."""
     try:
         doc = proto.parse_json_payload(_request(proto.OP_STATUS, timeout=timeout))
@@ -81,12 +81,13 @@ def status(timeout: float = STATUS_TIMEOUT) -> dict:
         }
 
 
-def reset(timeout: float = DEFAULT_TIMEOUT) -> dict:
+def reset(timeout: float = CONTROL_TIMEOUT) -> dict:
+    """Reset backend stream state; like STATUS this may wake a cold backend."""
     _request(proto.OP_RESET, timeout=timeout)
     return {"ok": True, "protocol": proto.VERSION, "socket": str(SOCKET_PATH)}
 
 
-def decode(frames, timeout: float = DEFAULT_TIMEOUT) -> dict:
+def decode(frames, timeout: float = DECODE_TIMEOUT) -> dict:
     packed = []
     for frame in frames:
         if isinstance(frame, str):

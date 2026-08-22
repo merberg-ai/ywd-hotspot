@@ -13,7 +13,8 @@ from pathlib import Path
 
 UNITS = [
     "ywd-mmdvmhost.service", "ywd-dmrgateway.service", "ywd-dashboard.service",
-    "ywd-oled.service", "ywd-activity.service", "ywd-dmrid-update.timer",
+    "ywd-headless-oled.service", "ywd-oled.service", "ywd-activity.service",
+    "ywd-mqtt.service", "ssh.service", "ywd-dmrid-update.timer",
 ]
 
 
@@ -113,7 +114,6 @@ def wifi():
         m = re.search(r"signal:\s*(-?[0-9.]+)\s*dBm", link)
         out["signal_dbm"] = round(float(m.group(1)),1) if m else None
     else:
-        # /proc/net/wireless is cheap and usually available even without iw.
         try:
             for ln in Path("/proc/net/wireless").read_text().splitlines():
                 if "wlan0:" in ln:
@@ -128,7 +128,6 @@ def wifi():
     route = run(["ip", "route", "show", "default"], 1)
     m = re.search(r"default via ([0-9.]+).*dev wlan0", route); out["gateway"] = m.group(1) if m else None
     stats = run(["ip", "-s", "link", "show", "wlan0"], 1)
-    # Parse RX/TX rows conservatively; absence is okay.
     lines = stats.splitlines()
     try:
         for i, ln in enumerate(lines):

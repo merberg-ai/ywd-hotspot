@@ -14,7 +14,7 @@ Repository housekeeping includes:
 - pruning redundant pre-plugin Alpha/OS tags while preserving the final historical OS archive and plugin/RX history;
 - moving the completed RC1 release plan into `docs/history/`;
 - adding a historical-documentation index;
-- removing the obsolete `os/builder/BUILD-M4.sh` compatibility alias in favor of the unified builder entry points;
+- removing the obsolete milestone-specific builder compatibility alias in favor of the unified builder entry points;
 - refreshing current README/install/build/update/development/repository documentation around the accepted RC2 state and release-freeze policy.
 
 No RF/runtime behavior change is intended by this housekeeping work.

@@ -52,6 +52,9 @@ def wrap_handler(base):
             if path == "/backup-restore.css":
                 self.serve_static("backup-restore.css", "text/css; charset=utf-8")
                 return
+            if path == "/instrumentation-layout.css":
+                self.serve_static("instrumentation-layout.css", "text/css; charset=utf-8")
+                return
             super().do_GET()
 
         def do_POST(self):

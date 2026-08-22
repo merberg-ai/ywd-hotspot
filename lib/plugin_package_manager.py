@@ -19,6 +19,8 @@ import shutil
 import sys
 from pathlib import Path
 
+import mmdvm_runtime_state
+
 PACKAGE_STATE = Path(os.environ.get("YWD_PLUGIN_PACKAGE_STATE", "/etc/ywd-hotspot/plugin-packages.json"))
 DATA_DIR = Path(os.environ.get("YWD_PLUGIN_DATA_DIR", "/var/lib/ywd-hotspot/plugins"))
 MMDVM_RUNTIME_STATE = Path(os.environ.get("YWD_MMDVM_RUNTIME_STATE", "/etc/ywd-hotspot/mmdvm-runtime.json"))
@@ -27,6 +29,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 ALLOWED_DEPENDENCIES = frozenset({
     "python3", "systemd", "journalctl", "mmdvm-host", "mosquitto-broker", "mosquitto-client",
     "mmdvm-ywd-extended", "mmdvm-extension-api-2", "mmdvm-cap-passive-dmr-voice",
+    "mmdvm-cap-demand-gated-dmr-voice",
 })
 ALLOWED_HARDWARE = frozenset({"mmdvm-serial", "oled-i2c"})
 
@@ -40,6 +43,7 @@ DEPENDENCY_LABELS = {
     "mmdvm-ywd-extended": "YWD Extended MMDVM runtime",
     "mmdvm-extension-api-2": "YWD MMDVM extension API 2 or newer",
     "mmdvm-cap-passive-dmr-voice": "passive DMR voice MMDVM capability",
+    "mmdvm-cap-demand-gated-dmr-voice": "demand-gated DMR voice MMDVM capability",
 }
 HARDWARE_LABELS = {
     "mmdvm-serial": "MMDVM modem serial path",
@@ -153,6 +157,13 @@ def _dependency_result(token):
     if token == "mmdvm-cap-passive-dmr-voice":
         state = _mmdvm_runtime(); ok = "passive-dmr-voice" in state["capabilities"]
         return ok, "available" if ok else f"capability unavailable on MMDVM runtime {state['variant']}"
+    if token == "mmdvm-cap-demand-gated-dmr-voice":
+        # This requirement deliberately uses the observed exact binary/patch
+        # identity rather than trusting an older persisted state file. API 2
+        # existed before demand gating, so the capability must be explicit.
+        state = mmdvm_runtime_state.observed_runtime()
+        ok = "demand-gated-dmr-voice" in state.get("capabilities", [])
+        return ok, "available" if ok else f"capability unavailable on verified MMDVM runtime {state.get('variant', 'unknown')}"
     return False, "unsupported dependency"
 
 

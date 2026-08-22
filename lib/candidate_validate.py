@@ -34,6 +34,7 @@ CORE_REQUIRED = (
     "lab/mmdvm-diag.sh",
     "lib/admin.py",
     "lib/dashboard.py",
+    "lib/dashboard_backup.py",
     "lib/dashboard_core.py",
     "lib/dashboard_update.py",
     "lib/build_info.py",
@@ -47,6 +48,7 @@ CORE_REQUIRED = (
     "lib/runtime_build.py",
     "lib/oled.py",
     "lib/oled_owner.sh",
+    "lib/setup_server.py",
     "lib/system_admin.py",
     "lib/update_admin.py",
     "lib/update_runner.py",
@@ -71,6 +73,12 @@ CORE_REQUIRED = (
     "web/update-progress.js",
     "web/system-ui.js",
     "web/system-ui.css",
+    "web/backup-restore.js",
+    "web/backup-restore.css",
+    "web/ssh-key-export.js",
+    "web/instrumentation.js",
+    "web/instrumentation-bootstrap.js",
+    "web/instrumentation.css",
 )
 
 PLUGIN_MARKERS = (
@@ -165,9 +173,59 @@ def _require(root: Path, label: str, paths: tuple[str, ...], errors: list[str]) 
         errors.append(f"{label} is incomplete; missing: {', '.join(missing)}")
 
 
+def _require_text_markers(
+    root: Path,
+    label: str,
+    rel: str,
+    markers: tuple[str, ...],
+    errors: list[str],
+) -> None:
+    path = root / rel
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:
+        errors.append(f"{label} cannot read {rel}: {exc}")
+        return
+    missing = [marker for marker in markers if marker not in text]
+    if missing:
+        errors.append(f"{label} is incomplete in {rel}; missing markers: {', '.join(missing)}")
+
+
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
     _require(root, "core runtime", CORE_REQUIRED, errors)
+
+    # These are release-critical UI capabilities. The dashboard duplex controls
+    # are installed dynamically, so a missing loader/static route can otherwise
+    # make a duplex-capable runtime look simplex-only in the browser.
+    _require_text_markers(
+        root,
+        "first-boot duplex setup",
+        "lib/setup_server.py",
+        ('id="radiomode"', 'id="rxfreq"', 'id="txfreq"', "radioModeChanged"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "dashboard duplex UI",
+        "web/app.js",
+        ("installDuplexSettings", 'id="hatMode"', "duplexRxMhz", "duplexTxMhz"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "SSH dashboard static route",
+        "lib/dashboard_backup.py",
+        ('path == "/ssh-key-export.js"', 'self.serve_static("ssh-key-export.js"'),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "dashboard instrumentation loader",
+        "web/app.js",
+        ("/instrumentation.js", "/instrumentation-bootstrap.js", "/instrumentation.css"),
+        errors,
+    )
 
     plugin_runtime = any(_present(root, path) for path in PLUGIN_MARKERS)
     voice_runtime = any(_present(root, path) for path in VOICE_MARKERS)

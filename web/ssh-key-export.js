@@ -214,9 +214,27 @@
     }
   }
 
+  function canonicalSystemPage() {
+    const pages = Array.from(document.querySelectorAll('section.page#system'));
+    return pages.find(page =>
+      page.querySelector('#rfToggle') ||
+      page.querySelector('#hostPowerCard') ||
+      page.querySelector('#dmridCard')
+    ) || null;
+  }
+
+  function cleanupDuplicateSystemShell(realPage) {
+    const tabs = Array.from(document.querySelectorAll('.tabs [data-tab="system"]'));
+    tabs.slice(1).forEach(tab => tab.remove());
+    Array.from(document.querySelectorAll('section.page#system')).forEach(page => {
+      if (page !== realPage) page.remove();
+    });
+  }
+
   function ensureUi() {
-    const page = el('system');
+    const page = canonicalSystemPage();
     if (!page) return false;
+    cleanupDuplicateSystemShell(page);
     if (el('sshAccessCard')) return true;
 
     const card = document.createElement('article');
@@ -248,7 +266,13 @@
       </div>
       <div class="buttonrow wrap"><button class="btn" id="sshKeysExport" type="button">EXPORT SERVER IDENTITY</button></div>
       <div class="hint">Server identity export is recovery-only and cannot be used as a client login key.</div>`;
-    page.appendChild(card);
+
+    const runtime = page.querySelector('#rfToggle')?.closest('article.card');
+    const grid = runtime?.parentElement;
+    const hostPower = page.querySelector('#hostPowerCard');
+    if (grid && hostPower?.parentElement === grid) grid.insertBefore(card, hostPower);
+    else if (grid) grid.appendChild(card);
+    else page.appendChild(card);
 
     el('sshToggle').onclick = () => configure(!sshState?.active);
     el('sshClientCreate').onclick = createClientKey;
@@ -266,7 +290,7 @@
     let tries = 0;
     const timer = setInterval(() => {
       tries += 1;
-      if (ensureUi() || tries >= 80) clearInterval(timer);
+      if (ensureUi() || tries >= 160) clearInterval(timer);
     }, 50);
   }
 

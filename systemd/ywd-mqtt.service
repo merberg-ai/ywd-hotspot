@@ -2,6 +2,7 @@
 Description=YWD-Hotspot loopback MQTT telemetry broker
 After=network.target
 Before=ywd-mmdvmhost.service ywd-mmdvm-telemetry.service
+Conflicts=mosquitto.service
 ConditionPathExists=/opt/ywd-hotspot/app/lib/ywd-mosquitto.conf
 
 [Service]

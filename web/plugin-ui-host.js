@@ -15,6 +15,20 @@
     return data;
   }
 
+  async function jsonPost(url, body = {}) {
+    const response = await fetch(url, {
+      method:'POST',
+      credentials:'same-origin',
+      cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body && typeof body === 'object' ? body : {}),
+    });
+    let data = {};
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
+
   function eligible(plugin) {
     return !!(plugin && plugin.valid && plugin.installed && plugin.effective_enabled && plugin.kind === 'ui' && plugin.ui?.api === 1 && plugin.ui?.label);
   }
@@ -56,6 +70,12 @@
     if (active) switchFallback();
   }
 
+  function requireCapability(plugin, capability) {
+    if (!Array.isArray(plugin.capabilities) || !plugin.capabilities.includes(capability)) {
+      throw new Error(`Plugin does not have ${capability} capability`);
+    }
+  }
+
   async function bridgeResult(plugin, op, args = {}) {
     if (!eligible(plugin)) throw new Error('Plugin UI is no longer enabled');
     if (op === 'plugin.ping') return {ok:true, api:1, id:plugin.id};
@@ -73,15 +93,29 @@
       };
     }
     if (op === 'plugin.readDmrVoice') {
-      if (!Array.isArray(plugin.capabilities) || !plugin.capabilities.includes('read:dmr-voice')) {
-        throw new Error('Plugin does not have read:dmr-voice capability');
-      }
+      requireCapability(plugin, 'read:dmr-voice');
       const afterRaw = Number(args?.after ?? 0);
       const limitRaw = Number(args?.limit ?? 32);
       const after = Number.isFinite(afterRaw) ? Math.max(0, Math.floor(afterRaw)) : 0;
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(64, Math.floor(limitRaw))) : 32;
       const data = await jsonFetch(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/dmr-voice?after=${encodeURIComponent(after)}&limit=${encodeURIComponent(limit)}`);
       return data.voice || {schema:1, bridge:{status:'unavailable'}, cursor:after, frames:[]};
+    }
+    if (op === 'plugin.vocoderStatus') {
+      requireCapability(plugin, 'use:vocoder');
+      const data = await jsonFetch(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/vocoder/status`);
+      return data.vocoder || {available:false, protocol:1, error:'vocoder status unavailable'};
+    }
+    if (op === 'plugin.vocoderReset') {
+      requireCapability(plugin, 'use:vocoder');
+      const data = await jsonPost(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/vocoder/reset`, {});
+      return data.vocoder || {ok:false, protocol:1};
+    }
+    if (op === 'plugin.vocoderDecode') {
+      requireCapability(plugin, 'use:vocoder');
+      const frames = Array.isArray(args?.frames) ? args.frames.slice(0, 10).map(x => String(x || '')) : [];
+      const data = await jsonPost(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/vocoder/decode`, {frames});
+      return data.vocoder || {};
     }
     throw new Error(`Plugin UI operation is not permitted: ${op}`);
   }

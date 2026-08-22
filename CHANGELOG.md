@@ -1,8 +1,25 @@
 # 🗒️ Changelog
 
-[Project README](README.md) · [Docs](docs/README.md) · [0.2.0-rc1 Release Notes](docs/RELEASE-NOTES-0.2.0-rc1.md)
+[Project README](README.md) · [Docs](docs/README.md) · [0.2.0-rc2 Release Notes](docs/RELEASE-NOTES-0.2.0-rc2.md) · [0.2.0-rc1 Release Notes](docs/RELEASE-NOTES-0.2.0-rc1.md)
 
 ---
+
+## 0.2.0-rc2 — Documentation / Updater Validation
+
+**Status:** release candidate. Runtime behavior intentionally remains on the physically accepted RC1 baseline; RC2 exists to ship the post-RC1 documentation refresh and exercise the normal updater path with a low-risk version transition.
+
+RC2 changes are intentionally limited to:
+
+- post-RC1 documentation refresh and SSH/SFTP guide;
+- corrected current navigation/telemetry/RSSI/duplex/plugin/session documentation;
+- release/help wording corrections;
+- `VERSION` and public-build release identity updated to `0.2.0-rc2`.
+
+No MMDVM/DMRGateway pin, RF behavior, dashboard runtime, telemetry service, updater implementation, plugin runtime, systemd policy, or SSH security behavior is intentionally changed.
+
+Primary acceptance target is the real `0.2.0-rc1 -> 0.2.0-rc2` updater transition with configuration, RF policy, MMDVM runtime, plugins, SSH state/keys and BrandMeister state preserved.
+
+Full notes: [`docs/RELEASE-NOTES-0.2.0-rc2.md`](docs/RELEASE-NOTES-0.2.0-rc2.md).
 
 ## 0.2.0-rc1 — Public Appliance / Runtime Variants
 

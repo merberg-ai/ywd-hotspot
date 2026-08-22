@@ -113,7 +113,7 @@ def main() -> int:
             "ssh_enabled": False,
             "ssh_server_installed": True,
             "ssh_host_identity_preconfigured": False,
-            "ssh_enablement": "authenticated dashboard / Settings / SSH Access",
+            "ssh_enablement": "authenticated dashboard / SYSTEM / SSH ACCESS",
             "setup_ap": "YWD-Hotspot-XXXX",
             "setup_ap_url": "http://10.42.0.1/",
             "hotspot_setup_url": "https://<LAN-IP>:8443/",
@@ -171,11 +171,14 @@ First boot:
   8. RF remains off unless you explicitly enable it during/after setup.
 
 SSH after setup:
-  - Factory state: disabled / port 22 closed.
-  - Unlock dashboard controls and open Settings -> SSH Access.
-  - Create/export a client login key for user ywd.
+  - Factory state: disabled / port 22 closed; there is no default SSH password.
+  - Unlock dashboard controls and open SYSTEM -> SSH ACCESS.
+  - Create/export a client login key for user ywd before opening SSH.
   - Enable SSH Access. YWD generates unique server host keys on that appliance.
+  - Connect as ywd on port 22 using the downloaded private client key.
   - SSH remains public-key-only; password authentication and root SSH are disabled.
+  - The ywd account has passwordless sudo, so protect that private key as an
+    administrator credential.
 
 Do not apply Raspberry Pi Imager OS customization settings over this appliance
 image. YWD-Hotspot provides its own first-boot network and hotspot setup flow.

@@ -42,6 +42,7 @@ docs/PLUGINS.md
 docs/RELEASE-NOTES-0.2.0-rc1.md
 docs/RELEASE-PLAN-0.2.0-rc1.md
 docs/REPOSITORY.md
+docs/SSH.md
 docs/TALKGROUPS.md
 docs/TELEMETRY.md
 docs/UPGRADING.md

@@ -6,7 +6,16 @@
 
 ## 0.2.0-rc1 — Public Appliance / Runtime Variants
 
-**Status:** release candidate in exact public-factory-image acceptance. It is not promoted/published until the release artifact itself passes the physical acceptance matrix.
+**Status:** physically accepted public release candidate. The tested source is frozen at tag `v0.2.0-rc1` / commit `1575344d732994a7b54d5afc7f15a88040a274ec` and checkpoint `checkpoint-release-0.2.0-rc1-image-proven`.
+
+Accepted public image:
+
+```text
+image_2026-08-22-ywd-hotspot-0.2.0-rc1-pi-zero-lite.img.xz
+SHA256 f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
+```
+
+The exact image was flashed and physically tested on the reference Raspberry Pi Zero W + duplex MMDVM appliance before source promotion/tagging.
 
 Starting point:
 
@@ -15,25 +24,38 @@ checkpoint-builder-0.1.0-image-boot-proven
 a5a6d9483a7cad519ee5288661447875f346b4e7
 ```
 
-That baseline physically passed Pi Zero W + duplex MMDVM first boot, OLED one-time-code setup, Wi-Fi, dashboard handoff, BrandMeister, Parrot, RF, reboot/settings persistence and explicitly enabled RF autostart.
+That earlier baseline had physically passed Pi Zero W + duplex MMDVM first boot, OLED one-time-code setup, Wi-Fi, dashboard handoff, BrandMeister, Parrot, RF, reboot/settings persistence and explicitly enabled RF autostart.
 
 ### Release changes
 
 - introduces a true public factory-image workflow with no operator/builder preconfiguration;
-- public image ships no Wi-Fi, callsign/DMR ID, BM credentials/API key, dashboard password, imported settings, RF autostart, or builder SSH authorized key;
+- public image ships no Wi-Fi, callsign/DMR ID, BM credentials/API key, dashboard password, imported settings, RF autostart, builder SSH authorized key, or reusable SSH server host identity;
 - public first boot uses the YWD setup AP followed by the OLED-code protected hotspot wizard;
-- setup wizard now shows finish progress/errors beside the final action and hands off to the actual configured dashboard URL;
+- setup wizard shows finish progress/errors beside the final action and hands off to the actual configured dashboard URL;
 - setup submission preserves canonical schema/config and exposes explicit simplex/duplex plus duplex RX/TX fields;
 - adds persistent MMDVM runtime variants:
   - `ywd-extended` — default/recommended, exact pinned upstream plus verified YWD extension patch;
   - `upstream` — exact pinned stock upstream with no YWD extensions;
 - separates compile-cache identities for Stock vs Extended;
 - records MMDVM runtime/build provenance independently from application Git provenance;
-- migration adopts an existing 0.1.x MMDVM binary without rebuilding/switching it, classifying Extended only when exact patch/API/binary provenance proves it;
+- migration adopts an existing 0.1.x MMDVM binary without rebuilding/switching it, classifying Extended only when provenance supports it;
 - adds plugin requirement tokens for YWD Extended/API/passive-voice capability so incompatible packages are refused cleanly;
-- candidate validation requires the complete MMDVM runtime-variant dispatcher/builders;
+- establishes trusted loopback MMDVM telemetry/voice infrastructure on `127.0.0.1:18883`;
+- fixes MQTT daemon/client packaging and broker readiness/service ordering;
+- preserves shared `/run/ywd-hotspot` runtime state across first-boot setup completion;
+- adds enhanced LIVE DMR animation, BER/history presentation and data-aware RSSI behavior;
+- suppresses RSSI/dBm presentation when HAT firmware reports no usable RSSI instead of guessing from BER;
+- physically confirms the RC1 reference duplex HAT reports valid BER/voice data with RSSI unavailable (`0`);
+- adds dashboard-managed optional SSH access:
+  - factory SSH OFF;
+  - unique server host keys generated on first enable;
+  - public-key-only auth;
+  - password/root SSH disabled;
+  - one-time generated client key export;
+  - server identity export clearly separated as recovery-only;
+- settings backup/restore, duplex dashboard controls and SSH/static UI assets are covered by coherent candidate/static-route validation;
 - public release builds generate machine-readable `BUILD-METADATA.json` and `README-FIRST.txt` beside the image;
-- refreshes install/build/OS/repository/security/plugin/passive-voice/update documentation around the prerelease workflow.
+- refreshes installation/build/OS/repository/security/plugin/passive-voice/telemetry/update documentation around the public appliance workflow.
 
 Pinned radio identity remains:
 
@@ -44,7 +66,7 @@ YWD API     2
 YWD patch   f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
 ```
 
-Full candidate notes: [`docs/RELEASE-NOTES-0.2.0-rc1.md`](docs/RELEASE-NOTES-0.2.0-rc1.md).
+Full notes: [`docs/RELEASE-NOTES-0.2.0-rc1.md`](docs/RELEASE-NOTES-0.2.0-rc1.md).
 
 ## 0.1.0 — First Stable Release
 

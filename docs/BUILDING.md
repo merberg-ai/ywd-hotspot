@@ -2,7 +2,7 @@
 
 [← Docs index](README.md) · [Installation](INSTALL.md) · [Development](GITHUB-SETUP.md) · [OS Development](OS-DEVELOPMENT.md)
 
-`0.2.0-rc1` separates four build paths: source validation, source installation, MMDVM runtime selection, and complete appliance images.
+YWD-Hotspot separates four build paths: source validation, source installation, MMDVM runtime selection, and complete appliance images.
 
 ## 1. Source validation
 
@@ -19,7 +19,8 @@ bash -n \
   MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh \
   os/builder/BUILD.sh os/builder/RUN-BUILD.sh \
   os/builder/BUILD-PUBLIC-RELEASE.sh \
-  os/pi-gen/stage2/20-ywd-runtime/01-run.sh
+  os/pi-gen/stage2/20-ywd-runtime/01-run.sh \
+  os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
 ```
 
 If Node.js is available:
@@ -28,7 +29,7 @@ If Node.js is available:
 for js in web/*.js; do node --check "$js"; done
 ```
 
-These checks do not replace hardware acceptance.
+These checks do not replace hardware acceptance. Candidate validation also covers release-critical dynamic/static assets such as the duplex dashboard controls, SSH UI route and LIVE DMR layout route.
 
 ## 2. Build/install from GitHub source
 
@@ -41,11 +42,11 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-The full installer asks which MMDVM runtime to build:
+The full installer asks which MMDVM runtime to build.
 
 ### YWD Extended — default/recommended
 
-Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. It advertises capabilities used by RX Monitor and future compatible plugins.
+Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. It advertises capabilities used by passive DMR voice/RX Monitor and future compatible plugins.
 
 ### Stock Upstream
 
@@ -74,7 +75,7 @@ YWD Extended uses `lib/mmdvm_voice_build.py`. Stock uses `lib/mmdvm_upstream_bui
 
 The variants have separate cache namespaces/signatures. Extended cache identity includes the extension API/hash, so an unpatched binary cannot satisfy a patched cache lookup.
 
-Pinned identities:
+Pinned RC1 identities:
 
 ```text
 MMDVM-Host
@@ -102,7 +103,7 @@ Review/select the MMDVM runtime:
 
 ```bash
 python3 os/builder/MMDVM-RUNTIME.py review
-python3 os/builder/MMDVM-RUNTIME.py set ywd-extended   # default
+python3 os/builder/MMDVM-RUNTIME.py set ywd-extended
 # or
 python3 os/builder/MMDVM-RUNTIME.py set upstream
 ```
@@ -121,25 +122,27 @@ Local runtime cache status:
 python3 os/builder/RUNTIME-CACHE.py status
 ```
 
+Normal/development images can intentionally include private Wi-Fi, station settings and key-only SSH according to the ignored local builder profile. They are not public release artifacts.
+
 ## 5. Public factory release image
 
-Public release images use a separate wrapper:
+Public release images use the fail-closed wrapper:
 
 ```bash
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-The wrapper:
+For `0.2.0-rc1` the wrapper requires the exact release branch/version and clean source. It:
 
-1. requires the exact release branch/version and clean tracked source;
-2. saves the developer's private local builder profile/runtime preference;
-3. resets hotspot configuration to canonical defaults;
-4. removes Wi-Fi/operator/credential/imported-backup preconfiguration;
-5. sets RF first boot OFF;
-6. sets update channel `main`;
-7. disables SSH and embeds no builder authorized key;
+1. saves the developer's private local builder profile/runtime preference;
+2. resets hotspot configuration to canonical defaults;
+3. removes Wi-Fi/operator/credential/imported-backup preconfiguration;
+4. sets RF first boot OFF;
+5. sets update channel `main`;
+6. disables SSH and embeds no builder authorized key;
+7. ensures no reusable SSH server host identity is shipped;
 8. selects default/recommended `ywd-extended`;
-9. runs `PUBLIC-RELEASE-CHECK.py` before and after profile generation;
+9. runs the factory-release checker before and after profile generation;
 10. runs the normal image build/cache path;
 11. validates factory state again;
 12. writes `BUILD-METADATA.json` and `README-FIRST.txt` beside the image;
@@ -158,9 +161,26 @@ BUILD-METADATA.json
 README-FIRST.txt
 ```
 
+## 0.2.0-rc1 accepted build
+
+The physically accepted RC1 source/image pair is:
+
+```text
+source commit
+1575344d732994a7b54d5afc7f15a88040a274ec
+
+image
+image_2026-08-22-ywd-hotspot-0.2.0-rc1-pi-zero-lite.img.xz
+
+SHA256
+f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
+```
+
+Do not rebuild a different image and call it the same RC1 artifact. Use the tag `v0.2.0-rc1` to inspect/reproduce the exact source that generated the accepted image.
+
 ## Release-image acceptance
 
-A successful compile is not enough. For the exact artifact intended for GitHub, verify:
+A successful compile is not enough. For a future exact artifact intended for publication verify:
 
 ```text
 [ ] SHA256 verification passes
@@ -169,17 +189,21 @@ A successful compile is not enough. For the exact artifact intended for GitHub, 
 [ ] Wi-Fi handoff works
 [ ] OLED one-time code appears
 [ ] secure first-boot wizard completes
-[ ] shipped runtime reports ywd-extended + exact patch API/hash
+[ ] shipped runtime identity matches release intent
 [ ] RF remains OFF until explicit enable
+[ ] SSH remains OFF until explicit enable
+[ ] optional SSH client-key/enable flow works when in scope
 [ ] BrandMeister connects after configuration
 [ ] Parrot works
 [ ] simplex/duplex settings operate as configured
 [ ] duplex TS1/TS2 work on duplex hardware
+[ ] telemetry/BER activity works
+[ ] missing RSSI is handled without fake dBm
 [ ] reboot preserves settings
 [ ] RF autostart works only when operator enabled it
 [ ] zero failed systemd units
 ```
 
-Only after the exact public artifact passes should `dev`/`main` promotion and GitHub prerelease publication happen.
+Only after the exact public artifact passes should source be checkpointed/promoted/tagged and the exact tested assets published.
 
-See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)** and the release plan for the full promotion sequence.
+See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)** and **[RELEASE-PLAN-0.2.0-rc1.md](RELEASE-PLAN-0.2.0-rc1.md)**.

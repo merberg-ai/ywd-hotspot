@@ -1,45 +1,41 @@
 # 📻 Normalized MMDVM DMR Sessions
 
-[Documentation index](README.md) · [MMDVM telemetry bus](TELEMETRY.md) · [Plugin framework](PLUGINS.md) · [Architecture](ARCHITECTURE.md)
+[Documentation index](README.md) · [MMDVM telemetry](TELEMETRY.md) · [Passive DMR Voice](DMR-VOICE.md) · [Plugin framework](PLUGINS.md) · [Architecture](ARCHITECTURE.md)
 
-Alpha18 adds a bounded normalized DMR call/session layer on top of the passive MMDVM telemetry bus.
+YWD-Hotspot maintains a bounded normalized DMR call/session layer on top of the trusted passive MMDVM telemetry path.
 
-The purpose is simple: **plugins should consume one coherent YWD session object instead of having to understand the quirks of individual raw MMDVM-Host events.**
+The purpose is simple: **trusted dashboard/plugin consumers should receive one coherent YWD session object instead of independently reconstructing identity from individual raw MMDVM-Host events.**
 
-This remains an observation-only capability. It does not change RF mode, own the modem serial port, transmit, or grant plugins IP networking.
+This remains observation-only. It does not change RF mode, own the modem serial port, transmit, or grant plugins network/device authority.
 
 ## Why correlation is needed
 
-The pinned MMDVM-Host emits rich identity on DMR `start` / `late_entry` events, including source ID, source info, destination, group/private state, slot, and RF/network source.
+MMDVM-Host start/late-entry events can include rich identity such as source ID, source info, destination, group/private state, slot and RF/network source. Terminal events such as `end`, `lost` and `timeout` can be much smaller and may contain mostly final metrics.
 
-Terminal events such as `end`, `lost`, and `timeout` are intentionally much smaller. They may contain only the slot and final metrics such as duration, BER, packet loss, or RSSI summary.
-
-YWD therefore correlates those events by DMR time slot while the bridge is running:
+YWD correlates those events by DMR time slot while the bridge is running:
 
 ```text
-DMR START
-  src/dst/group/slot/source
+DMR START / LATE ENTRY
+  identity + slot + source
         │
         ▼
 YWD ACTIVE SESSION
-  stable identity + direction
         │
-        ├── RSSI / BER samples continue independently
-        │
-        ▼
-DMR END
-  slot + final metrics
+        ├── BER/RSSI telemetry may arrive independently
         │
         ▼
-YWD COMPLETED SESSION
-  original identity + final metrics
+DMR END / LOST / TIMEOUT
+        │
+        ▼
+YWD TERMINAL SESSION
+  retained identity + supplied final metrics
 ```
 
-Raw `dmr.active` and `dmr.last` telemetry remain available for compatibility and diagnostics. The normalized layer is additive.
+Raw telemetry remains available for diagnostics; normalized sessions are the preferred higher-level contract.
 
 ## Runtime shape
 
-The trusted bridge snapshot adds:
+The trusted telemetry snapshot contains a bounded `sessions` object:
 
 ```json
 {
@@ -52,20 +48,18 @@ The trusted bridge snapshot adds:
 }
 ```
 
-The layer is deliberately bounded:
+Current bounds:
 
-- at most one active session per DMR slot
-- one `last` completed/terminal session
-- the newest 12 terminal sessions in `recent`
-- no database
-- no unbounded history file
-- no additional polling process
+- at most one active session per DMR slot;
+- one `last` terminal session;
+- a small recent terminal-session ring;
+- no SQL/database;
+- no unbounded history;
+- no additional polling process solely for session correlation.
 
-Correlation runs only when the existing MQTT bridge receives a DMR event.
+A bridge restart resets in-memory/runtime correlation. An end event for a call that began before the restart can therefore appear as an `orphan`; YWD does not guess missing identity.
 
-## Normalized session schema
-
-Representative completed RF session:
+## Representative completed RF session
 
 ```json
 {
@@ -84,42 +78,39 @@ Representative completed RF session:
   "dst_id": 9990,
   "group": false,
   "destination_type": "private",
-  "frames": null,
   "started_at": "2026-08-17T19:42:15.8Z",
   "ended_at": "2026-08-17T19:42:23.4Z",
   "last_action": "end",
   "event_count": 2,
   "metrics": {
     "duration_s": 7.6,
-    "ber_pct": 3.0,
+    "ber_pct": 0.6,
     "packet_loss_pct": null,
-    "rssi_dbm": {
-      "min": -66,
-      "max": -47,
-      "avg": -57
-    }
+    "rssi_dbm": null
   }
 }
 ```
 
-### Identity fields
+`rssi_dbm` is intentionally allowed to be `null`. The RC1 reference duplex HAT produced valid BER/session/voice data but did not provide usable RSSI, so normalized sessions must not invent a signal value merely to make the object look complete.
+
+## Identity fields
 
 | Field | Meaning |
 |---|---|
-| `session_id` | Ephemeral bridge-runtime identifier. Do not treat it as a permanent database key. |
+| `session_id` | Ephemeral bridge-runtime identifier; not a permanent database key. |
 | `protocol` | `DMR` in schema 1. |
 | `slot` | DMR time slot. |
-| `src_id` | Source DMR ID when supplied by MMDVM-Host. |
-| `src_info` | Resolved source information when supplied by MMDVM-Host. |
-| `dst_id` | Destination DMR ID / talkgroup. |
-| `group` | Boolean group/private indication when known. |
+| `src_id` | Source DMR ID when supplied upstream. |
+| `src_info` | Resolved source information when supplied upstream. |
+| `dst_id` | Destination DMR ID/talkgroup. |
+| `group` | Group/private indication when known. |
 | `destination_type` | `group`, `private`, or `unknown`. |
-| `call_type` | `voice`, `data`, or `unknown`. Data is identified from MMDVM's frame-count metadata. |
-| `late_entry` | True when YWD first observed the session through MMDVM `late_entry`. |
+| `call_type` | `voice`, `data`, or `unknown`. |
+| `late_entry` | True when YWD first observed the session through MMDVM late entry. |
 
-### Direction
+## Direction
 
-YWD preserves MMDVM's original source and adds a normalized direction:
+YWD preserves MMDVM's source and adds a normalized direction:
 
 | `source` | `direction` |
 |---|---|
@@ -127,11 +118,11 @@ YWD preserves MMDVM's original source and adds a normalized direction:
 | `network` | `network_to_rf` |
 | unavailable | `unknown` |
 
-The direction describes where the DMR stream entered MMDVM-Host. It does not imply that both sides have equivalent measurements. In particular, RSSI remains an RF-receive measurement and is not synthesized for a network-originated call.
+Direction describes where the DMR stream entered MMDVM-Host. It does **not** imply equivalent measurements in both directions. RSSI is meaningful only for actual local RF reception and only when the modem firmware supplies it.
 
-### State/result
+## State / result / correlation
 
-Active sessions use:
+Active sessions normally use:
 
 ```text
 state = active
@@ -139,128 +130,67 @@ result = null
 correlation = open
 ```
 
-Terminal results currently include:
+Terminal results can include:
 
-- `end` → `state=completed`
-- `lost`
-- `timeout`
-- `rejected`
-- `invalid`
-- `superseded` when a new start arrives on a slot before the prior session received a terminal event
+- `end` → normal completed session;
+- `lost`;
+- `timeout`;
+- `rejected`;
+- `invalid`;
+- `superseded` when a new start replaces an older still-open slot session.
 
-`result` preserves the terminal reason even when `state` is normalized to `completed` for a normal end.
-
-### Correlation quality
-
-`correlation` is intentionally explicit:
+Correlation quality is explicit:
 
 | Value | Meaning |
 |---|---|
-| `open` | Active start/late-entry session waiting for a terminal event. |
-| `matched` | Terminal event matched an active session on the same slot. |
-| `orphan` | A terminal event arrived without a corresponding active session. Identity is left unknown unless the terminal event itself supplied it. |
-| `superseded` | A new start replaced an older still-active session on the same slot. |
+| `open` | Active session waiting for a terminal event. |
+| `matched` | Terminal event matched the active session on that slot. |
+| `orphan` | Terminal event arrived without a matching active session. |
+| `superseded` | A new start replaced an older still-open session. |
 
-YWD does **not** invent missing callsigns, IDs, direction, or metrics to make an orphan look complete.
+YWD does not invent callsigns, IDs, direction or metrics for an orphan terminal event.
 
-A bridge restart resets the in-memory/runtime session correlation state. If MMDVM-Host then emits only the sparse end of a call that began before the bridge restarted, that end is expected to appear as an `orphan` session rather than being guessed.
+## Metrics
 
-## Final metrics
+Normalized metric names include:
 
-The normalized `metrics` object uses stable YWD names:
-
-| Field | Source |
+| Field | Meaning/source |
 |---|---|
-| `duration_s` | MMDVM terminal duration |
-| `ber_pct` | MMDVM terminal BER |
-| `packet_loss_pct` | network-originated terminal packet-loss percentage when supplied |
-| `rssi_dbm.min` | RF session minimum RSSI |
-| `rssi_dbm.max` | RF session maximum RSSI |
-| `rssi_dbm.avg` | RF session average RSSI |
+| `duration_s` | terminal call duration when supplied |
+| `ber_pct` | BER when supplied |
+| `packet_loss_pct` | network-originated packet loss when supplied |
+| `rssi_dbm` | RF RSSI summary/value only when a usable upstream value exists |
 
-MMDVM's upstream RSSI key `ave` is normalized to YWD `avg` for consumers.
+Older/raw MMDVM RSSI structures may contain min/max/average values; trusted normalization should preserve real measurements but must leave RSSI absent/null when unsupported. BER and RSSI are separate measurements and are never converted into one another.
 
-The separate live RSSI and BER telemetry samples remain available. Session metrics represent the terminal/call summary and should not be confused with the most recent live sample.
+## Public/trusted consumers
 
-## Public telemetry API
+The dashboard/session helpers expose current/last/recent normalized state to trusted core consumers. New first-party MMDVM-aware features should prefer this contract when they need call identity/state rather than scraping journal text or re-correlating raw MQTT events themselves.
 
-The trusted `mmdvm_telemetry.public_snapshot()` keeps the existing Alpha17 fields and adds:
+The retired `mmdvm-live-telemetry` proof plugin is **not** the owner of this contract. Session state is trusted core infrastructure and remains useful for the dashboard, diagnostics, RX Monitor support and future capability-gated plugins.
 
-```text
-active_session
-last_session
-sessions.active[]
-sessions.last
-sessions.recent[]
-```
+## Plugin contract
 
-The old fields remain:
+A plugin consuming session/telemetry information still receives only the explicitly granted observation capability. It does not gain:
 
-```text
-active_call
-last_event
-rssi
-ber
-bridge
-mode
-```
+- RF ownership;
+- `/dev/serial0` access;
+- arbitrary sockets/network access;
+- systemd/root control;
+- permission to infer or synthesize missing RF measurements.
 
-This lets existing consumers continue working while new consumers move to normalized sessions.
+New consumers should not:
 
-## MMDVM Live Telemetry plugin 0.2.0
+- independently reconstruct start/end identity when normalized session state already exists;
+- infer RSSI for network-originated calls;
+- fabricate RSSI when modem firmware reports zero/unavailable;
+- assume an orphan belongs to the previous unrelated call;
+- treat observation state as permission to transmit.
 
-The reference telemetry plugin is the first consumer of the normalized contract.
-
-Its WebUI displays:
-
-- the normalized active session
-- normalized RF/network direction
-- the last completed/terminal session
-- result
-- duration
-- BER
-- packet loss when applicable
-- average RF RSSI when applicable
-
-Its sandboxed service journal also reads the normalized session snapshot rather than reconstructing DMR identity from raw end events.
-
-The plugin still has:
-
-- no RF ownership
-- no serial-device access
-- no normal IP sockets
-- no arbitrary systemd control
-- only the declared `read:mmdvm-telemetry` observation capability plus its existing lifecycle/journal capability
-
-## Contract for future MMDVM plugins
-
-New first-party MMDVM plugins should prefer the normalized session API whenever they need call identity/state.
-
-They should not:
-
-- re-correlate raw `start` and `end` messages independently
-- scrape MMDVM-Host journal text for identity already present in the session API
-- infer RSSI for network-originated calls
-- assume an orphan terminal event has the identity of a previous unrelated call
-- use the session layer as permission to control RF
-
-RF configuration/control remains a separate future capability with explicit core ownership/arbitration.
-
-## Alpha18 physical test
-
-1. Update from the frozen Alpha17.1 checkpoint.
-2. Confirm core DMR, BrandMeister, OLED, broker, bridge, and telemetry plugin remain healthy.
-3. Key an HT into the hotspot and let the call end.
-4. Confirm the Plugin Manager `Last session` row retains source/destination/direction after the raw MMDVM end event.
-5. Confirm RF duration, BER, and RSSI average appear on the same normalized session.
-6. Receive a network-originated call and confirm direction is `NET → RF`, packet-loss/BER final metrics are retained, and no RF RSSI is invented for that network call.
-7. Reboot with the plugin enabled and verify the plugin returns active. Session history is runtime-only and may reset across bridge/Pi restart.
-8. Confirm `systemctl --failed --no-pager` remains clean.
-
-Useful raw snapshot check:
+## Diagnostics
 
 ```bash
 sudo python3 -m json.tool /run/ywd-hotspot-telemetry/telemetry.json
 ```
 
-Look for the `sessions` object alongside the existing raw `dmr`, `rssi`, and `ber` objects.
+Look for `sessions` alongside the lower-level DMR/BER/RSSI/bridge objects. On hardware without RSSI support, healthy session objects with BER and `rssi_dbm: null` are expected.

@@ -8,33 +8,50 @@ Canonical repository:
 https://github.com/merberg-ai/ywd-hotspot
 ```
 
-## Active refs during 0.2.0-rc1
+## Current refs after 0.2.0-rc1 acceptance
 
 | Ref | Purpose |
 |---|---|
-| `main` | promoted public release/testing line |
-| `dev` | physically accepted integration line |
-| `release/0.2.0-rc1` | current release/factory-image hardening |
-| `checkpoint-builder-0.1.0-image-boot-proven` | immutable physically proven starting point |
+| `main` | promoted public line; current documentation/maintenance baseline |
+| `dev` | accepted integration line |
+| `v0.2.0-rc1` | immutable physically tested RC1 tag |
+| `release/0.2.0-rc1` | frozen RC1 source/hardening branch |
+| `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for the tested public image |
+| `checkpoint-builder-0.1.0-image-boot-proven` | earlier immutable physically proven starting point |
 | `dev-builder` | isolated builder history/future work |
 
-Checkpoint and historical RC refs are audit/rollback references, not update channels.
+Checkpoint/tag/release refs are audit/rollback references, not persistent update channels.
+
+Exact RC1 tested source:
+
+```text
+1575344d732994a7b54d5afc7f15a88040a274ec
+```
 
 ## Clone
 
-Promoted line:
+Current promoted line:
 
 ```bash
 git clone https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
-Current RC preparation line:
+Exact RC1 source reproduction:
 
 ```bash
-git clone --branch release/0.2.0-rc1 https://github.com/merberg-ai/ywd-hotspot.git
-cd ywd-hotspot
+git clone --branch v0.2.0-rc1 https://github.com/merberg-ai/ywd-hotspot.git ywd-hotspot-0.2.0-rc1
+cd ywd-hotspot-0.2.0-rc1
+git rev-parse HEAD
 ```
+
+Expected tagged commit:
+
+```text
+1575344d732994a7b54d5afc7f15a88040a274ec
+```
+
+The frozen release branch can also be inspected explicitly, but new development should not be committed onto it merely because it still exists.
 
 ## Source vs deployed runtime
 
@@ -45,7 +62,7 @@ cd ywd-hotspot
 
 Do not use the managed appliance checkout as a casual development tree. Non-secret provenance is recorded in `/etc/ywd-hotspot/build-info.json`.
 
-Source branch/ref and persistent update channel are intentionally separate concepts. A release/checkpoint test may report its exact source ref while the appliance's long-term channel remains `main` or `dev`.
+Source branch/ref and persistent update channel are intentionally separate concepts. A release/checkpoint test can report its exact source ref while the appliance's long-term update channel remains `main` or `dev`.
 
 ## Never commit runtime secrets
 
@@ -57,8 +74,10 @@ Do not commit/attach:
 /etc/ywd-hotspot/web-auth.json
 /var/lib/ywd-hotspot/private/
 /var/backups/ywd-hotspot/
+/home/ywd/.ssh/authorized_keys
+/etc/ssh/ssh_host_*_key
+SSH client private keys / server-identity archives
 plugin signing private keys
-SSH private keys
 unsanitized diagnostics
 os/local private builder profiles
 ```
@@ -76,7 +95,8 @@ bash -n \
   MIGRATE-TO-GITHUB.sh MIGRATE-TO-GITHUB-core.sh \
   os/builder/BUILD.sh os/builder/RUN-BUILD.sh \
   os/builder/BUILD-PUBLIC-RELEASE.sh \
-  os/pi-gen/stage2/20-ywd-runtime/01-run.sh
+  os/pi-gen/stage2/20-ywd-runtime/01-run.sh \
+  os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
 ```
 
 If Node.js is present:
@@ -91,7 +111,7 @@ Builder host preflight:
 bash os/builder/DOCTOR.sh
 ```
 
-Runtime/systemd/sudoers/updater/plugin/OLED/RF/image changes still require real hardware acceptance.
+Runtime/systemd/sudoers/updater/plugin/OLED/SSH/RF/image changes still require real hardware acceptance.
 
 ## Pinned radio/runtime identity
 
@@ -112,32 +132,42 @@ Only use:
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-for an artifact intended for GitHub Releases. The wrapper enforces factory state, disables SSH/no builder authorized key, selects the default Extended runtime, creates provenance files and restores the developer's private builder profile afterward.
+for an artifact intended for GitHub Releases. The wrapper enforces factory state, disables SSH/no builder authorized key or reusable host identity, selects the default Extended runtime, creates provenance files and restores the developer's private builder profile afterward.
 
 Never publish a personalized development image.
 
-## 0.2.0-rc1 release workflow
+## 0.2.0-rc1 completed workflow
 
 ```text
 proven checkpoint
   ↓
 release/0.2.0-rc1
-  ↓ static/candidate validation
+  ↓ static/candidate/factory validation
 factory image build
   ↓ SHA/xz verification
 physical test of exact image
   ↓
-freeze image-proven checkpoint
+checkpoint-release-0.2.0-rc1-image-proven
   ↓
 fast-forward dev
-  ↓ sanity
+  ↓
 fast-forward main
   ↓
-publish v0.2.0-rc1 prerelease + exact tested assets
+tag v0.2.0-rc1
+  ↓
+publish exact tested prerelease assets
 ```
 
-Release candidate work does not absorb unrelated new features merely because a temporary release branch exists.
+Tested image SHA256:
+
+```text
+f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
+```
+
+After the tag/checkpoint is frozen, documentation-only corrections may land on moving branches. They must not be represented as changes to the already-tested RC artifact.
 
 ## Update trust boundary
 
 Keep canonical origin, dirty-tree refusal, staged candidate validation, protected backup, RF/service preservation, coherent privileged bridge, plugin quiesce/restore, and post-deploy managed-source advancement. Normal app updates also preserve the selected MMDVM runtime instead of silently rebuilding/switching it.
+
+See **[SSH.md](SSH.md)** for the current dashboard-managed maintenance-access model and **[REPOSITORY.md](REPOSITORY.md)** for immutable release/checkpoint policy.

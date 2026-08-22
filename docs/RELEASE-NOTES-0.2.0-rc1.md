@@ -1,23 +1,44 @@
 # YWD-Hotspot 0.2.0-rc1 Release Notes
 
-**Status:** release candidate in factory-image acceptance. Publish/promote only after the exact public image passes physical smoke testing.
+**Status:** physically accepted public release candidate; source is frozen/tagged as `v0.2.0-rc1` and the exact tested factory artifacts are the publication set.
 
 `0.2.0-rc1` turns the proven YWD-Hotspot builder/appliance into a public-testable image workflow while making the YWD MMDVM extension a disclosed, optional runtime capability.
 
+## Exact accepted release identity
+
+```text
+Source commit
+  1575344d732994a7b54d5afc7f15a88040a274ec
+
+Tag
+  v0.2.0-rc1
+
+Image
+  image_2026-08-22-ywd-hotspot-0.2.0-rc1-pi-zero-lite.img.xz
+
+Image SHA256
+  f15232ec599cef550a23dd462ee0f30839cdde6cdf45b7e4b4b1fa929605190c
+
+Physical checkpoint
+  checkpoint-release-0.2.0-rc1-image-proven
+```
+
+The exact image was flashed and physically tested on the reference Raspberry Pi Zero W + duplex MMDVM appliance before source promotion/tagging. The accepted image is the artifact intended for publication; it is not rebuilt after acceptance under the same release identity.
+
 ## Proven starting point
 
-The release branch was created from:
+The RC release branch originated from:
 
 ```text
 checkpoint-builder-0.1.0-image-boot-proven
 a5a6d9483a7cad519ee5288661447875f346b4e7
 ```
 
-That exact baseline physically passed Pi Zero W + duplex MMDVM first boot, OLED code setup, Wi-Fi, dashboard handoff, BrandMeister, Parrot, RF, reboot persistence, settings persistence and RF autostart when explicitly enabled.
+That earlier baseline had already physically passed Pi Zero W + duplex MMDVM first boot, OLED code setup, Wi-Fi, dashboard handoff, BrandMeister, Parrot, RF, reboot/settings persistence and explicitly enabled RF autostart.
 
 ## Public factory image
 
-The release image is generated with no operator/builder preconfiguration:
+The accepted release image contains no operator/builder preconfiguration:
 
 - no Wi-Fi credentials;
 - no callsign/DMR ID;
@@ -25,9 +46,28 @@ The release image is generated with no operator/builder preconfiguration:
 - no dashboard password;
 - no imported settings;
 - no RF autostart;
-- SSH disabled with no builder authorized key.
+- SSH disabled;
+- no builder authorized client key;
+- no reusable SSH server host identity.
 
-First boot uses the temporary YWD setup AP, then the OLED-code protected hotspot wizard.
+First boot uses the temporary YWD setup AP, then the OLED-code protected hotspot wizard. RF and SSH remain off until explicitly enabled.
+
+## SSH / SFTP access
+
+The public image includes OpenSSH server software for optional maintenance, but there is no default SSH password and port 22 is closed at factory state.
+
+After first-boot setup:
+
+```text
+unlock dashboard controls
+  -> SYSTEM -> SSH ACCESS
+  -> CREATE & EXPORT CLIENT KEY (normally user ywd)
+  -> ENABLE SSH ACCESS
+```
+
+YWD enforces public-key-only authentication, disables password/root SSH login, generates unique server host keys on the appliance, and does not retain the generated client private key after delivering it.
+
+On YWD-Hotspot OS, `ywd` has passwordless sudo, so its private login key is an administrator credential. See `docs/SSH.md`.
 
 ## MMDVM runtime variants
 
@@ -39,7 +79,7 @@ Pinned upstream MMDVM-Host plus the hash-verified YWD extension patch. Provides 
 
 Exact pinned upstream MMDVM-Host without YWD extensions. Normal hotspot operation remains supported; extension-dependent plugins are refused cleanly.
 
-The variant is persistent across ordinary app updates and each variant uses a separate compile-cache identity.
+The variant persists across ordinary app updates and each variant uses a separate compile-cache identity.
 
 Current Extended identity:
 
@@ -50,9 +90,9 @@ Patch SHA:  f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
 DMRGateway: 2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
 
-## Plugin runtime requirements
+## Plugin/runtime requirements
 
-Trusted plugin dependency tokens now include:
+Trusted plugin dependency tokens include:
 
 ```text
 mmdvm-ywd-extended
@@ -62,15 +102,29 @@ mmdvm-cap-passive-dmr-voice
 
 Core checks these during installation/enable/start and blocks incompatible plugins rather than allowing mysterious runtime failures.
 
-## First-boot wizard hardening
+## First-boot / duplex hardening
 
 - Finish Setup displays visible apply/progress state.
 - Backend validation errors appear beside the final action.
-- successful setup reports the configured dashboard URL/port and automatically hands off;
-- canonical schema/config is preserved rather than reconstructed from a legacy subset;
-- simplex/duplex is explicit;
-- duplex has separate hotspot RX/TX fields;
-- builder-provided defaults not edited by the wizard are preserved.
+- Successful setup reports the configured dashboard URL/port and automatically hands off.
+- Canonical schema/config is preserved rather than reconstructed from a legacy subset.
+- Simplex/duplex is explicit.
+- Duplex has separate hotspot RX/TX fields and TS1/TS2 support.
+- Builder-provided defaults not edited by the wizard are preserved.
+
+## LIVE DMR / telemetry hardening
+
+The accepted RC includes the trusted loopback MMDVM telemetry path and enhanced browser instrumentation:
+
+- dedicated local Mosquitto listener on `127.0.0.1:18883`;
+- structured telemetry bridge and bounded passive voice bridge;
+- BER/Last Heard/activity instrumentation;
+- animated RX/TX presentation;
+- RSSI displayed only when modem firmware supplies a usable value;
+- RSSI-only UI hidden when unsupported rather than showing fake/stuck dBm;
+- horizontal BER/quality layout when RSSI is unavailable.
+
+Physical RC testing established that the reference duplex HAT firmware reports valid BER/voice traffic but no usable RSSI (`rssi=0`). YWD therefore does not synthesize dBm from BER. Real RSSI support may require compatible MMDVM_HS HAT firmware with firmware-side RSSI reporting enabled; YWD does not automatically flash modem firmware.
 
 ## Builder/release hardening
 
@@ -78,23 +132,30 @@ Core checks these during installation/enable/start and blocks incompatible plugi
 - public factory profile checker;
 - isolated public release wrapper that saves/restores private developer builder settings;
 - no SSH authorized key staged when SSH is disabled;
+- no reusable server host keys in the public image;
 - machine-readable `BUILD-METADATA.json`;
 - `README-FIRST.txt` generated beside the release image;
-- candidate validator requires complete MMDVM variant runtime support.
+- candidate validator covers coherent runtime/UI/static-route capabilities;
+- release source and exact image checksum recorded independently.
 
-## Publication gate
+## Physical acceptance completed
 
-Before this prerelease is published/promoted, the exact public image must pass:
+The exact public artifact passed the intended acceptance path, including:
 
-- SHA256/XZ verification;
+- build/checksum integrity;
 - setup AP from a completely unconfigured image;
 - Wi-Fi handoff;
 - OLED one-time-code setup;
 - dashboard handoff;
-- YWD Extended runtime identity verification;
+- YWD Extended runtime identity;
 - BrandMeister/Parrot/RF;
-- duplex TS1/TS2 on the target hardware;
-- reboot/settings/RF-autostart persistence;
-- zero failed units.
+- duplex operation on target hardware;
+- telemetry/dashboard behavior;
+- settings and reboot persistence;
+- explicitly enabled RF autostart behavior;
+- SSH factory-off state;
+- clean service/runtime checks.
 
-After that acceptance, the exact source tree will be checkpointed, fast-forwarded to `dev` and `main`, then published as the `v0.2.0-rc1` GitHub prerelease with the exact tested artifacts.
+After acceptance, the exact source was frozen as `checkpoint-release-0.2.0-rc1-image-proven`, fast-forwarded to `dev` and `main`, and tagged `v0.2.0-rc1`.
+
+Post-release documentation corrections on moving branches do not rewrite the immutable tag/checkpoint or the image that was physically tested.

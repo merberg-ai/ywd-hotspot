@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 import dashboard_core as core
@@ -11,6 +12,61 @@ import plugin_manager
 import plugin_package_manager
 import plugin_service_manager
 import plugin_ui_manager
+
+_VOICE_CAPABILITY = "read:dmr-voice"
+_VOICE_PLUGIN_CACHE = {}
+
+
+def _manifest_stamp(path: Path):
+    st = path.stat()
+    return (int(st.st_ino), int(st.st_mtime_ns), int(st.st_size))
+
+
+def _voice_live_authorized(ident: str) -> None:
+    """Keep mutable UI-plugin authorization immediately revocable."""
+    state = plugin_manager.read_state()
+    if not state.get("enabled"):
+        raise ValueError("plugin subsystem is disabled")
+    if not bool((state.get("plugins", {}).get(ident) or {}).get("enabled", False)):
+        raise ValueError("UI plugin is disabled")
+    if not plugin_package_manager.is_installed(ident):
+        raise ValueError("UI plugin is not installed")
+
+
+def _voice_plugin(ident: str):
+    ident = str(ident or "")
+    if not plugin_manager.ID_RE.fullmatch(ident):
+        raise ValueError("invalid plugin id")
+
+    # The state/package files are tiny and intentionally checked for every poll,
+    # so disable/uninstall still revokes access immediately.  Full UI catalog
+    # discovery and signed manifest validation are much more expensive on a Pi
+    # Zero and are cached until the exact installed manifest changes.
+    _voice_live_authorized(ident)
+
+    cached = _VOICE_PLUGIN_CACHE.get(ident)
+    if cached:
+        manifest_path = Path(cached["manifest_path"])
+        try:
+            if _manifest_stamp(manifest_path) == cached["stamp"]:
+                plugin = cached["plugin"]
+                if _VOICE_CAPABILITY not in set(plugin.get("capabilities") or []):
+                    raise ValueError("plugin is not permitted to read DMR voice frames")
+                return plugin
+        except (FileNotFoundError, OSError):
+            pass
+        _VOICE_PLUGIN_CACHE.pop(ident, None)
+
+    plugin = plugin_ui_manager.get_effective_plugin(ident)
+    if _VOICE_CAPABILITY not in set(plugin.get("capabilities") or []):
+        raise ValueError("plugin is not permitted to read DMR voice frames")
+    manifest_path = Path(plugin["directory"]) / "plugin.json"
+    _VOICE_PLUGIN_CACHE[ident] = {
+        "manifest_path": str(manifest_path),
+        "stamp": _manifest_stamp(manifest_path),
+        "plugin": plugin,
+    }
+    return plugin
 
 
 def current_snapshot():
@@ -76,9 +132,7 @@ def check_plugin(ident, kind="all"):
 
 
 def voice_for(ident, after=0, limit=32):
-    plugin = plugin_ui_manager.get_effective_plugin(ident)
-    if "read:dmr-voice" not in set(plugin.get("capabilities") or []):
-        raise ValueError("plugin is not permitted to read DMR voice frames")
+    _voice_plugin(ident)
     return mmdvm_voice.public_poll(after, limit)
 
 

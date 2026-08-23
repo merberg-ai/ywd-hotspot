@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""Trusted Phase 3J streamed RX-audio bridge for sandboxed UI plugins.
+
+The browser no longer polls DMR frames and POSTs each vocoder batch for live
+audio.  One bounded HTTP stream performs trusted frame selection/recovery and
+vocoder calls inside core, then emits only PCM/events to the parent WebUI.
+
+The existing DMR frame polling API remains available for visual diagnostics.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import threading
+import time
+from urllib.parse import parse_qs, urlparse
+
+import dashboard_plugin_vocoder
+import dashboard_plugins
+import dmr_ambe49
+import mmdvm_voice
+import vocoder_client
+
+FRAME_MS = 20
+CHUNK_FRAMES = 10
+CALL_GAP_MS = 500
+AUTO_LOCK_GAP_MS = 450
+MAX_BURST_BACKLOG = 5  # 5 DMR bursts ~= 300 ms / 15 AMBE frames
+POLL_SLEEP_S = 0.025
+HEARTBEAT_S = 1.0
+KEEPALIVE_S = 3.0
+AUTH_RECHECK_S = 1.0
+_STREAM_LOCK = threading.Lock()
+
+
+def _route_key(frame):
+    return (
+        str(frame.get("source") or ""),
+        int(frame.get("slot") or 0),
+        int(frame.get("src_id") or 0),
+        int(frame.get("dst_id") or 0),
+        bool(frame.get("group")),
+    )
+
+
+def _route_doc(frame):
+    return {
+        "source": str(frame.get("source") or "")[:16],
+        "slot": int(frame.get("slot") or 0),
+        "src": int(frame.get("src_id") or 0),
+        "dst": int(frame.get("dst_id") or 0),
+        "group": bool(frame.get("group")),
+    }
+
+
+def _frame_time_ms(frame):
+    try:
+        value = float(frame.get("received_at") or 0.0)
+        if value > 0:
+            return value * 1000.0
+    except Exception:
+        pass
+    return time.time() * 1000.0
+
+
+def _parse_options(query):
+    qs = parse_qs(query, keep_blank_values=False)
+    source = str((qs.get("source") or ["network"])[0]).strip().lower()
+    if source not in {"network", "rf", "all"}:
+        raise ValueError("audio stream source must be network, rf, or all")
+    slot_text = str((qs.get("slot") or ["auto"])[0]).strip().lower()
+    if slot_text == "auto":
+        slot = "auto"
+    else:
+        try:
+            slot = int(slot_text)
+        except Exception as exc:
+            raise ValueError("audio stream slot must be auto, 1, or 2") from exc
+        if slot not in {1, 2}:
+            raise ValueError("audio stream slot must be auto, 1, or 2")
+    return source, slot
+
+
+def _authorized(ident):
+    # Both capabilities remain independently fail-closed and immediately
+    # revocable through their existing cached-manifest authorization paths.
+    dashboard_plugins._voice_plugin(ident)
+    dashboard_plugin_vocoder._plugin(ident)
+
+
+def _write_event(handler, event):
+    try:
+        raw = (json.dumps(event, separators=(",", ":")) + "\n").encode("utf-8")
+        handler.wfile.write(raw)
+        handler.wfile.flush()
+        return True
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        return False
+
+
+def _send_stream_headers(handler):
+    handler.send_response(200)
+    handler.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("X-Content-Type-Options", "nosniff")
+    handler.send_header("Referrer-Policy", "no-referrer")
+    handler.send_header("Connection", "close")
+    handler.end_headers()
+    handler.close_connection = True
+
+
+def stream_audio(handler, ident, source_filter, slot_filter):
+    """Run one bounded audio stream until the browser disconnects."""
+    if not _STREAM_LOCK.acquire(blocking=False):
+        handler.send_json({"error": "another RX audio stream is already active"}, 409)
+        return
+
+    try:
+        try:
+            _authorized(ident)
+            status = vocoder_client.status()
+            if not status.get("available"):
+                handler.send_json({"error": str(status.get("error") or "vocoder backend unavailable")[:500]}, 503)
+                return
+            reset_started = time.monotonic()
+            vocoder_client.reset()
+            initial_reset_ms = (time.monotonic() - reset_started) * 1000.0
+        except ValueError as exc:
+            handler.send_json({"error": str(exc)[:500]}, 409)
+            return
+        except vocoder_client.VocoderUnavailable as exc:
+            handler.send_json({"error": str(exc)[:500]}, 503)
+            return
+        except vocoder_client.VocoderBackendError as exc:
+            handler.send_json({"error": str(exc)[:500]}, 502)
+            return
+        except Exception as exc:
+            handler.send_json({"error": str(exc)[:800]}, 502)
+            return
+
+        _send_stream_headers(handler)
+        if not _write_event(handler, {
+            "type": "hello",
+            "schema": 1,
+            "stream": "ywd-rx-audio",
+            "plugin": ident,
+            "backend": str(status.get("backend") or "external")[:80],
+            "protocol": int(status.get("protocol") or 1),
+            "sample_rate": 8000,
+            "samples_per_frame": 160,
+            "channels": 1,
+            "sample_format": "s16le",
+            "chunk_frames": CHUNK_FRAMES,
+            "chunk_ms": CHUNK_FRAMES * FRAME_MS,
+            "source": source_filter,
+            "slot": slot_filter,
+            "initial_reset_ms": round(initial_reset_ms, 3),
+        }):
+            return
+
+        # Start at the live edge.  A newly opened audio session never replays
+        # historical frames already sitting in the diagnostics ring.
+        initial = mmdvm_voice.frames_after(0, 1)
+        cursor = int(initial.get("newest_seq") or 0)
+        ambe_queue = []
+        previous_key = None
+        last_source_ms = 0.0
+        auto_key = None
+        auto_slot = 0
+        auto_last_ms = 0.0
+        chunk_seq = 0
+        dropped_bursts = 0
+        dropped_ambe = 0
+        recovered_frames = 0
+        unrecoverable_frames = 0
+        corrected_bits = 0
+        decode_max_ms = 0.0
+        reset_max_ms = initial_reset_ms
+        last_route = None
+        last_heartbeat = time.monotonic()
+        last_keepalive = time.monotonic()
+        last_auth = time.monotonic()
+        need_reset = False
+
+        def send(event):
+            event.setdefault("stream_seq", chunk_seq)
+            return _write_event(handler, event)
+
+        def do_reset(reason):
+            nonlocal ambe_queue, need_reset, reset_max_ms
+            ambe_queue = []
+            started = time.monotonic()
+            vocoder_client.reset()
+            elapsed = (time.monotonic() - started) * 1000.0
+            reset_max_ms = max(reset_max_ms, elapsed)
+            need_reset = False
+            return send({"type": "reset", "reason": reason, "reset_ms": round(elapsed, 3)})
+
+        while True:
+            now = time.monotonic()
+
+            if now - last_auth >= AUTH_RECHECK_S:
+                try:
+                    _authorized(ident)
+                except Exception as exc:
+                    send({"type": "error", "fatal": True, "error": str(exc)[:500]})
+                    return
+                last_auth = now
+
+            if now - last_keepalive >= KEEPALIVE_S:
+                keep = vocoder_client.status()
+                if not keep.get("available"):
+                    send({"type": "error", "fatal": False, "error": str(keep.get("error") or "vocoder keepalive failed")[:500]})
+                    need_reset = True
+                last_keepalive = now
+
+            result = mmdvm_voice.frames_after(cursor, 64)
+            frames = list(result.get("frames") or [])
+            if frames:
+                cursor = int(result.get("cursor") or cursor)
+
+            # Falling behind is an audio problem only.  Drop stale bursts,
+            # reset vocoder state, and rejoin the newest live edge.  RF/MMDVM
+            # ingestion is never blocked or slowed by this consumer.
+            if result.get("dropped") or len(frames) > MAX_BURST_BACKLOG:
+                if len(frames) > MAX_BURST_BACKLOG:
+                    drop_count = len(frames) - MAX_BURST_BACKLOG
+                    dropped_bursts += drop_count
+                    frames = frames[-MAX_BURST_BACKLOG:]
+                else:
+                    dropped_bursts += 1
+                dropped_ambe += len(ambe_queue)
+                ambe_queue = []
+                need_reset = True
+                if not send({
+                    "type": "drop",
+                    "reason": "voice-ring-backlog",
+                    "dropped_bursts": dropped_bursts,
+                    "dropped_ambe": dropped_ambe,
+                }):
+                    return
+
+            for frame in frames:
+                if not isinstance(frame, dict):
+                    continue
+                source = str(frame.get("source") or "")
+                if source_filter != "all" and source != source_filter:
+                    continue
+                slot = int(frame.get("slot") or 0)
+                if slot_filter != "auto" and slot != slot_filter:
+                    continue
+
+                key = _route_key(frame)
+                source_ms = _frame_time_ms(frame)
+
+                if slot_filter == "auto":
+                    if auto_key is None:
+                        auto_key, auto_slot, auto_last_ms = key, slot, source_ms
+                    elif key == auto_key:
+                        auto_last_ms = max(auto_last_ms, source_ms)
+                    elif slot == auto_slot:
+                        auto_key, auto_slot, auto_last_ms = key, slot, source_ms
+                    elif auto_last_ms and source_ms - auto_last_ms >= AUTO_LOCK_GAP_MS:
+                        auto_key, auto_slot, auto_last_ms = key, slot, source_ms
+                    else:
+                        continue
+
+                route_changed = previous_key is not None and key != previous_key
+                gap_detected = bool(last_source_ms and source_ms - last_source_ms > CALL_GAP_MS)
+                if route_changed or gap_detected:
+                    dropped_ambe += len(ambe_queue)
+                    ambe_queue = []
+                    need_reset = True
+
+                if need_reset:
+                    try:
+                        if not do_reset("route-change" if route_changed else "gap/backlog"):
+                            return
+                    except Exception as exc:
+                        send({"type": "error", "fatal": False, "error": f"vocoder reset failed: {exc}"[:500]})
+                        need_reset = True
+                        continue
+
+                previous_key = key
+                last_source_ms = source_ms
+                last_route = _route_doc(frame)
+
+                recovery_started = time.monotonic()
+                try:
+                    recovered = dmr_ambe49.recover_burst(frame.get("frame_hex"))
+                except Exception:
+                    unrecoverable_frames += 3
+                    continue
+                recovery_ms = (time.monotonic() - recovery_started) * 1000.0
+
+                for item in recovered:
+                    if not item.get("valid"):
+                        unrecoverable_frames += 1
+                        continue
+                    recovered_frames += 1
+                    corrected_bits += int(item.get("corrected") or 0)
+                    ambe_queue.append(str(item["bits"]))
+
+                # The route may have accumulated more than one decode batch
+                # from one ring snapshot.  Work sequentially but keep only a
+                # small bounded tail if decode cannot keep up.
+                while len(ambe_queue) >= CHUNK_FRAMES:
+                    batch = ambe_queue[:CHUNK_FRAMES]
+                    del ambe_queue[:CHUNK_FRAMES]
+                    decode_started = time.monotonic()
+                    try:
+                        decoded = vocoder_client.decode(batch)
+                    except (vocoder_client.VocoderUnavailable, vocoder_client.VocoderBackendError) as exc:
+                        dropped_ambe += len(batch) + len(ambe_queue)
+                        ambe_queue = []
+                        need_reset = True
+                        if not send({"type": "error", "fatal": False, "error": str(exc)[:500]}):
+                            return
+                        break
+                    decode_ms = (time.monotonic() - decode_started) * 1000.0
+                    decode_max_ms = max(decode_max_ms, decode_ms)
+                    pcm = decoded.pop("pcm_s16le")
+                    chunk_seq += 1
+                    if not send({
+                        "type": "pcm",
+                        "seq": chunk_seq,
+                        "frame_count": int(decoded.get("frame_count") or CHUNK_FRAMES),
+                        "sample_rate": int(decoded.get("sample_rate") or 8000),
+                        "samples_per_frame": int(decoded.get("samples_per_frame") or 160),
+                        "channels": int(decoded.get("channels") or 1),
+                        "sample_format": str(decoded.get("sample_format") or "s16le"),
+                        "pcm_s16le_b64": base64.b64encode(pcm).decode("ascii"),
+                        "pcm_bytes": len(pcm),
+                        "decode_ms": round(decode_ms, 3),
+                        "decode_max_ms": round(decode_max_ms, 3),
+                        "recovery_ms": round(recovery_ms, 3),
+                        "route": last_route,
+                        "dropped_bursts": dropped_bursts,
+                        "dropped_ambe": dropped_ambe,
+                        "recovered_frames": recovered_frames,
+                        "unrecoverable_frames": unrecoverable_frames,
+                        "corrected_bits": corrected_bits,
+                    }):
+                        return
+
+            now = time.monotonic()
+            if now - last_heartbeat >= HEARTBEAT_S:
+                if not send({
+                    "type": "heartbeat",
+                    "cursor": cursor,
+                    "queued_ambe": len(ambe_queue),
+                    "route": last_route,
+                    "dropped_bursts": dropped_bursts,
+                    "dropped_ambe": dropped_ambe,
+                    "recovered_frames": recovered_frames,
+                    "unrecoverable_frames": unrecoverable_frames,
+                    "corrected_bits": corrected_bits,
+                    "decode_max_ms": round(decode_max_ms, 3),
+                    "reset_max_ms": round(reset_max_ms, 3),
+                }):
+                    return
+                last_heartbeat = now
+
+            if not frames:
+                time.sleep(POLL_SLEEP_S)
+    finally:
+        _STREAM_LOCK.release()
+
+
+def wrap_handler(base):
+    class PluginAudioStreamHandler(base):
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            parts = parsed.path.strip("/").split("/")
+            if not (len(parts) == 5 and parts[:3] == ["api", "plugins", "ui"] and parts[4] == "audio-stream"):
+                super().do_GET()
+                return
+            ident = parts[3]
+            if not self.require_control():
+                return
+            try:
+                source, slot = _parse_options(parsed.query)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)[:500]}, 400)
+                return
+            stream_audio(self, ident, source, slot)
+
+    PluginAudioStreamHandler.__name__ = f"PluginAudioStream{base.__name__}"
+    return PluginAudioStreamHandler

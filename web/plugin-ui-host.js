@@ -3,6 +3,7 @@
   const plugins = new Map();
   const frames = new Map();
   let syncTimer = null;
+  let streamSequence = 0;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const pluginSelector = id => String(id || ''); // plugin IDs are already restricted to [a-z0-9-]
@@ -35,9 +36,19 @@
 
   function pageId(id) { return `plugin-ui-${id}`; }
 
+  function stopAudioStream(session, streamId = '') {
+    const active = session?.audioStream;
+    if (!active) return {ok:true, stopped:false};
+    if (streamId && active.id !== String(streamId)) return {ok:true, stopped:false};
+    session.audioStream = null;
+    try { active.controller.abort(); } catch (_) {}
+    return {ok:true, stopped:true, stream_id:active.id};
+  }
+
   function destroyFrame(id) {
     const session = frames.get(id);
     if (!session) return;
+    stopAudioStream(session);
     try { session.port?.close(); } catch (_) {}
     try { session.iframe?.remove(); } catch (_) {}
     frames.delete(id);
@@ -74,6 +85,72 @@
     if (!Array.isArray(plugin.capabilities) || !plugin.capabilities.includes(capability)) {
       throw new Error(`Plugin does not have ${capability} capability`);
     }
+  }
+
+  async function pumpAudioStream(session, plugin, active, response) {
+    let error = '';
+    try {
+      if (!response.body) throw new Error('RX audio stream body is unavailable');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = '';
+      while (frames.get(plugin.id) === session && session.audioStream === active) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value, {stream:true});
+        if (pending.length > 131072) throw new Error('RX audio stream framing buffer exceeded limit');
+        while (true) {
+          const newline = pending.indexOf('\n');
+          if (newline < 0) break;
+          const line = pending.slice(0, newline).trim();
+          pending = pending.slice(newline + 1);
+          if (!line) continue;
+          let event;
+          try { event = JSON.parse(line); }
+          catch (_) { throw new Error('RX audio stream returned invalid NDJSON'); }
+          if (session.port && session.audioStream === active) {
+            session.port.postMessage({type:'stream-event', streamId:active.id, event});
+          }
+        }
+      }
+    } catch (exc) {
+      if (!active.controller.signal.aborted) error = String(exc?.message || exc);
+    } finally {
+      if (session.audioStream === active) session.audioStream = null;
+      try {
+        session.port?.postMessage({type:'stream-end', streamId:active.id, error});
+      } catch (_) {}
+    }
+  }
+
+  async function startAudioStream(session, plugin, args = {}) {
+    if (!eligible(plugin)) throw new Error('Plugin UI is no longer enabled');
+    requireCapability(plugin, 'read:dmr-voice');
+    requireCapability(plugin, 'use:vocoder');
+    stopAudioStream(session);
+
+    const sourceRaw = String(args?.source || 'network').toLowerCase();
+    const source = ['network','rf','all'].includes(sourceRaw) ? sourceRaw : 'network';
+    const slotRaw = String(args?.slot ?? 'auto').toLowerCase();
+    const slot = ['auto','1','2'].includes(slotRaw) ? slotRaw : 'auto';
+    const controller = new AbortController();
+    const streamId = `${plugin.id}-${Date.now().toString(36)}-${(++streamSequence).toString(36)}`;
+    const url = `/api/plugins/ui/${encodeURIComponent(plugin.id)}/audio-stream?source=${encodeURIComponent(source)}&slot=${encodeURIComponent(slot)}`;
+    const response = await fetch(url, {
+      credentials:'same-origin',
+      cache:'no-store',
+      signal:controller.signal,
+      headers:{'Accept':'application/x-ndjson'},
+    });
+    if (!response.ok) {
+      let data = {};
+      try { data = await response.json(); } catch (_) {}
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    const active = {id:streamId, controller};
+    session.audioStream = active;
+    void pumpAudioStream(session, plugin, active, response);
+    return {ok:true, stream_id:streamId, source, slot};
   }
 
   async function bridgeResult(plugin, op, args = {}) {
@@ -113,8 +190,8 @@
     }
     if (op === 'plugin.vocoderDecode') {
       requireCapability(plugin, 'use:vocoder');
-      const frames = Array.isArray(args?.frames) ? args.frames.slice(0, 10).map(x => String(x || '')) : [];
-      const data = await jsonPost(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/vocoder/decode`, {frames});
+      const voiceFrames = Array.isArray(args?.frames) ? args.frames.slice(0, 10).map(x => String(x || '')) : [];
+      const data = await jsonPost(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/vocoder/decode`, {frames:voiceFrames});
       return data.vocoder || {};
     }
     throw new Error(`Plugin UI operation is not permitted: ${op}`);
@@ -141,10 +218,11 @@
     iframe.src = `/api/plugins/ui/${encodeURIComponent(id)}/frame?v=${encodeURIComponent(plugin.version || '')}`;
     stage.appendChild(iframe);
 
-    const session = {iframe, port:null};
+    const session = {iframe, port:null, audioStream:null, version:String(plugin.version || '')};
     frames.set(id, session);
     iframe.addEventListener('load', () => {
       if (!frames.has(id) || !eligible(plugins.get(id))) return;
+      stopAudioStream(session);
       try { session.port?.close(); } catch (_) {}
       const channel = new MessageChannel();
       session.port = channel.port1;
@@ -152,7 +230,16 @@
         const request = event.data || {};
         if (request.type !== 'request' || !Number.isInteger(request.id)) return;
         try {
-          const result = await bridgeResult(plugins.get(id), String(request.op || ''), request.args || {});
+          const current = plugins.get(id);
+          const op = String(request.op || '');
+          let result;
+          if (op === 'plugin.startRxAudioStream') {
+            result = await startAudioStream(session, current, request.args || {});
+          } else if (op === 'plugin.stopRxAudioStream') {
+            result = stopAudioStream(session, String(request.args?.stream_id || ''));
+          } else {
+            result = await bridgeResult(current, op, request.args || {});
+          }
           channel.port1.postMessage({type:'response', id:request.id, ok:true, result});
         } catch (error) {
           try { channel.port1.postMessage({type:'response', id:request.id, ok:false, error:String(error?.message || error)}); } catch (_) {}
@@ -227,16 +314,21 @@
     } else {
       const title = page.querySelector('.card-title');
       if (title) title.textContent = plugin.name;
+      const hint = page.querySelector('.plugin-ui-host-title .hint');
+      if (hint) hint.textContent = `Sandboxed Plugin UI v1 · ${plugin.id} · v${plugin.version}`;
     }
   }
 
   function render(data) {
     const incoming = new Map();
     for (const plugin of Array.isArray(data?.plugins) ? data.plugins : []) if (eligible(plugin)) incoming.set(plugin.id, plugin);
+    const previous = new Map(plugins);
 
     for (const id of Array.from(plugins.keys())) if (!incoming.has(id)) removeUi(id);
     plugins.clear();
     for (const [id, plugin] of incoming) {
+      const old = previous.get(id);
+      if (old && String(old.version || '') !== String(plugin.version || '')) destroyFrame(id);
       plugins.set(id, plugin);
       ensureUi(plugin);
     }

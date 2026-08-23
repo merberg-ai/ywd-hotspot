@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import dashboard_backup
 import dashboard_core as core
+import dashboard_plugin_audio_stream
 import dashboard_plugin_upload
 import dashboard_plugin_vocoder
 import dashboard_plugin_wasm
@@ -86,6 +87,7 @@ def wrap_handler(base):
     UpdateHandler.__name__ = f"Update{base.__name__}"
     handler = dashboard_plugins.wrap_handler(UpdateHandler)
     handler = dashboard_plugin_vocoder.wrap_handler(handler)
+    handler = dashboard_plugin_audio_stream.wrap_handler(handler)
     handler = dashboard_plugin_wasm.wrap_handler(handler)
     handler = dashboard_plugin_upload.wrap_handler(handler)
     handler = dashboard_backup.wrap_handler(handler)

@@ -9,6 +9,12 @@ Phase 3H keeps protocol v1 framing unchanged but permits multiple request/
 response packets on one accepted AF_UNIX connection. An idle persistent client
 is closed after the configured idle interval so socket-activated backend demand
 still disappears when RX audio stops.
+
+The fake tone generator deliberately avoids doing per-sample trigonometry in the
+live path. 440 Hz at 8 kHz repeats every 200 samples, so one exact signed-16-bit
+period is precomputed at startup and DECODE responses are assembled by slicing
+that immutable period. This keeps the development backend from becoming a
+meaningful CPU/jitter source on a single-core Pi Zero.
 """
 from __future__ import annotations
 
@@ -26,12 +32,22 @@ import vocoder_protocol as proto
 BACKEND_NAME = "ywd-fake-vocoder"
 TONE_HZ = 440.0
 TONE_AMPLITUDE = 6000
+TONE_PERIOD_SAMPLES = 200  # gcd(440, 8000) = 40 -> exact 200-sample period
 
 
 class FakeBackend:
     def __init__(self, mode: str):
         self.mode = mode if mode in {"silence", "tone"} else "tone"
         self.sample_index = 0
+        self.decode_calls = 0
+        self.pcm_generation_last_ms = 0.0
+        self.pcm_generation_max_ms = 0.0
+        period = bytearray()
+        for index in range(TONE_PERIOD_SAMPLES):
+            phase = 2.0 * math.pi * TONE_HZ * (index / proto.SAMPLE_RATE)
+            sample = int(round(TONE_AMPLITUDE * math.sin(phase)))
+            period.extend(struct.pack("<h", sample))
+        self._tone_period = bytes(period)
 
     def status_doc(self) -> dict:
         return {
@@ -47,24 +63,35 @@ class FakeBackend:
             "preferred_batch_frames": 10,
             "max_batch_frames": proto.MAX_FRAMES,
             "persistent_sessions": True,
+            "tone_generation": "precomputed-period",
+            "decode_calls": self.decode_calls,
+            "pcm_generation_last_ms": round(self.pcm_generation_last_ms, 3),
+            "pcm_generation_max_ms": round(self.pcm_generation_max_ms, 3),
         }
 
     def reset(self) -> None:
         self.sample_index = 0
 
     def pcm(self, frame_count: int) -> bytes:
+        started = time.monotonic()
         samples = frame_count * proto.SAMPLES_PER_FRAME
+        self.decode_calls += 1
         if self.mode == "silence":
             self.sample_index += samples
-            return b"\0\0" * samples
+            out = b"\0\0" * samples
+        else:
+            offset = self.sample_index % TONE_PERIOD_SAMPLES
+            needed_samples = offset + samples
+            repeats = (needed_samples + TONE_PERIOD_SAMPLES - 1) // TONE_PERIOD_SAMPLES
+            raw = self._tone_period * repeats
+            start = offset * 2
+            out = raw[start:start + samples * 2]
+            self.sample_index += samples
 
-        out = bytearray()
-        for _ in range(samples):
-            phase = 2.0 * math.pi * TONE_HZ * (self.sample_index / proto.SAMPLE_RATE)
-            sample = int(round(TONE_AMPLITUDE * math.sin(phase)))
-            out.extend(struct.pack("<h", sample))
-            self.sample_index += 1
-        return bytes(out)
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        self.pcm_generation_last_ms = elapsed_ms
+        self.pcm_generation_max_ms = max(self.pcm_generation_max_ms, elapsed_ms)
+        return out
 
 
 def _error_packet(opcode: int, request_id: int, status: int, message: str) -> bytes:

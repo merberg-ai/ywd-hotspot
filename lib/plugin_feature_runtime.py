@@ -171,20 +171,28 @@ def _guarded_mmdvm_restart(expected_gate: bool) -> bool:
     return True
 
 
-def status() -> dict:
-    demand = demanding_plugins()
+def _snapshot(demand=None) -> dict:
+    """Read one runtime snapshot without repeating identical systemd queries."""
+    if demand is None:
+        demand = demanding_plugins()
+    mmdvm_active = _active(MMDVM_SERVICE)
+    running_gate = running_voice_gate() if mmdvm_active else False
     return {
         "capability": VOICE_CAPABILITY,
-        "demanded_by": demand,
+        "demanded_by": list(demand),
         "desired": bool(demand),
         "env_file": str(VOICE_ENV),
         "env_enabled": _env_file_enabled(),
-        "running_gate": running_voice_gate() if _active(MMDVM_SERVICE) else False,
+        "running_gate": running_gate,
         "bridge_enabled": _enabled(VOICE_SERVICE),
         "bridge_active": _active(VOICE_SERVICE),
-        "mmdvm_active": _active(MMDVM_SERVICE),
+        "mmdvm_active": mmdvm_active,
         "gateway_active": _active(GATEWAY_SERVICE),
     }
+
+
+def status() -> dict:
+    return _snapshot()
 
 
 def reconcile() -> dict:
@@ -197,8 +205,46 @@ def reconcile() -> dict:
     running_before = running_voice_gate() if mmdvm_was_active else False
     env_before = _env_file_enabled()
     bridge_before = {"enabled": _enabled(VOICE_SERVICE), "active": _active(VOICE_SERVICE)}
+    previous = {
+        "env_enabled": env_before,
+        "running_gate": running_before,
+        "bridge_enabled": bridge_before["enabled"],
+        "bridge_active": bridge_before["active"],
+    }
 
-    _systemctl("daemon-reload")
+    # UI-only plugin package updates are common and do not change systemd unit
+    # files.  On a Pi Zero, systemctl daemon-reload can take well over ten
+    # seconds, so never do it as part of a per-request capability reconcile.
+    # Unit-file installation/update paths are responsible for daemon-reload.
+    #
+    # More importantly, if the trusted runtime is already exactly converged,
+    # return immediately.  This keeps same-capability plugin updates cheap and
+    # prevents a successful state mutation from outliving the dashboard's HTTP
+    # request timeout merely because systemd queries are slow on small SBCs.
+    converged = (
+        env_before == desired
+        and bridge_before["enabled"] == desired
+        and bridge_before["active"] == desired
+        and (not mmdvm_was_active or running_before == desired)
+    )
+    if converged:
+        result = {
+            "capability": VOICE_CAPABILITY,
+            "demanded_by": demand,
+            "desired": desired,
+            "env_file": str(VOICE_ENV),
+            "env_enabled": env_before,
+            "running_gate": running_before,
+            "bridge_enabled": bridge_before["enabled"],
+            "bridge_active": bridge_before["active"],
+            "mmdvm_active": mmdvm_was_active,
+            "gateway_active": _active(GATEWAY_SERVICE),
+            "ok": True,
+            "rf_restarted": False,
+            "reconcile_noop": True,
+            "previous": previous,
+        }
+        return result
 
     if desired:
         # Persist the gate first, but do not bounce RF unless the running process
@@ -207,7 +253,8 @@ def reconcile() -> dict:
         # MMDVM restart cannot unexpectedly publish high-rate voice frames.
         _write_gate(True)
         try:
-            _systemctl("enable", "--now", VOICE_SERVICE)
+            if not bridge_before["enabled"] or not bridge_before["active"]:
+                _systemctl("enable", "--now", VOICE_SERVICE)
             if not _active(VOICE_SERVICE):
                 raise RuntimeError("trusted DMR voice bridge is not active")
         except Exception:
@@ -215,8 +262,10 @@ def reconcile() -> dict:
                 _write_gate(False)
             raise
     else:
-        # Stop high-rate userspace work before changing/restarting MMDVM.
-        _systemctl("disable", "--now", VOICE_SERVICE)
+        # Stop high-rate userspace work before changing/restarting MMDVM.  Skip
+        # the systemctl mutation entirely when the bridge is already down.
+        if bridge_before["enabled"] or bridge_before["active"]:
+            _systemctl("disable", "--now", VOICE_SERVICE)
         if _active(VOICE_SERVICE):
             raise RuntimeError("trusted DMR voice bridge remained active after disable")
         _write_gate(False)
@@ -225,16 +274,12 @@ def reconcile() -> dict:
     if mmdvm_was_active and running_before != desired:
         restarted = _guarded_mmdvm_restart(desired)
 
-    result = status()
+    result = _snapshot(demand)
     result.update({
         "ok": True,
         "rf_restarted": restarted,
-        "previous": {
-            "env_enabled": env_before,
-            "running_gate": running_before,
-            "bridge_enabled": bridge_before["enabled"],
-            "bridge_active": bridge_before["active"],
-        },
+        "reconcile_noop": False,
+        "previous": previous,
     })
 
     if result["desired"]:

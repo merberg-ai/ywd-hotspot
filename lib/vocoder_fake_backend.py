@@ -4,6 +4,11 @@
 It decodes nothing. DECODE requests return either silence or a deterministic
 440 Hz test tone so the transport/socket/audio plumbing can be proven without
 shipping or loading an AMBE/AMBE+2 software vocoder.
+
+Phase 3H keeps protocol v1 framing unchanged but permits multiple request/
+response packets on one accepted AF_UNIX connection. An idle persistent client
+is closed after the configured idle interval so socket-activated backend demand
+still disappears when RX audio stops.
 """
 from __future__ import annotations
 
@@ -39,8 +44,9 @@ class FakeBackend:
             "samples_per_frame": proto.SAMPLES_PER_FRAME,
             "channels": proto.CHANNELS,
             "sample_format": "s16le",
-            "preferred_batch_frames": 5,
+            "preferred_batch_frames": 10,
             "max_batch_frames": proto.MAX_FRAMES,
+            "persistent_sessions": True,
         }
 
     def reset(self) -> None:
@@ -66,17 +72,14 @@ def _error_packet(opcode: int, request_id: int, status: int, message: str) -> by
     return proto.packet(proto.KIND_RESPONSE, opcode, status, request_id, payload)
 
 
-def handle_connection(conn: socket.socket, backend: FakeBackend) -> None:
-    conn.settimeout(1.0)
-    header = None
-    try:
-        header, payload = proto.recv_packet(conn)
-        opcode = header["opcode"]
-        request_id = header["request_id"]
-        if header["kind"] != proto.KIND_REQUEST or header["status"] != 0:
-            conn.sendall(_error_packet(opcode, request_id, proto.STATUS_BAD_REQUEST, "invalid request packet"))
-            return
+def _serve_request(conn: socket.socket, backend: FakeBackend, header: dict, payload: bytes) -> None:
+    opcode = header["opcode"]
+    request_id = header["request_id"]
+    if header["kind"] != proto.KIND_REQUEST or header["status"] != 0:
+        conn.sendall(_error_packet(opcode, request_id, proto.STATUS_BAD_REQUEST, "invalid request packet"))
+        return
 
+    try:
         if opcode == proto.OP_STATUS:
             if payload:
                 raise proto.ProtocolError("STATUS request payload must be empty")
@@ -92,24 +95,34 @@ def handle_connection(conn: socket.socket, backend: FakeBackend) -> None:
         else:
             conn.sendall(_error_packet(opcode, request_id, proto.STATUS_UNSUPPORTED, "unsupported opcode"))
             return
-
         conn.sendall(proto.packet(proto.KIND_RESPONSE, opcode, proto.STATUS_OK, request_id, response))
     except proto.ProtocolError as exc:
-        if header is not None:
-            try:
-                conn.sendall(_error_packet(
-                    header["opcode"], header["request_id"], proto.STATUS_BAD_REQUEST, str(exc)
-                ))
-            except Exception:
-                pass
+        conn.sendall(_error_packet(opcode, request_id, proto.STATUS_BAD_REQUEST, str(exc)))
     except Exception as exc:
-        if header is not None:
-            try:
-                conn.sendall(_error_packet(
-                    header["opcode"], header["request_id"], proto.STATUS_BACKEND_ERROR, str(exc)
-                ))
-            except Exception:
-                pass
+        conn.sendall(_error_packet(opcode, request_id, proto.STATUS_BACKEND_ERROR, str(exc)))
+
+
+def handle_connection(conn: socket.socket, backend: FakeBackend, idle_seconds: float) -> bool:
+    """Serve repeated v1 packets. Return True when the session itself idled out."""
+    idle_seconds = max(1.0, min(float(idle_seconds), 60.0))
+    conn.settimeout(idle_seconds)
+    while True:
+        try:
+            header, payload = proto.recv_packet(conn)
+        except socket.timeout:
+            return True
+        except proto.ProtocolError as exc:
+            # A clean peer close appears as the framing helper's unexpected EOF.
+            if str(exc) == "unexpected EOF":
+                return False
+            return False
+        except (ConnectionResetError, BrokenPipeError, OSError):
+            return False
+
+        try:
+            _serve_request(conn, backend, header, payload)
+        except (ConnectionResetError, BrokenPipeError, OSError):
+            return False
 
 
 def systemd_listener() -> socket.socket:
@@ -141,8 +154,12 @@ def serve(listener: socket.socket, backend: FakeBackend, idle_seconds: float) ->
             continue
         last_activity = time.monotonic()
         with conn:
-            handle_connection(conn, backend)
+            session_idled = handle_connection(conn, backend, idle_seconds)
         last_activity = time.monotonic()
+        if session_idled:
+            # The warm dashboard session itself went quiet. Exit immediately;
+            # systemd socket activation will start us again on the next demand.
+            return
 
 
 def main() -> int:

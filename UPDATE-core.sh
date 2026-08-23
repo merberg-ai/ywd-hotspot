@@ -54,17 +54,19 @@ install_admin_bridge_from(){
 }
 
 # Capture the current appliance state before replacing units/scripts.
-mmdvm_active=0; gateway_active=0; dashboard_active=0; oled_active=0; activity_active=0; dmrid_active=0
-mmdvm_enabled=0; gateway_enabled=0; dashboard_enabled=0; oled_enabled=0; activity_enabled=0; dmrid_enabled=0
+mmdvm_active=0; gateway_active=0; dashboard_active=0; voice_active=0; oled_active=0; activity_active=0; dmrid_active=0
+mmdvm_enabled=0; gateway_enabled=0; dashboard_enabled=0; voice_enabled=0; oled_enabled=0; activity_enabled=0; dmrid_enabled=0
 systemctl is-active --quiet ywd-mmdvmhost.service 2>/dev/null && mmdvm_active=1 || true
 systemctl is-active --quiet ywd-dmrgateway.service 2>/dev/null && gateway_active=1 || true
 systemctl is-active --quiet ywd-dashboard.service 2>/dev/null && dashboard_active=1 || true
+systemctl is-active --quiet ywd-mmdvm-voice.service 2>/dev/null && voice_active=1 || true
 systemctl is-active --quiet ywd-oled.service 2>/dev/null && oled_active=1 || true
 systemctl is-active --quiet ywd-activity.service 2>/dev/null && activity_active=1 || true
 systemctl is-active --quiet ywd-dmrid-update.timer 2>/dev/null && dmrid_active=1 || true
 systemctl is-enabled --quiet ywd-mmdvmhost.service 2>/dev/null && mmdvm_enabled=1 || true
 systemctl is-enabled --quiet ywd-dmrgateway.service 2>/dev/null && gateway_enabled=1 || true
 systemctl is-enabled --quiet ywd-dashboard.service 2>/dev/null && dashboard_enabled=1 || true
+systemctl is-enabled --quiet ywd-mmdvm-voice.service 2>/dev/null && voice_enabled=1 || true
 systemctl is-enabled --quiet ywd-oled.service 2>/dev/null && oled_enabled=1 || true
 systemctl is-enabled --quiet ywd-activity.service 2>/dev/null && activity_enabled=1 || true
 systemctl is-enabled --quiet ywd-dmrid-update.timer 2>/dev/null && dmrid_enabled=1 || true
@@ -84,7 +86,7 @@ rollback(){
   set +e
   echo
   echo "[FAIL] Update failed (exit $rc). Restoring the previous YWD-Hotspot application/configuration..."
-  systemctl stop ywd-dmrgateway.service ywd-mmdvmhost.service ywd-dashboard.service ywd-oled.service ywd-activity.service ywd-dmrid-update.timer 2>/dev/null || true
+  systemctl stop ywd-dmrgateway.service ywd-mmdvmhost.service ywd-dashboard.service ywd-mmdvm-voice.service ywd-oled.service ywd-activity.service ywd-dmrid-update.timer 2>/dev/null || true
 
   if [[ -f "$backup_dir/config.tar.gz" ]]; then
     rm -rf /etc/ywd-hotspot
@@ -108,6 +110,7 @@ rollback(){
   if (( mmdvm_enabled )); then systemctl enable ywd-mmdvmhost.service >/dev/null 2>&1 || true; else systemctl disable ywd-mmdvmhost.service >/dev/null 2>&1 || true; fi
   if (( gateway_enabled )); then systemctl enable ywd-dmrgateway.service >/dev/null 2>&1 || true; else systemctl disable ywd-dmrgateway.service >/dev/null 2>&1 || true; fi
   if (( dashboard_enabled )); then systemctl enable ywd-dashboard.service >/dev/null 2>&1 || true; else systemctl disable ywd-dashboard.service >/dev/null 2>&1 || true; fi
+  if (( voice_enabled )); then systemctl enable ywd-mmdvm-voice.service >/dev/null 2>&1 || true; else systemctl disable ywd-mmdvm-voice.service >/dev/null 2>&1 || true; fi
   if (( oled_enabled )); then systemctl enable ywd-oled.service >/dev/null 2>&1 || true; else systemctl disable ywd-oled.service >/dev/null 2>&1 || true; fi
   if (( activity_enabled )); then systemctl enable ywd-activity.service >/dev/null 2>&1 || true; else systemctl disable ywd-activity.service >/dev/null 2>&1 || true; fi
   if (( dmrid_enabled )); then systemctl enable ywd-dmrid-update.timer >/dev/null 2>&1 || true; else systemctl disable ywd-dmrid-update.timer >/dev/null 2>&1 || true; fi
@@ -115,6 +118,7 @@ rollback(){
   if (( activity_active )); then systemctl start ywd-activity.service >/dev/null 2>&1 || true; fi
   if (( dmrid_active )); then systemctl start ywd-dmrid-update.timer >/dev/null 2>&1 || true; fi
   if (( mmdvm_active )); then systemctl start ywd-mmdvmhost.service >/dev/null 2>&1 || true; fi
+  if (( voice_active )); then systemctl start ywd-mmdvm-voice.service >/dev/null 2>&1 || true; fi
   if (( gateway_active )); then sleep 1; systemctl start ywd-dmrgateway.service >/dev/null 2>&1 || true; fi
   if (( dashboard_active )); then systemctl start ywd-dashboard.service >/dev/null 2>&1 || true; fi
   if (( oled_active )); then systemctl start ywd-oled.service >/dev/null 2>&1 || true; fi
@@ -228,6 +232,7 @@ if (( dmrid_active )); then systemctl restart ywd-dmrid-update.timer; fi
 # Apply new units without ever starting an RF path that was previously stopped.
 if (( gateway_active )); then systemctl stop ywd-dmrgateway.service || true; fi
 if (( mmdvm_active )); then systemctl restart ywd-mmdvmhost.service; fi
+if (( voice_active )); then systemctl restart ywd-mmdvm-voice.service; fi
 if (( gateway_active )); then sleep 2; systemctl start ywd-dmrgateway.service; fi
 if (( dashboard_active )); then systemctl restart ywd-dashboard.service; fi
 if (( oled_active )); then systemctl restart ywd-oled.service || true; fi
@@ -236,6 +241,7 @@ if (( oled_active )); then systemctl restart ywd-oled.service || true; fi
 if (( mmdvm_enabled )); then systemctl enable ywd-mmdvmhost.service >/dev/null 2>&1; else systemctl disable ywd-mmdvmhost.service >/dev/null 2>&1 || true; fi
 if (( gateway_enabled )); then systemctl enable ywd-dmrgateway.service >/dev/null 2>&1; else systemctl disable ywd-dmrgateway.service >/dev/null 2>&1 || true; fi
 if (( dashboard_enabled )); then systemctl enable ywd-dashboard.service >/dev/null 2>&1; else systemctl disable ywd-dashboard.service >/dev/null 2>&1 || true; fi
+if (( voice_enabled )); then systemctl enable ywd-mmdvm-voice.service >/dev/null 2>&1; else systemctl disable ywd-mmdvm-voice.service >/dev/null 2>&1 || true; fi
 if (( oled_enabled )); then systemctl enable ywd-oled.service >/dev/null 2>&1; else systemctl disable ywd-oled.service >/dev/null 2>&1 || true; fi
 if (( activity_enabled )); then systemctl enable ywd-activity.service >/dev/null 2>&1; else systemctl disable ywd-activity.service >/dev/null 2>&1 || true; fi
 if (( dmrid_enabled )); then systemctl enable ywd-dmrid-update.timer >/dev/null 2>&1; else systemctl disable ywd-dmrid-update.timer >/dev/null 2>&1 || true; fi

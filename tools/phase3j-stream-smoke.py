@@ -2,7 +2,10 @@
 """Non-mutating Phase 3J core smoke test."""
 from __future__ import annotations
 
+import json
+import socket
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +59,42 @@ def build_zero_payload_burst():
     return frame.hex()
 
 
+def smoke_live_ipc():
+    old_path = dashboard_plugin_audio_stream.LIVE_SOCKET
+    receiver = None
+    sender = None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "live-audio.sock"
+            dashboard_plugin_audio_stream.LIVE_SOCKET = path
+            receiver = dashboard_plugin_audio_stream._open_live_receiver()
+            sender = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+
+            payload = {
+                "seq": 123,
+                "source": "network",
+                "slot": 1,
+                "frame_hex": "00" * 33,
+            }
+            sender.sendto(
+                json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+                str(path),
+            )
+
+            frames, invalid = dashboard_plugin_audio_stream._recv_live_frames(
+                receiver, 4
+            )
+            assert invalid == 0, invalid
+            assert len(frames) == 1, frames
+            assert frames[0]["seq"] == 123, frames
+            assert frames[0]["frame_hex"] == "00" * 33, frames
+    finally:
+        if sender is not None:
+            sender.close()
+        dashboard_plugin_audio_stream._close_live_receiver(receiver)
+        dashboard_plugin_audio_stream.LIVE_SOCKET = old_path
+
+
 def main():
     recovered = dmr_ambe49.recover_burst(build_zero_payload_burst())
     assert len(recovered) == 3, recovered
@@ -64,8 +103,10 @@ def main():
         assert item.get("bits") == "0" * 49, (index, item)
         assert item.get("hex") == "0" * 13, (index, item)
         assert item.get("corrected") == 0, (index, item)
+    smoke_live_ipc()
     print("[OK] Phase 3J core imports")
     print("[OK] DMR burst -> 3 x AMBE49 zero-payload recovery")
+    print("[OK] direct AF_UNIX datagram live-audio IPC")
     print("[OK] streamed audio handler import")
     return 0
 

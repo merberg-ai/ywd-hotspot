@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import select
+import socket
 import threading
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import dashboard_plugin_vocoder
 import dashboard_plugins
 import dmr_ambe49
-import mmdvm_voice
 import vocoder_client
 
 FRAME_MS = 20
@@ -26,7 +29,15 @@ CHUNK_FRAMES = 10
 CALL_GAP_MS = 500
 AUTO_LOCK_GAP_MS = 450
 MAX_BURST_BACKLOG = 5  # 5 DMR bursts ~= 300 ms / 15 AMBE frames
-POLL_SLEEP_S = 0.025
+LIVE_SOCKET = Path(
+    os.environ.get(
+        "YWD_MMDVM_VOICE_LIVE_SOCKET",
+        "/run/ywd-hotspot-voice/live-audio.sock",
+    )
+)
+LIVE_PACKET_MAX = 4096
+LIVE_RECV_BATCH = 64
+LIVE_WAIT_MAX_S = 0.20
 HEARTBEAT_S = 1.0
 KEEPALIVE_S = 3.0
 AUTH_RECHECK_S = 1.0
@@ -81,6 +92,81 @@ def _parse_options(query):
     return source, slot
 
 
+def _open_live_receiver():
+    """Own the single live-audio AF_UNIX datagram endpoint."""
+    parent = LIVE_SOCKET.parent
+    if not parent.is_dir():
+        raise RuntimeError(f"DMR voice runtime directory is unavailable: {parent}")
+
+    try:
+        LIVE_SOCKET.unlink()
+    except FileNotFoundError:
+        pass
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        sock.setblocking(False)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+        sock.bind(str(LIVE_SOCKET))
+        os.chmod(LIVE_SOCKET, 0o600)
+        return sock
+    except Exception:
+        try:
+            sock.close()
+        except Exception:
+            pass
+        try:
+            LIVE_SOCKET.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _close_live_receiver(sock):
+    try:
+        if sock is not None:
+            sock.close()
+    finally:
+        try:
+            LIVE_SOCKET.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
+
+def _recv_live_frames(sock, limit=LIVE_RECV_BATCH):
+    """Drain currently queued burst datagrams without ever blocking."""
+    frames = []
+    invalid = 0
+    for _ in range(max(1, min(int(limit), LIVE_RECV_BATCH))):
+        try:
+            raw = sock.recv(LIVE_PACKET_MAX)
+        except BlockingIOError:
+            break
+        except InterruptedError:
+            continue
+        except OSError:
+            break
+
+        try:
+            frame = json.loads(raw.decode("utf-8"))
+        except Exception:
+            invalid += 1
+            continue
+
+        if (
+            not isinstance(frame, dict)
+            or not isinstance(frame.get("seq"), int)
+            or not isinstance(frame.get("frame_hex"), str)
+        ):
+            invalid += 1
+            continue
+        frames.append(frame)
+
+    return frames, invalid
+
+
 def _authorized(ident):
     # Both capabilities remain independently fail-closed and immediately
     # revocable through their existing cached-manifest authorization paths.
@@ -115,6 +201,7 @@ def stream_audio(handler, ident, source_filter, slot_filter):
         handler.send_json({"error": "another RX audio stream is already active"}, 409)
         return
 
+    live_sock = None
     try:
         try:
             _authorized(ident)
@@ -125,6 +212,7 @@ def stream_audio(handler, ident, source_filter, slot_filter):
             reset_started = time.monotonic()
             vocoder_client.reset()
             initial_reset_ms = (time.monotonic() - reset_started) * 1000.0
+            live_sock = _open_live_receiver()
         except ValueError as exc:
             handler.send_json({"error": str(exc)[:500]}, 409)
             return
@@ -143,6 +231,7 @@ def stream_audio(handler, ident, source_filter, slot_filter):
             "type": "hello",
             "schema": 1,
             "stream": "ywd-rx-audio",
+            "voice_transport": "unix-dgram",
             "plugin": ident,
             "backend": str(status.get("backend") or "external")[:80],
             "protocol": int(status.get("protocol") or 1),
@@ -158,10 +247,10 @@ def stream_audio(handler, ident, source_filter, slot_filter):
         }):
             return
 
-        # Start at the live edge.  A newly opened audio session never replays
-        # historical frames already sitting in the diagnostics ring.
-        initial = mmdvm_voice.frames_after(0, 1)
-        cursor = int(initial.get("newest_seq") or 0)
+        # Binding the live datagram endpoint inherently starts at the live
+        # edge: no historical diagnostic-ring frames are ever replayed.
+        cursor = 0
+        ipc_errors = 0
         ambe_queue = []
         previous_key = None
         last_source_ms = 0.0
@@ -214,27 +303,40 @@ def stream_audio(handler, ident, source_filter, slot_filter):
                     need_reset = True
                 last_keepalive = now
 
-            result = mmdvm_voice.frames_after(cursor, 64)
-            frames = list(result.get("frames") or [])
-            if frames:
-                cursor = int(result.get("cursor") or cursor)
+            # Sleep inside the stream thread until a burst arrives or one of
+            # the periodic auth/keepalive/heartbeat deadlines becomes due.
+            # This replaces 25 ms filesystem polling/stat/JSON parsing.
+            waits = [
+                max(0.0, AUTH_RECHECK_S - (now - last_auth)),
+                max(0.0, KEEPALIVE_S - (now - last_keepalive)),
+                max(0.0, HEARTBEAT_S - (now - last_heartbeat)),
+            ]
+            wait_s = min([LIVE_WAIT_MAX_S, *waits])
+            try:
+                readable, _, _ = select.select([live_sock], [], [], wait_s)
+            except InterruptedError:
+                readable = []
 
-            # Falling behind is an audio problem only.  Drop stale bursts,
-            # reset vocoder state, and rejoin the newest live edge.  RF/MMDVM
-            # ingestion is never blocked or slowed by this consumer.
-            if result.get("dropped") or len(frames) > MAX_BURST_BACKLOG:
-                if len(frames) > MAX_BURST_BACKLOG:
-                    drop_count = len(frames) - MAX_BURST_BACKLOG
-                    dropped_bursts += drop_count
-                    frames = frames[-MAX_BURST_BACKLOG:]
-                else:
-                    dropped_bursts += 1
+            frames = []
+            if readable:
+                frames, invalid = _recv_live_frames(live_sock)
+                ipc_errors += invalid
+                if frames:
+                    cursor = int(frames[-1].get("seq") or cursor)
+
+            # A slow decoder may allow multiple datagrams to accumulate. Keep
+            # only a bounded live tail; dropping audio is always preferable to
+            # applying backpressure to the bridge/MMDVM path.
+            if len(frames) > MAX_BURST_BACKLOG:
+                drop_count = len(frames) - MAX_BURST_BACKLOG
+                dropped_bursts += drop_count
+                frames = frames[-MAX_BURST_BACKLOG:]
                 dropped_ambe += len(ambe_queue)
                 ambe_queue = []
                 need_reset = True
                 if not send({
                     "type": "drop",
-                    "reason": "voice-ring-backlog",
+                    "reason": "live-ipc-backlog",
                     "dropped_bursts": dropped_bursts,
                     "dropped_ambe": dropped_ambe,
                 }):
@@ -347,6 +449,8 @@ def stream_audio(handler, ident, source_filter, slot_filter):
             if now - last_heartbeat >= HEARTBEAT_S:
                 if not send({
                     "type": "heartbeat",
+                    "voice_transport": "unix-dgram",
+                    "ipc_errors": ipc_errors,
                     "cursor": cursor,
                     "queued_ambe": len(ambe_queue),
                     "route": last_route,
@@ -360,10 +464,8 @@ def stream_audio(handler, ident, source_filter, slot_filter):
                 }):
                     return
                 last_heartbeat = now
-
-            if not frames:
-                time.sleep(POLL_SLEEP_S)
     finally:
+        _close_live_receiver(live_sock)
         _STREAM_LOCK.release()
 
 

@@ -21,6 +21,7 @@ import queue
 import re
 import selectors
 import signal
+import socket
 import subprocess
 import tempfile
 import threading
@@ -32,9 +33,17 @@ STATE = Path(os.environ.get("YWD_MMDVM_VOICE_STATE", "/run/ywd-hotspot-voice/voi
 HOST = os.environ.get("YWD_MQTT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("YWD_MQTT_PORT", "18883"))
 TOPIC = os.environ.get("YWD_MQTT_VOICE_TOPIC", "ywd-mmdvm/voice")
-MAX_FRAMES = max(32, min(512, int(os.environ.get("YWD_MMDVM_VOICE_RING", "160"))))
+MAX_FRAMES = max(32, min(512, int(os.environ.get("YWD_MMDVM_VOICE_RING", "32"))))
 MAX_PIPE_BUFFER = 256 * 1024
-WRITE_INTERVAL_S = 0.20
+LIVE_SOCKET = Path(
+    os.environ.get(
+        "YWD_MMDVM_VOICE_LIVE_SOCKET",
+        "/run/ywd-hotspot-voice/live-audio.sock",
+    )
+)
+LIVE_PACKET_MAX = 4096
+LIVE_PROBE_INTERVAL_S = 0.25
+WRITE_INTERVAL_S = 0.50
 HEARTBEAT_INTERVAL_S = 1.0
 STOP = threading.Event()
 HEX_RE = re.compile(r"^[0-9a-fA-F]{66}$")
@@ -290,6 +299,15 @@ def main():
     pipe_buffer = bytearray()
     next_seq = 1
     current_status = None
+
+    # Live RX audio is an optional, nonblocking side channel. The dashboard
+    # creates the destination socket only while START AUDIO is active. Missing,
+    # full, or disappearing consumers are audio-only loss and must never delay
+    # MQTT ingest or MMDVM.
+    live_socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    live_socket.setblocking(False)
+    live_ready = False
+    next_live_probe = 0.0
     print(
         f"YWD DMR voice bridge starting: {HOST}:{PORT} topic={TOPIC} ring={MAX_FRAMES} writer_pid={writer.pid}",
         flush=True,
@@ -309,6 +327,35 @@ def main():
             return
         current_status = value
         emit("status", value)
+
+    def emit_live(item):
+        """Best-effort one-burst live IPC; never block the ingest path."""
+        nonlocal live_ready, next_live_probe
+        now = time.monotonic()
+
+        if not live_ready:
+            if now < next_live_probe:
+                return
+            next_live_probe = now + LIVE_PROBE_INTERVAL_S
+            try:
+                live_ready = LIVE_SOCKET.exists()
+            except Exception:
+                live_ready = False
+            if not live_ready:
+                return
+
+        try:
+            raw = json.dumps(item, separators=(",", ":")).encode("utf-8")
+            if len(raw) > LIVE_PACKET_MAX:
+                return
+            live_socket.sendto(raw, str(LIVE_SOCKET))
+        except (BlockingIOError, FileNotFoundError, ConnectionRefusedError):
+            live_ready = False
+            next_live_probe = now + LIVE_PROBE_INTERVAL_S
+        except OSError:
+            # Any AF_UNIX delivery failure is audio-only. Retry discovery later.
+            live_ready = False
+            next_live_probe = now + LIVE_PROBE_INTERVAL_S
 
     try:
         while not STOP.is_set():
@@ -349,6 +396,9 @@ def main():
                     if item is None:
                         emit("parse_error", 1)
                     else:
+                        # Real-time consumers receive the cleaned burst directly.
+                        # Diagnostic persistence remains independently queued.
+                        emit_live(item)
                         emit("frame", item)
                         next_seq += 1
                         emit_status("online")
@@ -381,6 +431,10 @@ def main():
         try:
             events.close()
             events.join_thread()
+        except Exception:
+            pass
+        try:
+            live_socket.close()
         except Exception:
             pass
         print("YWD DMR voice bridge stopped", flush=True)

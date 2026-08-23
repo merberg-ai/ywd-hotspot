@@ -30,12 +30,13 @@ for f in \
   lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
   lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/mmdvm_session.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
   lib/mmdvm_voice.py lib/mmdvm_voice_bridge.py lib/mmdvm_voice_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
-  lib/vocoder_protocol.py lib/vocoder_client.py lib/vocoder_fake_backend.py \
+  lib/vocoder_protocol.py lib/vocoder_client.py lib/vocoder_fake_backend.py lib/vocoder_runtime_policy.sh \
   web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js \
   web/plugin-ui-host.js web/plugin-ui-runtime.js web/plugin-ui.css \
   web/backup-restore.js web/backup-restore.css \
   systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service systemd/ywd-mmdvm-voice.service systemd/ywd-mmdvm-voice-build.service \
   systemd/ywd-vocoder-fake.service systemd/ywd-vocoder-fake.socket \
+  systemd/ywd-vocoder-mbelib.service.d/20-ywd-hotspot-normal-priority.conf \
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css; do
   [[ -f "$SELF/$f" ]] || { echo "[FAIL] Install source missing $f" >&2; exit 1; }
 done
@@ -44,7 +45,7 @@ mapfile -t py_sources < <(find "$SELF/lib" -type f -name '*.py' -print | sort)
 ((${#py_sources[@]})) || { echo "[FAIL] No Python runtime sources found" >&2; exit 1; }
 python3 -m py_compile "${py_sources[@]}"
 [[ -f "$SELF/lib/system_branding.sh" ]] && bash -n "$SELF/lib/system_branding.sh"
-bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh"
+bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh" "$SELF/lib/vocoder_runtime_policy.sh"
 
 PYTHONPATH="$SELF/lib" \
 YWD_PLUGIN_CATALOG="$SELF/lib/plugin_packages" \
@@ -77,6 +78,10 @@ if declare -F ywd_run_colored >/dev/null; then
 else
   bash "$CORE" "$@"
 fi
+
+# The external vocoder remains separately installed. YWD owns only the normal
+# scheduling policy proven necessary for smooth RX audio on constrained hosts.
+sudo bash "$SELF/lib/vocoder_runtime_policy.sh" install "$SELF"
 
 # Install the same narrow dispatcher/helper layout used by the appliance image.
 # Generic installs never activate first-boot setup because they lack the M4 gate.

@@ -4,11 +4,13 @@
   let port = null;
   let sequence = 0;
   const pending = new Map();
+  const streamHandlers = new Map();
+  const streamBacklog = new Map();
   let resolveReady;
   const ready = new Promise(resolve => { resolveReady = resolve; });
 
   function timeoutFor(op) {
-    if (op === 'plugin.vocoderStatus' || op === 'plugin.vocoderReset') return 20000;
+    if (op === 'plugin.vocoderStatus' || op === 'plugin.vocoderReset' || op === 'plugin.startRxAudioStream') return 20000;
     if (op === 'plugin.vocoderDecode') return 1500;
     return 5000;
   }
@@ -26,6 +28,39 @@
     }));
   }
 
+  function queueStreamEvent(streamId, event) {
+    const handler = streamHandlers.get(streamId);
+    if (handler) {
+      try { handler(event); } catch (error) { console.error('YWD RX audio stream handler failed:', error); }
+      return;
+    }
+    const queued = streamBacklog.get(streamId) || [];
+    queued.push(event);
+    while (queued.length > 32) queued.shift();
+    streamBacklog.set(streamId, queued);
+  }
+
+  async function startRxAudioStream(options = {}, onEvent) {
+    if (typeof onEvent !== 'function') throw new Error('RX audio stream requires an event handler');
+    const info = await request('plugin.startRxAudioStream', options && typeof options === 'object' ? options : {});
+    const streamId = String(info?.stream_id || '');
+    if (!streamId) throw new Error('RX audio stream did not return a stream id');
+    streamHandlers.set(streamId, onEvent);
+    const queued = streamBacklog.get(streamId) || [];
+    streamBacklog.delete(streamId);
+    for (const event of queued) queueStreamEvent(streamId, event);
+    return Object.freeze({
+      id: streamId,
+      stop: async () => {
+        try { return await request('plugin.stopRxAudioStream', {stream_id:streamId}); }
+        finally {
+          streamHandlers.delete(streamId);
+          streamBacklog.delete(streamId);
+        }
+      },
+    });
+  }
+
   window.ywdPlugin = Object.freeze({
     api: 1,
     id: pluginId,
@@ -38,6 +73,7 @@
     vocoderStatus: () => request('plugin.vocoderStatus'),
     vocoderReset: () => request('plugin.vocoderReset'),
     vocoderDecode: frames => request('plugin.vocoderDecode', {frames:Array.isArray(frames) ? frames : []}),
+    startRxAudioStream,
   });
 
   window.addEventListener('message', event => {
@@ -46,6 +82,17 @@
     port = event.ports[0];
     port.onmessage = message => {
       const response = message.data || {};
+      if (response.type === 'stream-event' && response.streamId) {
+        queueStreamEvent(String(response.streamId), response.event || {});
+        return;
+      }
+      if (response.type === 'stream-end' && response.streamId) {
+        const streamId = String(response.streamId);
+        queueStreamEvent(streamId, {type:'stream-end', error:String(response.error || '')});
+        streamHandlers.delete(streamId);
+        streamBacklog.delete(streamId);
+        return;
+      }
       if (response.type !== 'response' || !Number.isInteger(response.id)) return;
       const waiter = pending.get(response.id);
       if (!waiter) return;

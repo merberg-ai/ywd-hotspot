@@ -11,6 +11,13 @@ if [[ -f /opt/ywd-hotspot/app/lib/oled_owner.sh ]]; then
   bash /opt/ywd-hotspot/app/lib/oled_owner.sh restore /opt/ywd-hotspot/app || true
 fi
 
+# Remove only YWD-Hotspot's scheduling drop-in for the separately installed
+# external vocoder. Operator-owned decoder files/units and later local overrides
+# remain untouched.
+if [[ -f /opt/ywd-hotspot/app/lib/vocoder_runtime_policy.sh ]]; then
+  bash /opt/ywd-hotspot/app/lib/vocoder_runtime_policy.sh remove /opt/ywd-hotspot/app || true
+fi
+
 systemctl disable --now ywd-dmrgateway.service ywd-mmdvmhost.service ywd-dashboard.service ywd-activity.service ywd-oled.service ywd-dmrid-update.timer ywd-mmdvm-telemetry.service ywd-mqtt.service 2>/dev/null || true
 systemctl stop ywd-update.service 2>/dev/null || true
 rm -f /etc/systemd/system/ywd-{dmrgateway,mmdvmhost,dashboard,activity,oled,dmrid-update,update,mmdvm-telemetry,mqtt}.service /etc/systemd/system/ywd-dmrid-update.timer

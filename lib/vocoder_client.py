@@ -146,23 +146,34 @@ def _request(opcode: int, payload: bytes = b"", timeout: float = DECODE_TIMEOUT)
 
 
 def status(timeout: float = CONTROL_TIMEOUT) -> dict:
-    """Probe the backend, allowing extra time for a cold socket activation."""
-    try:
-        doc = proto.parse_json_payload(_request(proto.OP_STATUS, timeout=timeout))
-        return {
-            "available": True,
-            "socket": str(SOCKET_PATH),
-            **doc,
-            "client_transport": transport_status(),
-        }
-    except VocoderUnavailable as exc:
-        return {
-            "available": False,
-            "socket": str(SOCKET_PATH),
-            "protocol": proto.VERSION,
-            "error": str(exc),
-            "client_transport": transport_status(),
-        }
+    """Probe/wake the backend, reconnecting one stale idle session if needed.
+
+    STATUS is the deliberate session-establishment operation and is safe to
+    retry once because it does not mutate vocoder stream state. RESET and DECODE
+    remain single-attempt operations.
+    """
+    last_error = None
+    for attempt in range(2):
+        try:
+            doc = proto.parse_json_payload(_request(proto.OP_STATUS, timeout=timeout))
+            return {
+                "available": True,
+                "socket": str(SOCKET_PATH),
+                **doc,
+                "client_transport": transport_status(),
+            }
+        except (VocoderUnavailable, VocoderBackendError) as exc:
+            last_error = exc
+            _SESSION.close()
+            if attempt == 0:
+                continue
+    return {
+        "available": False,
+        "socket": str(SOCKET_PATH),
+        "protocol": proto.VERSION,
+        "error": str(last_error or "vocoder backend unavailable"),
+        "client_transport": transport_status(),
+    }
 
 
 def reset(timeout: float = CONTROL_TIMEOUT) -> dict:

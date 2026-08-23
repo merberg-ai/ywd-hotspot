@@ -25,7 +25,7 @@ from pathlib import Path
 import vocoder_protocol as proto
 
 SOCKET_PATH = Path(os.environ.get("YWD_VOCODER_SOCKET", "/run/ywd-vocoder.sock"))
-DECODE_TIMEOUT = 0.30
+DECODE_TIMEOUT = 0.40
 CONTROL_TIMEOUT = 15.0
 MAX_TIMEOUT = 15.0
 

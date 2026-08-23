@@ -28,7 +28,7 @@ FRAME_MS = 20
 CHUNK_FRAMES = 10
 CALL_GAP_MS = 500
 AUTO_LOCK_GAP_MS = 450
-MAX_BURST_BACKLOG = 5  # 5 DMR bursts ~= 300 ms / 15 AMBE frames
+MAX_BURST_BACKLOG = 8  # 8 DMR bursts ~= 480 ms / 24 AMBE frames
 LIVE_SOCKET = Path(
     os.environ.get(
         "YWD_MMDVM_VOICE_LIVE_SOCKET",

@@ -32,12 +32,13 @@
     const handler = streamHandlers.get(streamId);
     if (handler) {
       try { handler(event); } catch (error) { console.error('YWD RX audio stream handler failed:', error); }
-      return;
+      return true;
     }
     const queued = streamBacklog.get(streamId) || [];
     queued.push(event);
     while (queued.length > 32) queued.shift();
     streamBacklog.set(streamId, queued);
+    return false;
   }
 
   async function startRxAudioStream(options = {}, onEvent) {
@@ -88,9 +89,14 @@
       }
       if (response.type === 'stream-end' && response.streamId) {
         const streamId = String(response.streamId);
-        queueStreamEvent(streamId, {type:'stream-end', error:String(response.error || '')});
-        streamHandlers.delete(streamId);
-        streamBacklog.delete(streamId);
+        const delivered = queueStreamEvent(streamId, {type:'stream-end', error:String(response.error || '')});
+        if (delivered) {
+          streamHandlers.delete(streamId);
+          streamBacklog.delete(streamId);
+        }
+        // If START has not resolved yet, leave the END event in the bounded
+        // backlog. startRxAudioStream() will deliver it immediately after the
+        // handler is registered instead of leaving the plugin stuck buffering.
         return;
       }
       if (response.type !== 'response' || !Number.isInteger(response.id)) return;

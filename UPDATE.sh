@@ -34,7 +34,7 @@ for f in \
   lib/settings_backup.py lib/settings_admin.py lib/setup_restore_server.py lib/setup_entry.sh \
   lib/mmdvm_telemetry.py lib/mmdvm_telemetry_bridge.py lib/mmdvm_session.py lib/telemetry_runtime.py lib/ywd-mosquitto.conf \
   lib/mmdvm_voice.py lib/mmdvm_voice_bridge.py lib/mmdvm_voice_build.py lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch \
-  lib/vocoder_protocol.py lib/vocoder_client.py lib/vocoder_fake_backend.py \
+  lib/vocoder_protocol.py lib/vocoder_client.py lib/vocoder_fake_backend.py lib/vocoder_runtime_policy.sh \
   web/update.js web/update.css web/update-progress.js \
   web/instrumentation.js web/instrumentation-bootstrap.js web/instrumentation.css \
   web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js \
@@ -42,14 +42,15 @@ for f in \
   web/backup-restore.js web/backup-restore.css \
   systemd/ywd-update.service systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service \
   systemd/ywd-mmdvm-voice.service systemd/ywd-mmdvm-voice-build.service \
-  systemd/ywd-vocoder-fake.service systemd/ywd-vocoder-fake.socket; do
+  systemd/ywd-vocoder-fake.service systemd/ywd-vocoder-fake.socket \
+  systemd/ywd-vocoder-mbelib.service.d/20-ywd-hotspot-normal-priority.conf; do
   [[ -f "$SELF/$f" ]] || { echo "[FAIL] Update source missing $f" >&2; exit 1; }
 done
 
 mapfile -t py_sources < <(find "$SELF/lib" -type f -name '*.py' -print | sort)
 ((${#py_sources[@]})) || { echo "[FAIL] No Python runtime sources found" >&2; exit 1; }
 python3 -m py_compile "${py_sources[@]}"
-bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh"
+bash -n "$SELF/lib/oled_owner.sh" "$SELF/lib/setup_entry.sh" "$SELF/lib/vocoder_runtime_policy.sh"
 [[ -f "$SELF/lib/system_branding.sh" ]] && bash -n "$SELF/lib/system_branding.sh"
 
 # Validate discovered built-in catalogs without depending on old proof-package
@@ -136,6 +137,12 @@ if (( core_rc != 0 )); then
     --snapshot "$PLUGIN_UPDATE_SNAPSHOT" --lib /opt/ywd-hotspot/app/lib || \
     echo "[WARN] Plugin runtime restore after rollback needs manual review."
   exit "$core_rc"
+fi
+
+# The external vocoder remains separately installed. YWD owns only the normal
+# scheduling policy proven necessary for smooth RX audio on constrained hosts.
+if ! sudo bash "$SELF/lib/vocoder_runtime_policy.sh" ensure "$SELF"; then
+  echo "[WARN] External vocoder Nice=0 policy could not be installed. RX audio may stutter under CPU contention."
 fi
 
 # The new runtime and generic plugin unit are now installed. Reconcile against

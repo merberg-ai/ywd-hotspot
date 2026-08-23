@@ -14,7 +14,8 @@ Plugins never:
 - start a competing MMDVM instance;
 - receive RF TX authority;
 - write canonical radio configuration;
-- receive arbitrary MQTT/network/sudo access.
+- receive arbitrary MQTT/network/sudo access;
+- open the trusted live-audio AF_UNIX socket directly.
 
 ## Runtime variants
 
@@ -69,7 +70,9 @@ sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
 
 Normal application updates preserve the selected runtime and do not rebuild MMDVM-Host or DMRGateway.
 
-## Extended observation path
+## Phase 3J observation and live-audio paths
+
+The accepted DMR voice copy is split into two consumers with different jobs:
 
 ```text
 MMDVM modem / BrandMeister
@@ -86,18 +89,61 @@ MMDVM modem / BrandMeister
              loopback MQTT only
                     │
                     ▼
-          trusted bounded voice bridge
-                    │
-                    ▼
-          read:dmr-voice capability
-                    │
-                    ▼
-          sandboxed RX Monitor iframe
-                    │
-                    └─ browser FEC / AMBE recovery / PCM playback
+          trusted voice bridge
+             │             │
+             │             └─ direct nonblocking AF_UNIX datagram live path
+             │                    /run/ywd-hotspot-voice/live-audio.sock
+             │                              │
+             │                              ▼
+             │                     trusted audio streamer
+             │                     DMR recovery / FEC
+             │                     10 AMBE frames / 200 ms
+             │                              │
+             │                              ▼
+             │                     external YWD Vocoder
+             │                     Protocol v1 backend
+             │                              │
+             │                              ▼
+             │                     one NDJSON PCM stream
+             │                              │
+             │                              ▼
+             │                     sandboxed RX Monitor
+             │                     Web Audio playout only
+             │
+             └─ bounded JSON diagnostic ring
+                    /run/ywd-hotspot-voice/voice.json
+                    diagnostics/capture only
 ```
 
-The Pi does not perform AMBE speech synthesis. Browser-side decode/playout keeps the expensive work off the Pi Zero.
+The JSON ring is **not** the live audio transport. Phase 3J moved real-time voice to the local AF_UNIX datagram path after physical testing showed whole-ring JSON snapshotting was unsuitable as a low-latency bus on the Pi Zero.
+
+The live sender is nonblocking. If the consumer cannot keep up, audio may be dropped, but the bridge never backpressures MMDVM-Host or the normal RF path.
+
+## Selected Phase 3J tuning baseline
+
+The physically selected development baseline on `dev-plugins` is intentionally conservative:
+
+```text
+trusted core chunk       10 AMBE frames / 200 ms
+live burst tail          12 DMR bursts (~720 ms)
+vocoder request timeout  400 ms
+diagnostic ring default  32 frames
+diagnostic snapshots     1 Hz
+browser target reservoir 400 ms
+browser emergency depth  700 ms
+browser clock correction gentle +/-1%
+```
+
+Normal decoder-state resets do not require already-buffered browser PCM to be discarded. Explicit stream drop/error events still rebuffer.
+
+The external decoder service is separately installed. YWD-Hotspot does not bundle mbelib source/binaries or an AMBE Wasm decoder. Core owns only the scheduling policy used for the known external service:
+
+```text
+Nice=0
+CPUWeight=200
+```
+
+No negative nice value or realtime scheduler is used; MMDVM/RF remains the priority workload.
 
 ## Compile/cache behavior
 
@@ -124,7 +170,9 @@ sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py install --mmdvm-variant u
 
 ## Plugin requirement tokens
 
-Plugins may declare trusted requirement tokens in their normal `dependencies` list:
+Plugins may declare trusted requirement tokens in their normal `dependencies` list. Current RX Monitor development uses demand-gated passive DMR voice capability so the optional high-rate bridge exists only while a valid enabled plugin requires it.
+
+Legacy/low-level tokens include:
 
 ```text
 mmdvm-ywd-extended
@@ -132,18 +180,7 @@ mmdvm-extension-api-2
 mmdvm-cap-passive-dmr-voice
 ```
 
-Install/enable/runtime-start checks resolve these against `/etc/ywd-hotspot/mmdvm-runtime.json`. If a requirement is not met, trusted core refuses the operation with a readable missing-requirement result. A plugin cannot switch the MMDVM runtime by itself.
-
-An RX Monitor package can therefore declare, for example:
-
-```json
-"dependencies": [
-  "mmdvm-host",
-  "mmdvm-ywd-extended",
-  "mmdvm-extension-api-2",
-  "mmdvm-cap-passive-dmr-voice"
-]
-```
+Requirement checks resolve against the exact installed runtime metadata. A plugin cannot switch the MMDVM runtime by itself.
 
 ## Voice-frame envelope
 
@@ -176,28 +213,23 @@ On compatible HAT firmware with RSSI reporting enabled, an RF frame may contain 
 
 That behavior was physically proven during RC1 acceptance: the reference duplex HAT delivered hundreds of valid voice frames with zero bridge parse errors and valid BER, while every RF/network voice RSSI field was `0`. This is treated as **RSSI unavailable**, not `0 dBm`.
 
-Enabling real RSSI may require a compatible MMDVM_HS **HAT firmware** build with its optional RSSI reporting support. Recompiling only MMDVM-Host on the Pi cannot create a measurement the modem firmware does not send. YWD-Hotspot does not automatically flash HAT firmware.
+Enabling real RSSI may require compatible MMDVM_HS HAT firmware with optional RSSI reporting support. Recompiling only MMDVM-Host on the Pi cannot create a measurement the modem firmware does not send. YWD-Hotspot does not automatically flash HAT firmware.
 
 See **[TELEMETRY.md](TELEMETRY.md)** and **[DISPLAY.md](DISPLAY.md)**.
 
-## Trusted voice bridge
+## Trusted voice bridge lifecycle
 
-`ywd-mmdvm-voice.service` subscribes only to the local `ywd-mmdvm/voice` topic and writes a bounded runtime ring under:
+`ywd-mmdvm-voice.service` subscribes only to the local voice topic. It validates/normalizes frame fields and publishes the bounded diagnostics ring while offering the nonblocking live datagram copy when an audio consumer exists.
 
-```text
-/run/ywd-hotspot-voice/voice.json
-```
+The optional feature runtime is demand-gated:
 
-The bridge validates/normalizes frame fields, uses bounded capacity, and coalesces snapshot writes to remain suitable for the Pi Zero. It does not own the modem or transmit.
+- RX Monitor absent/disabled: no plugin-driven voice runtime requirement;
+- RX Monitor enabled, audio stopped: passive bridge may remain available for diagnostics while the external vocoder is dormant;
+- audio running: the dashboard binds the live datagram receiver and the external vocoder activates on demand;
+- audio stopped/disconnected: the live socket is removed and the vocoder may idle-exit.
 
-A long call plus network playback can exceed the in-memory frame capacity, so the voice ring is a recent-frame transport rather than permanent call history. Session/history consumers should use the normalized telemetry/activity layers for durable-enough bounded summaries.
-
-## Browser recovery path
-
-RX Monitor's browser path performs DMR burst recovery/FEC/AMBE+2 preparation and browser-side audio playback. The architecture keeps AMBE/audio work on the browser device and the trusted Pi-side bridge narrow.
-
-The path has been physically exercised on the reference Pi Zero + duplex MMDVM setup while normal MMDVM-Host/DMRGateway ownership remained intact.
+The updater preserves/restarts the voice bridge when it was active so new bridge code is not left behind an old long-running Python process.
 
 ## Distribution boundary
 
-Development has used an mbelib-based browser decoder built from pinned upstream source. Publishing generated decoder artifacts remains a separate licensing/distribution decision from the YWD Extended MMDVM patch and from normal hotspot operation.
+The Phase 3J plugin receives PCM only. External speech synthesis stays outside the plugin package and outside the YWD-Hotspot core distribution. This keeps the plugin sandbox narrow while allowing an operator-installed YWD Vocoder Protocol v1 backend to provide speech decode.

@@ -4,22 +4,77 @@
 Sandboxed plugin frames never access the AF_UNIX socket directly.  This wrapper
 checks the effective plugin capability, applies small request bounds, and then
 uses the trusted core vocoder client.
+
+The expensive signed UI-manifest validation is cached by manifest inode/mtime/
+size. Mutable authorization gates remain live on every request, so disabling the
+plugin subsystem, disabling the individual plugin, uninstalling the package, or
+replacing its manifest revokes/revalidates access immediately without forcing a
+full catalog discovery on every 100 ms live-audio decode batch.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import urlparse
 
+import plugin_manager
+import plugin_package_manager
 import plugin_ui_manager
 import vocoder_client
 
 CAPABILITY = "use:vocoder"
 MAX_FRAMES = 10
+_PLUGIN_CACHE = {}
+
+
+def _manifest_stamp(path: Path):
+    st = path.stat()
+    return (int(st.st_ino), int(st.st_mtime_ns), int(st.st_size))
+
+
+def _live_authorized(ident: str) -> None:
+    """Check only mutable gates that must remain immediately revocable."""
+    state = plugin_manager.read_state()
+    if not state.get("enabled"):
+        raise ValueError("plugin subsystem is disabled")
+    if not bool((state.get("plugins", {}).get(ident) or {}).get("enabled", False)):
+        raise ValueError("UI plugin is disabled")
+    if not plugin_package_manager.is_installed(ident):
+        raise ValueError("UI plugin is not installed")
 
 
 def _plugin(ident: str):
+    ident = str(ident or "")
+    if not plugin_manager.ID_RE.fullmatch(ident):
+        raise ValueError("invalid plugin id")
+
+    # These inexpensive state/package checks intentionally happen for every
+    # request so permission removal takes effect without waiting for a cache TTL.
+    _live_authorized(ident)
+
+    cached = _PLUGIN_CACHE.get(ident)
+    if cached:
+        manifest_path = Path(cached["manifest_path"])
+        try:
+            if _manifest_stamp(manifest_path) == cached["stamp"]:
+                plugin = cached["plugin"]
+                if CAPABILITY not in set(plugin.get("capabilities") or []):
+                    raise ValueError("plugin is not permitted to use the vocoder bridge")
+                return plugin
+        except (FileNotFoundError, OSError):
+            pass
+        _PLUGIN_CACHE.pop(ident, None)
+
+    # Cache miss or package replacement: perform the full fail-closed signed UI
+    # discovery/manifest validation once, then bind the cache to that exact file.
     plugin = plugin_ui_manager.get_effective_plugin(ident)
     if CAPABILITY not in set(plugin.get("capabilities") or []):
         raise ValueError("plugin is not permitted to use the vocoder bridge")
+    manifest_path = Path(plugin["directory"]) / "plugin.json"
+    _PLUGIN_CACHE[ident] = {
+        "manifest_path": str(manifest_path),
+        "stamp": _manifest_stamp(manifest_path),
+        "plugin": plugin,
+    }
     return plugin
 
 

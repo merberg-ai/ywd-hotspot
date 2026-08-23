@@ -133,7 +133,7 @@ def _mmdvm_runtime():
     }
 
 
-def _dependency_result(token):
+def _dependency_result(token, verify_runtime=False):
     if token == "python3":
         path = shutil.which("python3"); return bool(path), path or "python3 not found in PATH"
     if token == "systemd":
@@ -158,12 +158,13 @@ def _dependency_result(token):
         state = _mmdvm_runtime(); ok = "passive-dmr-voice" in state["capabilities"]
         return ok, "available" if ok else f"capability unavailable on MMDVM runtime {state['variant']}"
     if token == "mmdvm-cap-demand-gated-dmr-voice":
-        # This requirement deliberately uses the observed exact binary/patch
-        # identity rather than trusting an older persisted state file. API 2
-        # existed before demand gating, so the capability must be explicit.
-        state = mmdvm_runtime_state.observed_runtime()
+        # Ordinary UI snapshots use the already-selected/persisted runtime
+        # identity. Expensive exact binary/patch verification is reserved for
+        # privileged lifecycle actions where compatibility is being changed.
+        state = mmdvm_runtime_state.observed_runtime() if verify_runtime else _mmdvm_runtime()
         ok = "demand-gated-dmr-voice" in state.get("capabilities", [])
-        return ok, "available" if ok else f"capability unavailable on verified MMDVM runtime {state.get('variant', 'unknown')}"
+        mode = "verified" if verify_runtime else "selected"
+        return ok, "available" if ok else f"capability unavailable on {mode} MMDVM runtime {state.get('variant', 'unknown')}"
     return False, "unsupported dependency"
 
 
@@ -183,9 +184,13 @@ def _section(tokens, labels, checker):
     return {"ok": all(item["ok"] for item in items), "items": items}
 
 
-def check_requirements(manifest):
+def check_requirements(manifest, verify_runtime=False):
     deps, hw = validate_requirements(manifest.get("dependencies", []), manifest.get("hardware", []))
-    dependencies = _section(deps, DEPENDENCY_LABELS, _dependency_result)
+    dependencies = _section(
+        deps,
+        DEPENDENCY_LABELS,
+        lambda token: _dependency_result(token, verify_runtime=verify_runtime),
+    )
     hardware = _section(hw, HARDWARE_LABELS, _hardware_result)
     return {"ok": dependencies["ok"] and hardware["ok"], "dependencies": dependencies, "hardware": hardware}
 

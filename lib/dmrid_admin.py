@@ -76,7 +76,7 @@ def record_count(stat) -> int | None:
     return count
 
 
-def status() -> dict:
+def status(include_units: bool = False) -> dict:
     now = time.time()
     days = interval_days()
     present = DB.is_file()
@@ -97,8 +97,18 @@ def status() -> dict:
         usable = size > 0 and records is not None and records > 0
         due = (not usable) or age >= days * 86400
 
-    service_result = unit_value("ywd-dmrid-update.service", "Result") or "unknown"
-    exit_status = unit_value("ywd-dmrid-update.service", "ExecMainStatus") or "unknown"
+    if include_units:
+        service_result = unit_value("ywd-dmrid-update.service", "Result") or "unknown"
+        exit_status = unit_value("ywd-dmrid-update.service", "ExecMainStatus") or "unknown"
+        timer_active = unit_state("ywd-dmrid-update.timer")
+        timer_enabled = unit_enabled("ywd-dmrid-update.timer")
+    else:
+        # Automatic WebUI status polling stays entirely in the cheap data
+        # plane: filesystem/config metadata only, with no systemctl subprocesses.
+        service_result = "unknown"
+        exit_status = "unknown"
+        timer_active = "unknown"
+        timer_enabled = "unknown"
     if not present:
         state = "missing"
     elif not usable:
@@ -127,8 +137,8 @@ def status() -> dict:
             "state": state,
         },
         "timer": {
-            "active": unit_state("ywd-dmrid-update.timer"),
-            "enabled": unit_enabled("ywd-dmrid-update.timer"),
+            "active": timer_active,
+            "enabled": timer_enabled,
         },
         "service": {
             "result": service_result,
@@ -149,7 +159,7 @@ def run_update(force: bool) -> dict:
     message = ((p.stdout or "") + ("\n" + p.stderr if p.stderr else "")).strip()
     if p.returncode != 0:
         raise RuntimeError(message or f"DMR ID updater failed ({p.returncode})")
-    out = status()
+    out = status(include_units=True)
     out["action"] = "update" if force else "check"
     out["message"] = message or "DMR ID database check completed."
     return out

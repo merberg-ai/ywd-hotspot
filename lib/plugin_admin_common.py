@@ -132,7 +132,9 @@ def stop_plugin_service(plugin, disable=True):
 
 
 def requirement_failure(plugin):
-    checks = plugin_package_manager.check_requirements(plugin)
+    # Install/enable/start/restart are control-plane mutations: verify the
+    # exact installed MMDVM binary/patch identity before allowing them.
+    checks = plugin_package_manager.check_requirements(plugin, verify_runtime=True)
     if checks["ok"]:
         return checks, None
     missing = []

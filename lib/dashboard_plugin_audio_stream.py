@@ -267,7 +267,7 @@ def stream_audio(handler, ident, source_filter, slot_filter):
         reset_max_ms = initial_reset_ms
         last_route = None
         last_heartbeat = time.monotonic()
-        last_keepalive = time.monotonic()
+        last_vocoder_activity = time.monotonic()
         last_auth = time.monotonic()
         need_reset = False
 
@@ -276,12 +276,13 @@ def stream_audio(handler, ident, source_filter, slot_filter):
             return _write_event(handler, event)
 
         def do_reset(reason):
-            nonlocal ambe_queue, need_reset, reset_max_ms
+            nonlocal ambe_queue, need_reset, reset_max_ms, last_vocoder_activity
             ambe_queue = []
             started = time.monotonic()
             vocoder_client.reset()
             elapsed = (time.monotonic() - started) * 1000.0
             reset_max_ms = max(reset_max_ms, elapsed)
+            last_vocoder_activity = time.monotonic()
             need_reset = False
             return send({"type": "reset", "reason": reason, "reset_ms": round(elapsed, 3)})
 
@@ -296,19 +297,22 @@ def stream_audio(handler, ident, source_filter, slot_filter):
                     return
                 last_auth = now
 
-            if now - last_keepalive >= KEEPALIVE_S:
+            # Successful RESET/DECODE traffic itself proves that the persistent
+            # backend session is alive. Probe STATUS only after the vocoder has
+            # actually been idle, keeping control traffic off the hot audio path.
+            if now - last_vocoder_activity >= KEEPALIVE_S:
                 keep = vocoder_client.status()
+                last_vocoder_activity = time.monotonic()
                 if not keep.get("available"):
                     send({"type": "error", "fatal": False, "error": str(keep.get("error") or "vocoder keepalive failed")[:500]})
                     need_reset = True
-                last_keepalive = now
 
             # Sleep inside the stream thread until a burst arrives or one of
-            # the periodic auth/keepalive/heartbeat deadlines becomes due.
+            # the periodic auth/idle-vocoder/heartbeat deadlines becomes due.
             # This replaces 25 ms filesystem polling/stat/JSON parsing.
             waits = [
                 max(0.0, AUTH_RECHECK_S - (now - last_auth)),
-                max(0.0, KEEPALIVE_S - (now - last_keepalive)),
+                max(0.0, KEEPALIVE_S - (now - last_vocoder_activity)),
                 max(0.0, HEARTBEAT_S - (now - last_heartbeat)),
             ]
             wait_s = min([LIVE_WAIT_MAX_S, *waits])
@@ -413,6 +417,7 @@ def stream_audio(handler, ident, source_filter, slot_filter):
                     try:
                         decoded = vocoder_client.decode(batch)
                     except (vocoder_client.VocoderUnavailable, vocoder_client.VocoderBackendError) as exc:
+                        last_vocoder_activity = time.monotonic()
                         dropped_ambe += len(batch) + len(ambe_queue)
                         ambe_queue = []
                         need_reset = True
@@ -420,6 +425,7 @@ def stream_audio(handler, ident, source_filter, slot_filter):
                             return
                         break
                     decode_ms = (time.monotonic() - decode_started) * 1000.0
+                    last_vocoder_activity = time.monotonic()
                     decode_max_ms = max(decode_max_ms, decode_ms)
                     pcm = decoded.pop("pcm_s16le")
                     chunk_seq += 1

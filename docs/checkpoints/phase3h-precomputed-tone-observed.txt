@@ -1,3 +1,0 @@
-Observed core commit: 8908b103d2732842916edf20f98f6e721e6d17a2
-Observed plugin: dmr-rx-monitor 0.4.0-alpha15
-Observation: persistent transport reused 81/83 requests; fake PCM generation ~0.071 ms last / ~1.749 ms max; browser decode RTT ~60 ms current / 302 ms max; underruns still accumulated, isolating remaining instability to delivery/scheduling above the backend.

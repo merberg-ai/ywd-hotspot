@@ -97,7 +97,7 @@ MMDVM-Host (sole modem owner)
 
 The plugin receives PCM for live speech. It contains no mbelib source/binary, AMBE Wasm decoder, direct modem serial access, direct MQTT access, broad network access, direct vocoder-socket access, or RF-TX authority.
 
-Current selected Phase 3J tuning on `dev-plugins`:
+Current selected Phase 3J tuning on `dev`:
 
 ```text
 core live burst tail     12 DMR bursts (~720 ms)
@@ -126,7 +126,7 @@ Kind/provenance/capability changes cannot silently bypass signature or sandbox r
 
 Before a plugin-capable YWD application update, core captures plugin state/service intent and makes plugin services inert. After the new candidate validates, only packages that still satisfy validation and runtime requirements are eligible for restoration.
 
-Candidate validation is capability-based rather than branch-name-based.
+Candidate validation is capability-based rather than branch-name-based. The current gate also requires the complete streamed RX-audio/vocoder payload and its dashboard wrapper integration before a candidate can touch live services.
 
 The optional passive voice bridge is demand-gated by aggregate plugin capability demand. Normal application updates also preserve/restart the bridge when it was active so updated bridge code is not left behind an old Python process.
 

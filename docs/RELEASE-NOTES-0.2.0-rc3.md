@@ -1,6 +1,6 @@
 # YWD-Hotspot 0.2.0-rc3 Release Notes
 
-**Status:** frozen release candidate; pre-freeze development regression physically passed. Exact factory-image and published RC2 -> RC3 updater acceptance are still pending before public promotion.
+**Status:** final RC3 candidate after physically accepted pre-image UI polish. Exact factory-image and published RC2 -> final RC3 updater acceptance are still pending before public promotion.
 
 RC3 integrates the physically proven DMR RX Monitor / Phase 3J path and the runtime hardening discovered while validating it on the reference Raspberry Pi Zero W + duplex MMDVM hotspot.
 
@@ -17,11 +17,12 @@ RC3 integrates the physically proven DMR RX Monitor / Phase 3J path and the runt
 - safer plugin feature-runtime reconciliation with unconditional best-effort DMRGateway restoration and a longer Pi Zero mutation timeout;
 - DMRGateway private MQTT telemetry corrected to `127.0.0.1:18883`, matching MMDVM-Host and the YWD loopback broker;
 - encrypted settings restore fixed to inventory uploaded UI plugins correctly and reconcile the trusted feature runtime after restore/rollback;
-- additional regression smokes for runtime compatibility, plugin feature lifecycle, streamed audio, telemetry endpoint consistency, and settings-restore plugin/runtime behavior.
+- additional regression smokes for runtime compatibility, plugin feature lifecycle, streamed audio, telemetry endpoint consistency, and settings-restore plugin/runtime behavior;
+- pre-image WebUI polish with a readiness-gated branded startup overlay and RF-style animation, blocking stage-aware Save / Save & Apply transaction modal, and responsive cyber-style toggle switches for boolean settings on mobile and desktop.
 
-## Pre-freeze physical acceptance
+## Physical acceptance before final artifact test
 
-The integrated development runtime was exercised on the reference duplex appliance before the RC3 version freeze.
+The integrated development runtime and the later UI-only polish batch were exercised on the reference duplex appliance before the final image/updater acceptance.
 
 Validated:
 
@@ -37,9 +38,18 @@ Validated:
 - reboot preserves plugin demand state, voice gate, MQTT telemetry and BrandMeister connectivity;
 - encrypted `.ywdsettings` backup/restore restores uploaded RX Monitor package registration, enabled state, trusted feature runtime and an ordinary configuration delta;
 - MMDVM-Host and DMRGateway both maintain private MQTT connections on `127.0.0.1:18883`;
-- zero failed systemd units at acceptance points.
+- zero failed systemd units at acceptance points;
+- branded startup/loading overlay works and looks correct on the appliance;
+- blocking Save / Save & Apply transaction feedback works correctly;
+- responsive toggle-switch treatment was accepted for mobile/desktop presentation.
 
-The physically exercised functional RC3 code line reached `dev @ 3e33bb82e0b3d7bdf986bf6b2cbd9295d0f679c8`; subsequent pre-freeze commits before this release branch are documentation/version/inventory-only unless otherwise noted in the test ledger.
+The core/RF functional RC3 code line was physically exercised before freeze, and the UI-only polish functional commit was physically accepted at:
+
+```text
+6593687a5ec477609483ec8cd6eaa3386bcbec7b
+```
+
+Subsequent candidate changes after that functional commit are documentation/release-record updates only unless explicitly noted.
 
 ## MMDVM runtime compatibility
 
@@ -70,12 +80,12 @@ RC3 does not bundle mbelib, libmbe, AMBE Wasm, or an automatic decoder installer
 
 Normal DMR/RF operation remains independent of the optional external vocoder.
 
-## Remaining release acceptance
+## Remaining release acceptance — NEXT STEP
 
-Before RC3 is promoted to `main` and tagged, the exact frozen candidate must still pass:
+The next step is the final image/updater acceptance. Before RC3 is promoted to `main` and tagged, the exact final candidate must still pass:
 
-1. candidate validation from the frozen release branch;
-2. published RC2 -> exact RC3 updater test, including legacy YWD Extended recognition and explicit refresh to the current patch;
+1. candidate validation and quick appliance/source sanity of the final candidate ref;
+2. published RC2 -> exact final RC3 updater test, including proof that the normal app updater does not silently recompile MMDVM-Host or DMRGateway, legacy YWD Extended recognition, and explicit refresh to the current patch;
 3. exact RC3 factory-image build and fresh-flash setup/boot validation;
 4. separately installed external vocoder backend + Alpha19 RX Monitor package on the fresh image;
 5. final reboot/RF/audio regression and zero failed units.

@@ -6,7 +6,7 @@
 
 ## 0.2.0-rc3 — DMR RX Monitor / Runtime Hardening
 
-**Status:** frozen release candidate. Pre-freeze appliance regression passed; exact factory-image and published RC2 -> RC3 updater acceptance remain pending before public promotion.
+**Status:** release candidate reopened briefly for UI-only pre-image polish. Core/RF pre-freeze appliance regression passed; exact factory-image and published RC2 -> final RC3 updater acceptance remain pending before public promotion.
 
 RC3 integrates the physically proven Phase 3J DMR RX Monitor path and the hardening found during Raspberry Pi Zero validation:
 
@@ -20,7 +20,8 @@ RC3 integrates the physically proven Phase 3J DMR RX Monitor path and the harden
 - guarded plugin feature reconciliation that restores DMRGateway safely on Pi Zero transitions;
 - DMRGateway private MQTT corrected to the YWD loopback broker on `127.0.0.1:18883`;
 - encrypted settings restore fixed for uploaded UI-plugin package state and trusted feature-runtime reconciliation;
-- new runtime, telemetry, streamed-audio and settings-restore regression smokes.
+- new runtime, telemetry, streamed-audio and settings-restore regression smokes;
+- pre-image WebUI polish adds a readiness-gated branded startup overlay with RF-style animation, a blocking stage-aware Save / Save & Apply transaction modal, and responsive cyber-style toggle switches for boolean settings on mobile and desktop.
 
 Pre-freeze hardware validation covered duplex TS1/TS2 Parrot, RF/network paths, RX Monitor lifecycle/audio cleanup, reboot persistence, application-update preservation, encrypted backup/restore including a real config delta, MQTT/BrandMeister recovery, and zero failed systemd units.
 

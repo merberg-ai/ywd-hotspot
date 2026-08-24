@@ -1,5 +1,40 @@
 'use strict';
 (() => {
+  const startupOverlay = document.createElement('div');
+  startupOverlay.className = 'modal on ywd-startup-overlay';
+  startupOverlay.id = 'ywdStartupOverlay';
+  startupOverlay.setAttribute('role', 'status');
+  startupOverlay.setAttribute('aria-live', 'polite');
+  startupOverlay.setAttribute('aria-busy', 'true');
+  startupOverlay.innerHTML = `
+    <div class="dialog ywd-startup-card">
+      <div class="card-title">YWD // HOTSPOT</div>
+      <div class="ywd-rf-loader" aria-hidden="true"><span></span><span></span><i></i></div>
+      <div class="who ywd-load-title">LOADING YWD HOTSPOT</div>
+      <div class="hint ywd-load-status" id="ywdStartupStatus">Synchronizing dashboard…</div>
+    </div>`;
+  document.body.appendChild(startupOverlay);
+
+  let startupPolishReady = false;
+  let startupClosed = false;
+  const startupAt = Date.now();
+  function startupDataReady() {
+    return typeof state !== 'undefined' && !!state && typeof configDoc !== 'undefined' && !!configDoc;
+  }
+  function closeStartup(force = false) {
+    if (startupClosed) return;
+    if (!force && (!startupPolishReady || !startupDataReady() || Date.now() - startupAt < 260)) return;
+    startupClosed = true;
+    clearInterval(startupWatch);
+    startupOverlay.setAttribute('aria-busy', 'false');
+    const status = document.getElementById('ywdStartupStatus');
+    if (force && status) status.textContent = 'Dashboard ready · some background data may still be loading';
+    startupOverlay.classList.add('ywd-startup-out');
+    setTimeout(() => startupOverlay.remove(), 220);
+  }
+  const startupWatch = setInterval(() => closeStartup(false), 60);
+  setTimeout(() => closeStartup(true), 12000);
+
   function loadStyle(href) {
     const l = document.createElement('link');
     l.rel = 'stylesheet';
@@ -253,13 +288,111 @@
     return true;
   }
 
-  function installConfirmFirstSaveApply() {
-    const button = document.getElementById('applyConfig');
-    if (!button) return false;
-    if (button.dataset.ywdConfirmFirst === '1') return true;
-    button.dataset.ywdConfirmFirst = '1';
+  function ensureSettingsTransactionModal() {
+    let overlay = document.getElementById('ywdSettingsTxnModal');
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.className = 'modal ywd-settings-txn';
+    overlay.id = 'ywdSettingsTxnModal';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML = `
+      <div class="dialog ywd-txn-card">
+        <div class="card-title" id="ywdTxnKicker">YWD // CONFIGURATION</div>
+        <div class="ywd-rf-loader ywd-txn-loader" aria-hidden="true"><span></span><span></span><i></i></div>
+        <div class="who ywd-txn-title" id="ywdTxnTitle">SAVING SETTINGS</div>
+        <p class="hint ywd-txn-message" id="ywdTxnMessage">Writing configuration…</p>
+        <button class="btn ywd-txn-close" id="ywdTxnClose" type="button" hidden>CLOSE</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('ywdTxnClose').onclick = () => {
+      overlay.classList.remove('on','success','error');
+      document.body.classList.remove('ywd-transaction-busy');
+      overlay.removeAttribute('aria-busy');
+    };
+    return overlay;
+  }
 
-    button.onclick = async () => {
+  function setTxnStage(title, message, mode = 'busy') {
+    const overlay = ensureSettingsTransactionModal();
+    const close = document.getElementById('ywdTxnClose');
+    document.getElementById('ywdTxnTitle').textContent = title;
+    document.getElementById('ywdTxnMessage').textContent = message;
+    overlay.classList.remove('success','error');
+    overlay.classList.toggle('success', mode === 'success');
+    overlay.classList.toggle('error', mode === 'error');
+    close.hidden = mode !== 'error';
+    if (mode === 'busy') {
+      overlay.classList.add('on');
+      overlay.setAttribute('aria-busy', 'true');
+      document.body.classList.add('ywd-transaction-busy');
+    } else {
+      overlay.setAttribute('aria-busy', 'false');
+    }
+    return overlay;
+  }
+
+  function finishTxn(message) {
+    const overlay = setTxnStage('CONFIGURATION COMPLETE', message, 'success');
+    setTimeout(() => {
+      overlay.classList.remove('on','success');
+      document.body.classList.remove('ywd-transaction-busy');
+      overlay.removeAttribute('aria-busy');
+    }, 650);
+  }
+
+  function failTxn(error) {
+    const raw = String(error?.message || error || 'Unknown configuration error').trim();
+    setTxnStage('CONFIGURATION FAILED', raw, 'error');
+  }
+
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  async function waitForDashboardRestart() {
+    await sleep(1400);
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      try {
+        const r = await fetch('/api/status', {cache:'no-store'});
+        if (r.ok) {
+          setTxnStage('DASHBOARD ONLINE', 'Reconnecting to the refreshed dashboard…', 'success');
+          setTimeout(() => location.reload(), 350);
+          return;
+        }
+      } catch (_) {}
+      await sleep(850);
+    }
+    failTxn('The configuration was applied, but the dashboard is taking longer than expected to return. Reload this page in a few seconds.');
+  }
+
+  function installSettingsTransactionPolish() {
+    const saveButton = document.getElementById('saveConfig');
+    const applyButton = document.getElementById('applyConfig');
+    if (!saveButton || !applyButton) return false;
+    if (saveButton.dataset.ywdTxn === '1' && applyButton.dataset.ywdTxn === '1') return true;
+    saveButton.dataset.ywdTxn = '1';
+    applyButton.dataset.ywdTxn = '1';
+    ensureSettingsTransactionModal();
+
+    saveButton.onclick = async () => {
+      try {
+        const c = formConfig();
+        const changed = !configDoc || JSON.stringify(c) !== JSON.stringify(configDoc);
+        if (!changed) {
+          toast('No settings changes to save');
+          return;
+        }
+        setTxnStage('SAVING SETTINGS', 'Writing configuration safely to the hotspot…');
+        const s = await post('/api/config/save', {config: c});
+        configDoc = c;
+        setDirty(false);
+        finishTxn(s.changed?.length ? `Saved ${s.changed.length} configuration change(s).` : 'Settings are already current.');
+        setTimeout(() => { getStatus(); loadConfig(true); }, 800);
+      } catch (e) {
+        failTxn(e);
+      }
+    };
+
+    applyButton.onclick = async () => {
       try {
         const c = formConfig();
         const pending = typeof state !== 'undefined' && !!state?.pending?.pending;
@@ -284,21 +417,34 @@
           return;
         }
 
-        await post('/api/config/save', {config: c});
-        configDoc = c;
-        setDirty(false);
-        const a = await post('/api/config/apply', {});
-        toast(a.changed?.length ? 'Configuration applied' : 'Configuration already applied');
-        if (a.dashboard_restart_pending) {
-          const port = a.new_port;
-          toast(`Dashboard restarting${port ? ' on port ' + port : ''}…`);
-          if (port && Number(port) !== Number(location.port || 80)) {
-            setTimeout(() => { location.href = `${location.protocol}//${location.hostname}:${port}/`; }, 4500);
-          }
+        let saved = {changed: [], hints: {}};
+        if (changed) {
+          setTxnStage('SAVING SETTINGS', 'Writing configuration safely to the hotspot…');
+          saved = await post('/api/config/save', {config: c});
+          configDoc = c;
+          setDirty(false);
+        } else {
+          setTxnStage('APPLYING CONFIGURATION', 'Applying previously saved configuration…');
         }
+
+        const h = saved.hints || {};
+        const restarts = !!(h.rf || h.oled || h.dashboard || h.journald || h.autostart);
+        setTxnStage(restarts ? 'RESTARTING SERVICES' : 'APPLYING CONFIGURATION', restarts ? 'Applying configuration and restarting affected components safely…' : 'Applying configuration to the running hotspot…');
+        const a = await post('/api/config/apply', {});
+        if (a.dashboard_restart_pending) {
+          const port = Number(a.new_port || location.port || 80);
+          setTxnStage('DASHBOARD RESTARTING', 'Configuration is applied. Waiting for the WebUI to return…');
+          if (port && port !== Number(location.port || 80)) {
+            setTimeout(() => { location.href = `${location.protocol}//${location.hostname}:${port}/`; }, 4500);
+          } else {
+            waitForDashboardRestart();
+          }
+          return;
+        }
+        finishTxn(a.changed?.length ? 'Configuration applied successfully.' : 'Configuration is already applied.');
         setTimeout(() => { getStatus(); loadConfig(true); }, 800);
       } catch (e) {
-        toast(e.message, true);
+        failTxn(e);
       }
     };
     return true;
@@ -317,14 +463,18 @@
       updaterDone = installUpdateCheckingPolish() || updaterDone;
       heroDone = installHeroHeader() || heroDone;
       duplexDone = installDuplexSettings() || duplexDone;
-      saveApplyDone = installConfirmFirstSaveApply() || saveApplyDone;
-      if ((settingsDone && updaterDone && heroDone && duplexDone && saveApplyDone) || tries >= 100) clearInterval(timer);
+      saveApplyDone = installSettingsTransactionPolish() || saveApplyDone;
+      if ((settingsDone && updaterDone && heroDone && duplexDone && saveApplyDone) || tries >= 100) {
+        clearInterval(timer);
+        startupPolishReady = true;
+        closeStartup(false);
+      }
     };
     const timer = setInterval(tick, 100);
     tick();
   }
 
-  loadStyle('/ui-polish.css?v=alpha18.2.7');
+  loadStyle('/ui-polish.css?v=rc3-ui1');
   loadStyle('/hero-layout.css?v=alpha21.1');
   loadStyle('/update.css?v=alpha18.2.6');
   loadStyle('/instrumentation.css?v=alpha12.1');

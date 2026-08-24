@@ -67,7 +67,7 @@ The published image is the exact tested compressed artifact; its GitHub-facing f
 - Stock and Extended binaries use separate compile-cache identities.
 - Plugins may declare trusted MMDVM runtime/API/capability requirements but cannot switch the runtime themselves.
 - RX Monitor Phase 3J uses trusted core DMR recovery/batching plus a separately installed YWD Vocoder Protocol v1 backend; the sandbox receives PCM only.
-- The external vocoder is not bundled into core or the `.ywdplugin`; current `dev-plugins` enforces the selected `Nice=0` / `CPUWeight=200` policy for the known external service.
+- The external vocoder is not bundled into core or the `.ywdplugin`; current `dev` enforces the selected `Nice=0` / `CPUWeight=200` policy for the known external service.
 - `/opt/ywd-hotspot/repo` is managed source; `/opt/ywd-hotspot/app` is deployed runtime.
 - Credentials stay out of browser-readable state and public diagnostics.
 - Executable service/UI plugins require trusted Ed25519 signatures.
@@ -87,8 +87,8 @@ Public images contain **no operator preconfiguration**: no Wi-Fi, callsign/DMR I
 | Ref | Purpose |
 |---|---|
 | `main` | frozen public/update line at accepted RC2 while releases are frozen |
-| `dev` | active integrated development and repository housekeeping |
-| `dev-plugins` | active plugin/RX Monitor development and Phase 3J integration |
+| `dev` | active integrated development and RC3 preparation; includes the proven Phase 3J plugin/RX/vocoder work |
+| `dev-plugins` | isolated plugin/framework experiment line; currently aligned with `dev` |
 | `v0.2.0-rc2` | immutable updater-proven RC2 tag |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
 | `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for accepted RC2 image/updater test |

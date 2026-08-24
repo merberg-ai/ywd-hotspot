@@ -36,6 +36,11 @@ DMR_BINARY = Path(os.environ.get("YWD_DMRGATEWAY_BINARY", "/usr/local/bin/DMRGat
 DMR_PROVENANCE = Path(os.environ.get("YWD_DMRGATEWAY_BUILD_PROVENANCE", "/etc/ywd-hotspot/dmrgateway-build.json"))
 CACHE_SCHEMA = 1
 MMDVM_VARIANTS = {"ywd-extended", "upstream"}
+YWD_EXTENDED_CAPABILITIES = [
+    "passive-dmr-voice",
+    "plugin-rx-monitor",
+    "demand-gated-dmr-voice",
+]
 
 
 def sha256(path: Path) -> str:
@@ -138,7 +143,7 @@ def requested_mmdvm_variant() -> str:
 
 def write_mmdvm_runtime_state(variant: str, status: dict) -> None:
     if variant == "ywd-extended":
-        capabilities = ["passive-dmr-voice", "plugin-rx-monitor"]
+        capabilities = list(YWD_EXTENDED_CAPABILITIES)
         extension_api = status.get("api") or status.get("extension_api")
         patch_sha = status.get("patch_sha256")
     else:
@@ -323,7 +328,7 @@ def mmdvm_status(variant: str | None = None) -> dict:
         return {"installed": False, "variant": variant, "error": "status unavailable"}
     doc["variant"] = variant
     if variant == "ywd-extended":
-        doc["capabilities"] = ["passive-dmr-voice", "plugin-rx-monitor"]
+        doc["capabilities"] = list(YWD_EXTENDED_CAPABILITIES)
         doc["extension_api"] = doc.get("api")
     else:
         doc.setdefault("capabilities", [])

@@ -29,9 +29,9 @@ sandboxed RX Monitor / Web Audio
 
 The plugin receives PCM only. It never loads mbelib and never opens the vocoder socket directly.
 
-## Current `dev-plugins` baseline
+## Current `dev` baseline
 
-The physically selected Phase 3J baseline is:
+The physically selected Phase 3J baseline, now integrated into `dev`, is:
 
 ```text
 protocol                 YWD Vocoder Protocol v1
@@ -59,7 +59,7 @@ No negative nice value or realtime scheduling is used. MMDVM/RF remains the prio
 
 Before installing a real backend:
 
-1. Install/update the current `dev-plugins` YWD-Hotspot build.
+1. Install/update the current `dev` YWD-Hotspot build.
 2. Use the **YWD Extended** MMDVM runtime so passive DMR voice is available.
 3. Confirm `/opt/ywd-hotspot/app/lib/vocoder_client.py` and `vocoder_protocol.py` exist.
 4. Confirm the managed scheduling policy exists.

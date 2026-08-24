@@ -144,7 +144,7 @@ A short post-boot Start Audio / Stop Audio check also passed: the vocoder return
 
 ## Test 4B — encrypted settings backup/restore
 
-Status: **PLUGIN/PACKAGE/RUNTIME RESTORE PASS after blocker fixes; ordinary config-delta check still pending**
+Status: **PASS after blocker fixes**
 
 An encrypted `.ywdsettings` restore exposed two restore-specific plugin bugs.
 
@@ -178,7 +178,7 @@ Source regression smoke passed all five checks:
 - successful restore reconciles trusted plugin feature runtime;
 - restore rollback reconciles trusted plugin feature runtime.
 
-Pre-restore state had RX Monitor installed but disabled. The same encrypted backup was then restored with RF requested active.
+Pre-restore state had RX Monitor installed but disabled. The same encrypted backup was restored with RF requested active.
 
 Restore result:
 
@@ -204,8 +204,36 @@ Final physical state:
 - external mbelib vocoder remains inactive while browser audio is stopped;
 - zero failed systemd units.
 
-The reported restore `changed` list was empty in this physical retest, so restoration of a deliberately changed ordinary non-RF config field remains to be demonstrated separately before the entire backup/restore acceptance item is closed.
+### Ordinary config-delta proof
 
-## Next
+A normal non-RF Description field was deliberately changed after the backup and then restored from the same encrypted `.ywdsettings` file.
 
-Complete the small remaining Test 4B config-delta proof, then proceed to the remaining pre-freeze regression/candidate checks before cutting `release/0.2.0-rc3`.
+Validated:
+
+- the mutated Description value was present before restore;
+- restore reported a non-empty configuration delta;
+- the original Description value returned exactly after restore;
+- RX Monitor remained installed and enabled after the config restore;
+- trusted voice runtime remained converged with `desired=true`, live gate present and bridge active;
+- MMDVMHost and DMRGateway remained active;
+- external vocoder remained inactive with browser audio stopped;
+- zero failed systemd units.
+
+The complete encrypted settings backup/restore acceptance item is therefore closed.
+
+## Next — pre-freeze regression
+
+Run the final broad appliance regression before freezing the RC3 candidate:
+
+1. regular duplex RF: TS1 and TS2;
+2. BrandMeister Parrot and one normal talkgroup path;
+3. Talkgroup Manager controls;
+4. Last Heard / live telemetry/dashboard status;
+5. RX Monitor short Start Audio / Stop Audio cycle;
+6. WebUI Settings/System/SSH pages load and basic read-only status works;
+7. plugin installed/enabled state remains correct;
+8. MMDVM exact current capability identity remains in sync;
+9. private MQTT publishers remain established on `127.0.0.1:18883`;
+10. zero failed systemd units.
+
+After that passes, freeze the RC3 version/release notes/branch and begin the exact RC2 -> frozen RC3 updater and factory-image acceptance passes.

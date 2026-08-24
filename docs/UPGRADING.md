@@ -3,7 +3,7 @@
 [← Docs index](README.md) · [Installation](INSTALL.md) · [Project README](../README.md) · [Security](../SECURITY.md)
 
 > [!IMPORTANT]
-> **Update invariant:** an application update must never unexpectedly enable RF or silently switch the selected MMDVM runtime.
+> **Update invariant:** an application update must never unexpectedly enable RF or silently switch/recompile the selected MMDVM runtime.
 
 ## Managed layout
 
@@ -26,7 +26,7 @@ main   promoted public/release line
 dev    development/preview line
 ```
 
-`main` is the normal public channel. While releases are frozen it stays at the exact accepted public commit so stable testers do not receive unpublished repository housekeeping.
+`main` is the normal public channel. While releases are frozen it stays at the exact accepted public commit so stable testers do not receive unpublished development work.
 
 `dev` may move ahead of `main` and should be treated as a development channel; a `dev` commit is not automatically hardware-accepted merely because it exists.
 
@@ -57,6 +57,8 @@ Accepted RC2 source:
 5f0d2967ce0ed728169f7819d2bc227687d6a9b2
 ```
 
+RC3 acceptance will separately prove both the fresh-image path and the published RC2 -> RC3 application-update path.
+
 ## Check / dry-run / apply
 
 ```bash
@@ -71,7 +73,7 @@ The dashboard provides the same saved-channel update workflow when WebUI control
 
 Before live replacement, the updater verifies canonical origin, refuses dirty managed source, stages the target outside the live app, and runs capability-based validation/syntax checks.
 
-A candidate containing plugin, passive-voice, telemetry, or MMDVM-runtime-variant pieces must contain the complete matching trusted runtime set. Branch name is not used as a substitute for runtime coherence.
+A candidate containing plugin, passive-voice, telemetry, streamed RX audio, vocoder, or MMDVM-runtime-variant pieces must contain the complete matching trusted runtime set. Branch name is not used as a substitute for runtime coherence.
 
 ## MMDVM runtime preservation
 
@@ -84,21 +86,64 @@ upstream
 
 The runtime choice is not inferred from the incoming application branch. Moving from one app version to another does not silently convert Stock Upstream to Extended or Extended to Stock.
 
-Changing MMDVM runtime is a separate explicit full/recovery/runtime-build action with its own verification and RF-safety handling.
+Changing or refreshing MMDVM runtime is a separate explicit full/recovery/runtime-build action with its own verification and RF-safety handling.
+
+### RC2 Extended runtime on RC3 application code
+
+RC1/RC2 and current RC3 development use the same pinned upstream MMDVM-Host commit and YWD extension API 2, but the YWD patch generation changed.
+
+The accepted RC1/RC2 Extended patch publishes the same passive `DMRVoice` envelope used by current core, but it predates the `YWD_DMR_VOICE_TAP=1` demand gate. Current RC3 development therefore recognizes that exact historical patch as **legacy-compatible YWD Extended** instead of reporting an unknown runtime.
+
+A legacy RC2 Extended runtime retains its older capabilities:
+
+```text
+passive-dmr-voice
+plugin-rx-monitor
+```
+
+It intentionally does **not** receive:
+
+```text
+demand-gated-dmr-voice
+```
+
+A plugin requiring the demand-gated capability, including the current streamed-audio RX Monitor candidate, remains blocked until the operator explicitly refreshes YWD Extended.
+
+Inspect exact runtime identity:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
+```
+
+A recognized RC1/RC2 Extended binary reports `runtime_generation: legacy`, `upgrade_required: true`, and the explicit refresh command rather than being misclassified as unknown.
+
+Refresh YWD Extended when desired:
+
+```bash
+sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py \
+  install --mmdvm-variant ywd-extended
+
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py refresh
+```
+
+That rebuild/activation is an explicit operator action; the normal application updater never performs it silently.
 
 ## Plugin behavior across updates
 
 Uploaded package source, config/data and trusted publisher public keys live outside the deployed app. Before replacement, service plugins are made inert. After replacement, only packages that still validate and satisfy current requirements are eligible for restoration.
 
-That includes MMDVM requirements such as:
+MMDVM requirement tokens include:
 
 ```text
 mmdvm-ywd-extended
 mmdvm-extension-api-2
 mmdvm-cap-passive-dmr-voice
+mmdvm-cap-demand-gated-dmr-voice
 ```
 
-A previously enabled extension-dependent plugin therefore does not get blindly restarted on an incompatible Stock runtime.
+Control-plane plugin mutations verify the exact installed MMDVM binary/patch identity. A recognized legacy Extended runtime therefore receives a specific runtime-refresh requirement instead of accidentally satisfying the newer capability or failing as an unidentified binary.
+
+A previously enabled extension-dependent plugin also does not get blindly restarted on an incompatible Stock runtime.
 
 ## RF behavior
 
@@ -116,6 +161,7 @@ Verify after an update:
 ywd-hotspotctl status
 ywd-hotspotctl source
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
 systemctl --failed --no-pager
 ```
 
@@ -154,6 +200,7 @@ Do not blindly reset a dirty managed checkout; inspect it first.
 ```bash
 ywd-hotspotctl source
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
 ```
 
 Application provenance and MMDVM runtime provenance are deliberately separate, so an application update cannot disguise a radio-runtime change.

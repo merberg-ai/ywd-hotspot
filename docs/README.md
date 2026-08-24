@@ -22,6 +22,7 @@
 | 📦 Build/sign/update `.ywdplugin` packages | **[Plugin Packages](PLUGIN-PACKAGES.md)** |
 | 🖥️ Understand isolated browser plugins | **[Plugin UI](PLUGIN-UI.md)** |
 | 🎧 Understand YWD Extended/passive DMR voice | **[Passive DMR Voice](DMR-VOICE.md)** |
+| 🎙️ Install/verify the external RX vocoder backend | **[External Vocoder](VOCODER.md)** |
 | 📡 Understand trusted MMDVM telemetry | **[Telemetry](TELEMETRY.md)** |
 | 📞 Understand normalized sessions | **[MMDVM Sessions](MMDVM-SESSIONS.md)** |
 | 🧱 Understand RF/runtime boundaries | **[Architecture](ARCHITECTURE.md)** |
@@ -65,6 +66,8 @@ The published image is the exact tested compressed artifact; its GitHub-facing f
 - Runtime choice/provenance persists across ordinary application updates.
 - Stock and Extended binaries use separate compile-cache identities.
 - Plugins may declare trusted MMDVM runtime/API/capability requirements but cannot switch the runtime themselves.
+- RX Monitor Phase 3J uses trusted core DMR recovery/batching plus a separately installed YWD Vocoder Protocol v1 backend; the sandbox receives PCM only.
+- The external vocoder is not bundled into core or the `.ywdplugin`; current `dev-plugins` enforces the selected `Nice=0` / `CPUWeight=200` policy for the known external service.
 - `/opt/ywd-hotspot/repo` is managed source; `/opt/ywd-hotspot/app` is deployed runtime.
 - Credentials stay out of browser-readable state and public diagnostics.
 - Executable service/UI plugins require trusted Ed25519 signatures.
@@ -85,7 +88,7 @@ Public images contain **no operator preconfiguration**: no Wi-Fi, callsign/DMR I
 |---|---|
 | `main` | frozen public/update line at accepted RC2 while releases are frozen |
 | `dev` | active integrated development and repository housekeeping |
-| `dev-plugins` | specialized plugin development; intentionally independent from this cleanup |
+| `dev-plugins` | active plugin/RX Monitor development and Phase 3J integration |
 | `v0.2.0-rc2` | immutable updater-proven RC2 tag |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
 | `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for accepted RC2 image/updater test |
@@ -93,6 +96,7 @@ Public images contain **no operator preconfiguration**: no Wi-Fi, callsign/DMR I
 | `release/0.2.0-rc1` | frozen RC1 source branch |
 | `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for accepted RC1 image |
 | `checkpoint-builder-0.1.0-image-boot-proven` | earlier immutable builder/appliance baseline |
+| `checkpoint-dev-plugins-phase3j-stream-core-proven` | cleaned physically proven Phase 3J core baseline |
 
 See [Repository Policy](REPOSITORY.md) for the branch/ref rules.
 
@@ -103,6 +107,13 @@ ywd-hotspotctl status
 ywd-hotspotctl source
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
 systemctl --failed --no-pager
+```
+
+Vocoder status when the external backend is installed:
+
+```bash
+sudo -u ywd-hotspot python3 /opt/ywd-hotspot/app/lib/vocoder_client.py status
+systemctl show ywd-vocoder-mbelib.service -p Nice -p CPUWeight
 ```
 
 Sanitized support bundle:

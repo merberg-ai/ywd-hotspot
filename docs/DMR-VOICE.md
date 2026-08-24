@@ -23,6 +23,8 @@ Plugins never:
 
 Exact pinned upstream source plus the verified YWD extension patch.
 
+Current `dev` identity:
+
 ```text
 MMDVM-Host upstream
   dea6e9b2c35857fe6f904c5092bebadb86cbf079
@@ -34,19 +36,28 @@ Extension API
   2
 
 Patch SHA256
-  f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
+  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
 ```
 
-Advertised runtime capabilities include:
+Advertised current capabilities include:
 
 ```text
 passive-dmr-voice
 plugin-rx-monitor
+demand-gated-dmr-voice
 ```
+
+The accepted RC1/RC2 Extended patch used the same upstream MMDVM-Host commit and API 2 with patch SHA256:
+
+```text
+f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
+```
+
+That historical patch is explicitly recognized as a **legacy-compatible YWD Extended** generation. It retains `passive-dmr-voice` and `plugin-rx-monitor`, but it does not receive the newer `demand-gated-dmr-voice` capability because it predates the `YWD_DMR_VOICE_TAP=1` gate. See **[UPGRADING.md](UPGRADING.md)** for the explicit refresh path.
 
 ### Stock Upstream
 
-Exact same pinned upstream source, no YWD extension patch. Normal hotspot RF/DMR operation remains available, but passive-voice/extension-dependent plugins do not satisfy their runtime requirements.
+Exact same pinned upstream source, no YWD extensions. Normal hotspot RF/DMR operation remains available, but passive-voice/extension-dependent plugins do not satisfy their runtime requirements.
 
 ## Runtime state
 
@@ -62,13 +73,14 @@ Build provenance is recorded in:
 /etc/ywd-hotspot/mmdvm-build.json
 ```
 
-Check it with:
+Check exact installed identity with:
 
 ```bash
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
 ```
 
-Normal application updates preserve the selected runtime and do not rebuild MMDVM-Host or DMRGateway.
+Normal application updates preserve the selected runtime and do not rebuild MMDVM-Host or DMRGateway. A known RC1/RC2 Extended binary remains positively identified after an application update and reports that an explicit runtime refresh is required before a plugin may claim the newer demand-gated capability.
 
 ## Phase 3J observation and live-audio paths
 
@@ -147,7 +159,7 @@ No negative nice value or realtime scheduler is used; MMDVM/RF remains the prior
 
 ## Compile/cache behavior
 
-YWD Extended and Stock Upstream use different cache signatures/namespaces. The Extended signature includes the extension API/hash plus upstream commit, target architecture, compiler and build flags. A stock cached binary therefore cannot satisfy an Extended lookup.
+YWD Extended and Stock Upstream use different cache signatures/namespaces. The Extended signature includes the extension API/hash plus upstream commit, target architecture, compiler and build flags. A stock cached binary therefore cannot satisfy an Extended lookup, and an RC1/RC2 Extended cache entry cannot satisfy the current demand-gated Extended identity.
 
 Extended build helper:
 
@@ -172,15 +184,16 @@ sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py install --mmdvm-variant u
 
 Plugins may declare trusted requirement tokens in their normal `dependencies` list. Current RX Monitor development uses demand-gated passive DMR voice capability so the optional high-rate bridge exists only while a valid enabled plugin requires it.
 
-Legacy/low-level tokens include:
+Tokens include:
 
 ```text
 mmdvm-ywd-extended
 mmdvm-extension-api-2
 mmdvm-cap-passive-dmr-voice
+mmdvm-cap-demand-gated-dmr-voice
 ```
 
-Requirement checks resolve against the exact installed runtime metadata. A plugin cannot switch the MMDVM runtime by itself.
+Requirement checks resolve against the exact installed runtime metadata. Control-plane install/enable/start checks verify the live binary/patch identity; a plugin cannot switch the MMDVM runtime by itself.
 
 ## Voice-frame envelope
 
@@ -221,14 +234,14 @@ See **[TELEMETRY.md](TELEMETRY.md)** and **[DISPLAY.md](DISPLAY.md)**.
 
 `ywd-mmdvm-voice.service` subscribes only to the local voice topic. It validates/normalizes frame fields and publishes the bounded diagnostics ring while offering the nonblocking live datagram copy when an audio consumer exists.
 
-The optional feature runtime is demand-gated:
+With the current demand-gated Extended runtime:
 
-- RX Monitor absent/disabled: no plugin-driven voice runtime requirement;
+- RX Monitor absent/disabled: no plugin-driven voice runtime requirement and the MMDVM voice tap remains dormant;
 - RX Monitor enabled, audio stopped: passive bridge may remain available for diagnostics while the external vocoder is dormant;
 - audio running: the dashboard binds the live datagram receiver and the external vocoder activates on demand;
 - audio stopped/disconnected: the live socket is removed and the vocoder may idle-exit.
 
-The updater preserves/restarts the voice bridge when it was active so new bridge code is not left behind an old long-running Python process.
+The updater preserves/restarts the voice bridge when it was active so new bridge code is not left behind an old long-running Python process. It does not silently rebuild MMDVM-Host.
 
 ## Distribution boundary
 

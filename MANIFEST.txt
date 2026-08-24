@@ -45,8 +45,11 @@ docs/SSH.md
 docs/TALKGROUPS.md
 docs/TELEMETRY.md
 docs/UPGRADING.md
+docs/VOCODER.md
 docs/history/README.md
 docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
+docs/history/PHASE3H-NEXT-STREAMING-PLAN.md
+docs/history/PHASE3H-PRECOMPUTED-TONE-OBSERVATION.md
 docs/history/RELEASE-PLAN-0.2.0-rc1.md
 lab/mmdvm-diag.sh
 lib/activity.py
@@ -68,11 +71,13 @@ lib/console/ywd-system-info.py
 lib/dashboard.py
 lib/dashboard_backup.py
 lib/dashboard_core.py
+lib/dashboard_plugin_audio_stream.py
 lib/dashboard_plugin_upload.py
 lib/dashboard_plugin_vocoder.py
 lib/dashboard_plugin_wasm.py
 lib/dashboard_plugins.py
 lib/dashboard_update.py
+lib/dmr_ambe49.py
 lib/generate-config.py
 lib/health.py
 lib/id-update.py
@@ -120,6 +125,7 @@ lib/update_runner.py
 lib/vocoder_client.py
 lib/vocoder_fake_backend.py
 lib/vocoder_protocol.py
+lib/vocoder_runtime_policy.sh
 lib/web_auth.py
 lib/ywd-mosquitto.conf
 os/pi-gen/stage2/25-ywd-firstboot/01-run.sh
@@ -141,6 +147,8 @@ systemd/ywd-setup.service
 systemd/ywd-update.service
 systemd/ywd-vocoder-fake.service
 systemd/ywd-vocoder-fake.socket
+systemd/ywd-vocoder-mbelib.service.d/20-ywd-hotspot-normal-priority.conf
+tools/phase3j-stream-smoke.py
 tools/ywdplugin-build.py
 web/app-core.js
 web/app.js

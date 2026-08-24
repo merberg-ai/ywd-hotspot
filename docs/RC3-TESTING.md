@@ -112,16 +112,43 @@ Physical retest on core `cf2b3d7e66246c8e78165a5d652b17e564cc8573`:
 - `ywd-mqtt.service`, `ywd-mmdvmhost.service`, and `ywd-dmrgateway.service` are active;
 - zero failed systemd units.
 
-## Next — Test 4
+## Test 4A — reboot and runtime persistence
 
-Verify reboot/persistence and backup/restore regression:
+Status: **PASS**
 
-1. begin with RX Monitor enabled and browser audio stopped;
-2. reboot the appliance normally;
-3. verify RF autostart, BrandMeister login, MQTT publishers, plugin demand gate, and zero failed units;
-4. verify external vocoder remains dormant until Start Audio;
-5. perform one short Start Audio / Stop Audio check after reboot;
-6. create a settings backup through the supported backup path;
-7. make one reversible non-RF setting change;
-8. restore the backup;
-9. verify configuration, plugin state, RF policy, and service health return correctly.
+Tested with DMR RX Monitor enabled and browser audio stopped on the physically proven `cf2b3d7e...` runtime.
+
+Pre-reboot state:
+
+- RX Monitor demand active;
+- voice bridge enabled/active;
+- `YWD_DMR_VOICE_TAP=1` active;
+- MMDVMHost and DMRGateway active;
+- external mbelib vocoder inactive;
+- zero failed units.
+
+Post-reboot validation:
+
+- managed source remained clean on `dev @ cf2b3d7e...`;
+- RX Monitor persisted enabled with `desired=true`;
+- voice bridge returned enabled/active;
+- live MMDVM process inherited `YWD_DMR_VOICE_TAP=1`;
+- `ywd-mqtt`, MMDVMHost, DMRGateway, Dashboard and voice bridge all active;
+- external mbelib vocoder remained inactive while browser audio was stopped;
+- MMDVM-Host and DMRGateway each established a TCP connection to private MQTT `127.0.0.1:18883`;
+- DMRGateway MQTT connection was accepted;
+- DMRGateway logged into BrandMeister successfully;
+- zero failed units.
+
+A short post-boot Start Audio / Stop Audio check also passed: the vocoder returned inactive, the live audio socket disappeared, MMDVMHost and DMRGateway remained active, and zero units failed.
+
+## Next — Test 4B
+
+Verify encrypted portable settings backup/restore:
+
+1. export an authenticated encrypted `.ywdsettings` backup without Wi-Fi;
+2. verify the backup previews correctly with the test passphrase;
+3. make reversible non-destructive state/config changes;
+4. restore through the supported settings restore path with RF requested active;
+5. verify core config, plugin enabled state, demand-gated voice runtime, RF autostart, MQTT publishers, BrandMeister and zero failed units return correctly;
+6. verify a failed/wrong-passphrase preview does not change live state.

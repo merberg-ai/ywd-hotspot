@@ -20,6 +20,7 @@ import config_model
 import plugin_admin_common
 import plugin_admin_state
 import plugin_catalog_overlay
+import plugin_feature_runtime
 import plugin_manager
 import plugin_service_manager
 import settings_backup
@@ -140,6 +141,7 @@ def _reconcile_restored_plugin_runtime():
     }
     if not state.get("enabled"):
         plugin_admin_state.set_system({"enabled": False})
+        plugin_feature_runtime.reconcile()
         return
     # Services were already forced off before rollback. Keep the restored
     # activation flags in memory, then re-enable only the exact saved set.
@@ -150,6 +152,7 @@ def _reconcile_restored_plugin_runtime():
         except Exception:
             # Failure remains fail-closed for that plugin; never block core rollback.
             pass
+    plugin_feature_runtime.reconcile()
 
 
 def _restore_wifi(wifi):
@@ -243,6 +246,7 @@ def restore_settings(data):
     warnings = []
     missing_plugins = []
     restored_plugins = []
+    feature_runtime = None
     wifi_result = None
     deferred_dashboard_restart = False
     original_schedule_dashboard_restart = core_admin.schedule_dashboard_restart
@@ -371,6 +375,15 @@ def restore_settings(data):
         else:
             core_admin.run(["systemctl", "disable", "ywd-dmrgateway.service", "ywd-mmdvmhost.service"], 15)
 
+        # Low-level state setters intentionally do not own aggregate trusted
+        # feature runtimes. Normal WebUI plugin mutations reconcile them in the
+        # plugin dispatcher; settings restore must do the same explicitly after
+        # package/state and final RF policy are in place.
+        try:
+            feature_runtime = plugin_feature_runtime.reconcile()
+        except Exception as exc:
+            warnings.append(f"plugin feature runtime did not reconcile: {exc}")
+
         # Wi-Fi is optional convenience state. Create it only after all core,
         # plugin, setup and RF-policy operations have succeeded, and never
         # activate it under the live HTTP/HTTPS request.
@@ -399,10 +412,11 @@ def restore_settings(data):
             "rf_active": core_admin.active("ywd-mmdvmhost.service"),
             "missing_plugins": sorted(set(missing_plugins)),
             "restored_plugins": sorted(set(restored_plugins)),
+            "feature_runtime": feature_runtime,
             "warnings": warnings,
             "wifi": wifi_result,
             "dashboard": _dashboard_url(candidate["web"]["port"]),
-            "mdns_dashboard": f"http://ywd-hotspot.local:{candidate['web']['port']}/",
+            "mdns_dashboard": f"http://ywd-hotspot.local:{candidate['web']["port"]}/",
             "dashboard_restart_deferred": deferred_dashboard_restart,
         }
     except Exception:

@@ -142,13 +142,70 @@ Post-reboot validation:
 
 A short post-boot Start Audio / Stop Audio check also passed: the vocoder returned inactive, the live audio socket disappeared, MMDVMHost and DMRGateway remained active, and zero units failed.
 
-## Next — Test 4B
+## Test 4B — encrypted settings backup/restore
 
-Verify encrypted portable settings backup/restore:
+Status: **PLUGIN/PACKAGE/RUNTIME RESTORE PASS after blocker fixes; ordinary config-delta check still pending**
 
-1. export an authenticated encrypted `.ywdsettings` backup without Wi-Fi;
-2. verify the backup previews correctly with the test passphrase;
-3. make reversible non-destructive state/config changes;
-4. restore through the supported settings restore path with RF requested active;
-5. verify core config, plugin enabled state, demand-gated voice runtime, RF autostart, MQTT publishers, BrandMeister and zero failed units return correctly;
-6. verify a failed/wrong-passphrase preview does not change live state.
+An encrypted `.ywdsettings` restore exposed two restore-specific plugin bugs.
+
+### Blocker 1 — uploaded UI package omitted from restore inventory
+
+The backup correctly recorded `dmr-rx-monitor` as installed, but settings restore's `_available_map()` enumerated only declarative and service plugins. RX Monitor is an uploaded UI plugin, so restore falsely reported it in `missing_plugins`, rebuilt its package registration as uninstalled, and could leave `plugin-state.json` saying enabled while the plugin was unavailable to the effective runtime.
+
+Fix:
+
+- settings restore now uses the canonical complete plugin inventory from `plugin_admin_common.all_entries()`;
+- that inventory includes declarative, service, and UI plugins, including uploaded UI packages;
+- `tools/settings-restore-plugin-smoke.py` guards the inventory contract.
+
+### Blocker 2 — restored plugin state did not reconcile trusted feature runtime
+
+Settings restore called low-level plugin state setters directly. Normal WebUI plugin mutations perform aggregate `plugin_feature_runtime.reconcile()` in the trusted dispatcher, but restore did not. Restoring an enabled RX Monitor could therefore restore the saved checkbox/package state without restoring the trusted DMR voice bridge or live MMDVM voice gate.
+
+Fix:
+
+- successful settings restore now reconciles the trusted aggregate plugin feature runtime;
+- rollback reconstruction also reconciles trusted feature runtime so restored state and live runtime cannot silently diverge;
+- source smoke covers both successful-restore and rollback reconciliation markers.
+
+### Physical retest on `dev @ 3e33bb82e0...`
+
+Source regression smoke passed all five checks:
+
+- restore uses the canonical complete plugin inventory;
+- canonical inventory includes declarative, service and UI plugins;
+- uploaded UI packages cannot be omitted by restore inventory;
+- successful restore reconciles trusted plugin feature runtime;
+- restore rollback reconciles trusted plugin feature runtime.
+
+Pre-restore state had RX Monitor installed but disabled. The same encrypted backup was then restored with RF requested active.
+
+Restore result:
+
+- `ok=true` and `restored=true`;
+- `missing_plugins=[]`;
+- `restored_plugins=["dmr-rx-monitor"]`;
+- no warnings;
+- feature runtime reported `demanded_by=["dmr-rx-monitor"]` and `desired=true`;
+- voice env enabled and live MMDVM gate true;
+- voice bridge enabled/active;
+- MMDVMHost and DMRGateway active;
+- guarded feature reconciliation completed successfully.
+
+Final physical state:
+
+- `plugin-packages.json` retains `dmr-rx-monitor: true`;
+- `plugin-state.json` restores RX Monitor enabled;
+- trusted feature runtime remains `desired=true` with RX Monitor as the demander;
+- live MMDVM process contains `YWD_DMR_VOICE_TAP=1`;
+- MMDVMHost and DMRGateway are enabled and active;
+- private MQTT is active and both MMDVM-Host and DMRGateway have established connections to `127.0.0.1:18883`;
+- DMRGateway MQTT connection accepted and BrandMeister login successful;
+- external mbelib vocoder remains inactive while browser audio is stopped;
+- zero failed systemd units.
+
+The reported restore `changed` list was empty in this physical retest, so restoration of a deliberately changed ordinary non-RF config field remains to be demonstrated separately before the entire backup/restore acceptance item is closed.
+
+## Next
+
+Complete the small remaining Test 4B config-delta proof, then proceed to the remaining pre-freeze regression/candidate checks before cutting `release/0.2.0-rc3`.

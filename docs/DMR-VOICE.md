@@ -121,7 +121,7 @@ The live sender is nonblocking. If the consumer cannot keep up, audio may be dro
 
 ## Selected Phase 3J tuning baseline
 
-The physically selected development baseline on `dev-plugins` is intentionally conservative:
+The physically selected development baseline, now integrated into `dev`, is intentionally conservative:
 
 ```text
 trusted core chunk       10 AMBE frames / 200 ms

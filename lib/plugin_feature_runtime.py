@@ -142,32 +142,56 @@ def running_voice_gate() -> bool:
 
 
 def _guarded_mmdvm_restart(expected_gate: bool) -> bool:
-    """Restart MMDVM while preserving the pre-existing Gateway runtime policy."""
+    """Restart MMDVM while preserving the pre-existing Gateway runtime policy.
+
+    DMRGateway is restored in a ``finally`` path whenever it was active before
+    the guarded restart and MMDVM-Host is usable afterward.  A failed gate
+    verification must never strand an otherwise healthy Gateway offline.
+    """
     if not _active(MMDVM_SERVICE):
         return False
 
     gateway_was_active = _active(GATEWAY_SERVICE)
-    if gateway_was_active:
-        _systemctl("stop", GATEWAY_SERVICE, check=False)
+    primary_error: Exception | None = None
+    mmdvm_ok = False
 
-    _systemctl("restart", MMDVM_SERVICE, check=False)
-    time.sleep(3)
-    if not _active(MMDVM_SERVICE):
-        # One explicit recovery attempt.  It reads the now-canonical gate file.
-        _systemctl("start", MMDVM_SERVICE, check=False)
+    try:
+        if gateway_was_active:
+            _systemctl("stop", GATEWAY_SERVICE, check=False)
+
+        _systemctl("restart", MMDVM_SERVICE, check=False)
         time.sleep(3)
+        if not _active(MMDVM_SERVICE):
+            # One explicit recovery attempt.  It reads the now-canonical gate file.
+            _systemctl("start", MMDVM_SERVICE, check=False)
+            time.sleep(3)
 
-    mmdvm_ok = _active(MMDVM_SERVICE)
-    if gateway_was_active and mmdvm_ok:
-        _systemctl("start", GATEWAY_SERVICE, check=False)
-        time.sleep(2)
+        mmdvm_ok = _active(MMDVM_SERVICE)
+        if not mmdvm_ok:
+            raise RuntimeError("MMDVM-Host did not recover during plugin feature reconciliation")
+        if running_voice_gate() != expected_gate:
+            raise RuntimeError("MMDVM-Host restarted but inherited the wrong DMR voice gate state")
+    except Exception as exc:
+        primary_error = exc
+    finally:
+        # Preserve the Gateway policy even when MMDVM gate verification fails.
+        # This does not mask the original error; it only prevents the auxiliary
+        # plugin transition from leaving normal DMR networking offline.
+        if gateway_was_active and (mmdvm_ok or _active(MMDVM_SERVICE)):
+            if not _active(GATEWAY_SERVICE):
+                _systemctl("start", GATEWAY_SERVICE, check=False)
+                time.sleep(2)
+            if not _active(GATEWAY_SERVICE):
+                gateway_error = RuntimeError(
+                    "DMRGateway did not return active after plugin feature reconciliation"
+                )
+                if primary_error is None:
+                    primary_error = gateway_error
+                else:
+                    primary_error = RuntimeError(f"{primary_error}; additionally {gateway_error}")
 
-    if not mmdvm_ok:
-        raise RuntimeError("MMDVM-Host did not recover during plugin feature reconciliation")
-    if running_voice_gate() != expected_gate:
-        raise RuntimeError("MMDVM-Host restarted but inherited the wrong DMR voice gate state")
-    if gateway_was_active and not _active(GATEWAY_SERVICE):
-        raise RuntimeError("DMRGateway did not return active after plugin feature reconciliation")
+    if primary_error is not None:
+        raise primary_error
     return True
 
 

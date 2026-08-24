@@ -177,7 +177,7 @@ The installer validates hardware/source, asks which MMDVM runtime variant to bui
 Full walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 > [!NOTE]
-> RX Monitor live speech on the active `dev-plugins` line additionally requires a separately installed YWD Vocoder Protocol v1 backend. Core/plugin packages do not bundle mbelib. See **[docs/VOCODER.md](docs/VOCODER.md)** for the quick setup and verification flow.
+> RX Monitor live speech on the active `dev` line additionally requires a separately installed YWD Vocoder Protocol v1 backend. Core/plugin packages do not bundle mbelib. See **[docs/VOCODER.md](docs/VOCODER.md)** for the quick setup and verification flow.
 
 ## Building images
 
@@ -224,8 +224,8 @@ See **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 | Ref | Purpose |
 |---|---|
 | `main` | frozen public/update line at accepted RC2 while releases are frozen |
-| `dev` | active integrated development and repository housekeeping |
-| `dev-plugins` | specialized plugin/framework development and current Phase 3J RX Monitor integration |
+| `dev` | active integrated development and RC3 preparation; includes the proven Phase 3J plugin/RX/vocoder work |
+| `dev-plugins` | isolated plugin/framework experiment line; currently aligned with `dev` |
 | `v0.2.0-rc2` | immutable updater-proven RC2 tag |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
 | `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for RC2 image/update acceptance |

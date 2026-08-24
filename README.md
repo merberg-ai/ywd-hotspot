@@ -12,6 +12,7 @@
   <a href="docs/SSH.md">SSH</a> ·
   <a href="docs/BUILDING.md">Build</a> ·
   <a href="docs/README.md">Docs</a> ·
+  <a href="docs/VOCODER.md">RX Vocoder</a> ·
   <a href="docs/UPGRADING.md">Updates</a>
 </p>
 
@@ -70,7 +71,7 @@ Release assets include SHA-256 checksums, `BUILD-METADATA.json`, and `README-FIR
 
 YWD-Hotspot is a purpose-built DMR hotspot stack for small Raspberry Pi systems—especially the original **Raspberry Pi Zero W**. MMDVM-Host remains the sole modem/RF owner while YWD-Hotspot adds a lightweight WebUI, CLI, BrandMeister controls, diagnostics, calibration, OLED presentation, passive telemetry/voice observation, safe GitHub-managed updates, RadioID maintenance, appliance-image tooling, and a sandboxed plugin framework.
 
-The design rule is simple: **the Pi does radio and small trusted state collection; the browser does the expensive presentation work.** Dashboard, OLED, telemetry, or plugin failures must not take down normal DMR operation.
+The design rule is simple: **the Pi owns radio plus bounded trusted processing; optional expensive work must be isolated, demand-driven, and unable to take down RF.** Browser presentation stays client-side, while Phase 3J RX speech synthesis is delegated through a narrow local protocol to a separately installed external vocoder backend. Dashboard, OLED, telemetry, plugin, or decoder failures must not take down normal DMR operation.
 
 | Area | YWD-Hotspot adds |
 |---|---|
@@ -79,7 +80,7 @@ The design rule is simple: **the Pi does radio and small trusted state collectio
 | WebUI | responsive dark UI, authenticated write controls, live DMR instrumentation, themed confirmation/progress dialogs |
 | OLED | one authoritative renderer with boot/network/setup/runtime presentation |
 | Plugins | signed sandboxed UI/service packages with explicit capabilities and transactional updates |
-| RX Monitor | passive browser-side DMR receive decoding through a narrow core capability |
+| RX Monitor | passive DMR diagnostics plus trusted streamed PCM audio through a separately installed local vocoder backend; the sandbox receives PCM only |
 | Calibration | baseline save/restore and BER-driven RXOffset workflow |
 | Health | service, Wi-Fi, temperature, journal, diagnostics and support tools |
 | Updates | staged validation, protected backup, plugin-state preservation and rollback attempt |
@@ -135,7 +136,7 @@ DMRGateway
 
 MMDVM-Host remains the sole modem serial/RF owner in both variants. Plugins never receive RF TX authority.
 
-Details: **[Passive DMR Voice](docs/DMR-VOICE.md)** · **[Plugins](docs/PLUGINS.md)**
+Details: **[Passive DMR Voice](docs/DMR-VOICE.md)** · **[External Vocoder](docs/VOCODER.md)** · **[Plugins](docs/PLUGINS.md)**
 
 ## Optional SSH / SFTP access
 
@@ -174,6 +175,9 @@ sudo ./INSTALL.sh
 The installer validates hardware/source, asks which MMDVM runtime variant to build, installs the exact pinned radio components, deploys YWD-Hotspot, and leaves RF startup behind an explicit confirmation.
 
 Full walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)**.
+
+> [!NOTE]
+> RX Monitor live speech on the active `dev-plugins` line additionally requires a separately installed YWD Vocoder Protocol v1 backend. Core/plugin packages do not bundle mbelib. See **[docs/VOCODER.md](docs/VOCODER.md)** for the quick setup and verification flow.
 
 ## Building images
 
@@ -221,7 +225,7 @@ See **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 |---|---|
 | `main` | frozen public/update line at accepted RC2 while releases are frozen |
 | `dev` | active integrated development and repository housekeeping |
-| `dev-plugins` | specialized plugin/framework development, intentionally separate |
+| `dev-plugins` | specialized plugin/framework development and current Phase 3J RX Monitor integration |
 | `v0.2.0-rc2` | immutable updater-proven RC2 tag |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
 | `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for RC2 image/update acceptance |
@@ -229,6 +233,7 @@ See **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 | `release/0.2.0-rc1` | frozen RC1 source branch |
 | `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for RC1 image acceptance |
 | `checkpoint-builder-0.1.0-image-boot-proven` | earlier immutable builder/appliance baseline |
+| `checkpoint-dev-plugins-phase3j-stream-core-proven` | cleaned physically proven Phase 3J core baseline |
 
 Historical release evidence is not rewritten. While releases are frozen, ordinary cleanup/development stays on `dev` so `main`-channel appliances do not see unpublished work as an available update.
 
@@ -248,27 +253,13 @@ Rules include:
 - plugins get no arbitrary sudo, RF serial ownership, broad device access, RF TX authority, or independent MMDVM instance;
 - plugin state/config/data remains separate from canonical hotspot configuration;
 - plugins may declare required MMDVM extension API/capabilities;
-- a plugin requiring YWD Extended capabilities is blocked cleanly on Stock Upstream rather than failing mysteriously.
+- a plugin requiring YWD Extended capabilities is blocked cleanly on Stock Upstream rather than failing mysteriously;
+- RX Monitor live audio uses trusted core recovery/batching and a separately installed local vocoder; the sandbox never receives decoder ownership.
 
-Guides: **[Plugins](docs/PLUGINS.md)** · **[Plugin Packages](docs/PLUGIN-PACKAGES.md)** · **[Plugin UI](docs/PLUGIN-UI.md)**
+Guides: **[Plugins](docs/PLUGINS.md)** · **[Plugin Packages](docs/PLUGIN-PACKAGES.md)** · **[Plugin UI](docs/PLUGIN-UI.md)** · **[External Vocoder](docs/VOCODER.md)**
 
 ## Documentation
 
 Start with **[docs/README.md](docs/README.md)**.
 
 Current operating/development guides stay directly under `docs/`. Completed release plans and Alpha implementation archaeology are kept under **[docs/history/](docs/history/README.md)** so historical state is preserved without being mistaken for current instructions.
-
-## Security
-
-YWD-Hotspot deliberately separates BrandMeister credentials, the local WebUI control password, plugin publisher trust, and system access. Secrets stay server-side and out of browser-readable state and sanitized diagnostics.
-
-Read **[SECURITY.md](SECURITY.md)** and **[docs/SSH.md](docs/SSH.md)** before exposing or sharing anything from a real appliance.
-
-## Project
-
-Written by **KJ6YWD**. Project home: **https://kj6ywd.net**  
-Canonical repository: **https://github.com/merberg-ai/ywd-hotspot**
-
-## License
-
-YWD-Hotspot is released under the **[Unlicense](LICENSE)** / public-domain dedication included in this repository.

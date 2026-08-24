@@ -9,8 +9,8 @@ YWD-Hotspot keeps public release history trustworthy by separating immutable rel
 | Ref | Role |
 |---|---|
 | `main` | public/update line, intentionally frozen at the accepted RC2 commit while releases are frozen |
-| `dev` | active integrated development and repository housekeeping |
-| `dev-plugins` | specialized plugin/framework development; kept independent unless an intentional integration is performed |
+| `dev` | active integrated development and RC3 preparation line; includes the physically proven Phase 3J plugin/RX/vocoder integration |
+| `dev-plugins` | specialized plugin/framework experiment line; currently aligned with `dev` and allowed to diverge only for intentional isolated plugin work |
 | `v0.2.0-rc2` | immutable tag for the physically tested and updater-proven RC2 source |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
 | `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for the accepted RC2 image and RC1 -> RC2 updater transition |
@@ -19,7 +19,7 @@ YWD-Hotspot keeps public release history trustworthy by separating immutable rel
 | `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for the accepted RC1 factory image |
 | `checkpoint-builder-0.1.0-image-boot-proven` | earlier physically proven builder/appliance baseline |
 
-Plugin-development checkpoints associated with `dev-plugins` are intentionally retained and are not part of ordinary repository cleanup.
+Only plugin/RX/vocoder checkpoints with durable rollback or architectural audit value are retained. Intermediate `needs-testing`, failed, superseded and one-off observation branch labels are pruned once later evidence supersedes them; their commits remain in normal Git history.
 
 ## Accepted RC2 identity
 
@@ -44,8 +44,9 @@ RC2 passed both a fresh-image physical test and an in-place `0.2.0-rc1 -> 0.2.0-
 When releases are frozen:
 
 - keep `main` at the exact accepted public release commit so normal `main`-channel appliances do not see unpublished housekeeping as an available update;
-- perform ordinary development/documentation/repository cleanup on `dev`;
-- keep release tags, release branches and proven checkpoints unchanged;
+- perform ordinary development, integration, documentation and repository cleanup on `dev`;
+- use `dev-plugins` only when intentionally isolating plugin/framework experiments;
+- keep release tags, release branches and retained proven checkpoints unchanged;
 - do not rebuild or republish a different artifact under an existing version/tag;
 - move `main` only as part of an intentional future release/update event.
 
@@ -85,7 +86,7 @@ The exact artifact tested is the artifact published. Renaming a tested compresse
 
 Create a checkpoint only when it carries real rollback or audit value. Checkpoints are evidence, not update channels.
 
-Current non-plugin anchors intentionally retained:
+Release/builder anchors intentionally retained:
 
 ```text
 checkpoint-builder-0.1.0-image-boot-proven
@@ -93,13 +94,25 @@ checkpoint-release-0.2.0-rc1-image-proven
 checkpoint-release-0.2.0-rc2-image-updater-proven
 ```
 
+Plugin/RX/vocoder anchors intentionally retained:
+
+```text
+checkpoint-dev-plugins-demand-gated-voice-proven
+checkpoint-dev-plugins-vocoder-protocol-v1-proven
+checkpoint-dev-plugins-phase3h-pre-real-vocoder
+checkpoint-dev-plugins-phase3i-mbelib-protocol-sanity-proven
+checkpoint-dev-plugins-phase3i-real-speech-partial-proven
+checkpoint-dev-plugins-phase3j-pre-stream-core
+checkpoint-dev-plugins-phase3j-stream-core-proven
+```
+
 Do not accumulate per-step checkpoint branches once the same history is fully contained by a later accepted release/checkpoint. Intermediate cleanup should preserve commits through normal Git history while removing redundant branch labels.
 
 ## Plugin branch separation
 
-`dev-plugins` and its related plugin/RX/voice/vocoder checkpoints are a specialized development line. Ordinary core/docs/repository cleanup must not rewrite, delete or silently merge those refs.
+The proven Phase 3J plugin/RX/vocoder work is integrated into `dev`. `dev-plugins` starts from the same clean baseline and exists for future isolated plugin/framework experiments, not as a second long-lived copy of ordinary development.
 
-Integration from plugin work into core branches should be explicit, scoped, reviewed against runtime capability boundaries, and hardware-tested where RF/passive-voice behavior is involved.
+Integration from future `dev-plugins` work into `dev` should be explicit, scoped, reviewed against runtime capability boundaries, and hardware-tested where RF/passive-voice behavior is involved.
 
 ## Temporary branches
 
@@ -131,7 +144,9 @@ Runtime-variant support requires coherent canonical builders/dispatcher/capabili
 
 ## Manifest / candidate validation
 
-`MANIFEST.txt` inventories trusted runtime/release/documentation files. Capability-based candidate validation requires coherent core/plugin/voice/telemetry/runtime-variant/UI payloads regardless of branch name.
+`MANIFEST.txt` inventories trusted runtime/release/documentation files. Capability-based candidate validation requires coherent core/plugin/voice/streamed-audio/vocoder/telemetry/runtime-variant/UI payloads regardless of branch name.
+
+The streamed RX path is part of the trusted dashboard generation, so candidate validation explicitly requires its audio-stream bridge, AMBE recovery helper, vocoder protocol/runtime policy and dashboard wrapper integration. A candidate missing one of those pieces must fail before live services are touched.
 
 Do not weaken validation to make an incomplete candidate easier to deploy.
 

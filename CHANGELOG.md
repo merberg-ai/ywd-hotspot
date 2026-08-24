@@ -4,20 +4,24 @@
 
 ---
 
-## Unreleased — Repository Housekeeping
+## Unreleased — RC3 Development
 
-Development after `0.2.0-rc2` is currently kept on `dev` while `main` remains frozen at the accepted RC2 public/update commit.
+Development after `0.2.0-rc2` is integrated on `dev` while `main` remains frozen at the accepted RC2 public/update commit. `dev-plugins` starts from the same baseline and is reserved for intentionally isolated plugin/framework experiments.
 
-Repository housekeeping includes:
+Current post-RC2 work includes:
 
-- pruning redundant historical working/checkpoint branch labels while retaining durable release and plugin-development anchors;
-- pruning redundant pre-plugin Alpha/OS tags while preserving the final historical OS archive and plugin/RX history;
-- moving the completed RC1 release plan into `docs/history/`;
-- adding a historical-documentation index;
-- removing the obsolete milestone-specific builder compatibility alias in favor of the unified builder entry points;
-- refreshing current README/install/build/update/development/repository documentation around the accepted RC2 state and release-freeze policy.
+- integrating the physically proven Phase 3J DMR RX Monitor core path into `dev`;
+- trusted direct AF_UNIX live-audio transport, DMR AMBE49 recovery/FEC and 10-frame/200 ms vocoder batching;
+- YWD Vocoder Protocol v1 integration with a separately installed external decoder backend; no mbelib/AMBE decoder is bundled in core or the plugin;
+- the selected Pi Zero scheduling policy for the known external backend (`Nice=0`, `CPUWeight=200`);
+- streamed PCM delivery to the sandboxed browser plugin while preserving MMDVM-Host as the sole RF/modem owner;
+- hardening candidate validation so streamed RX/audio/vocoder candidates fail closed when the audio-stream bridge, AMBE recovery helper, vocoder policy/backend scaffolding or dashboard wrapper integration is incomplete;
+- bringing `MANIFEST.txt` up to date with the trusted Phase 3J/vocoder runtime and documentation assets;
+- archiving completed Phase 3H planning/observation notes under `docs/history/`;
+- pruning redundant historical working/checkpoint branch labels while retaining durable release and plugin/RX/vocoder anchors;
+- refreshing README, plugin, vocoder, passive-voice, development and repository-policy documentation around the integrated `dev` baseline and RC3 workflow.
 
-No RF/runtime behavior change is intended by this housekeeping work.
+The Phase 3J runtime itself was physically proven before integration. The validation/manifest/documentation cleanup above is intended to strengthen candidate completeness and repository reproducibility without changing the selected RF/audio tuning baseline.
 
 ## 0.2.0-rc2 — Documentation / Updater Validation
 
@@ -99,27 +103,6 @@ Pinned RF baseline:
 ```text
 MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
 DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+YWD API     2
+YWD patch   f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
 ```
-
-## 0.1.0-rc1 — First Release Candidate
-
-**Status:** physically accepted, promoted through `dev`, and used as the runtime tree for `0.1.0` stable.
-
-This release-hardening cycle established staged candidate validation, provenance/update-channel separation, RadioID management, split privileged admin behavior, authoritative OLED ownership, duplex-aware Talkgroup Manager confirmation ownership, version/provenance consistency, and the first complete release documentation/build guide.
-
-## Alpha19–22 — Plugin / Passive RX / Duplex hardening
-
-Major physically tested work included:
-
-- transactional `.ywdplugin` updates and package/UI/signature/sandbox behavior;
-- passive MMDVM-Host voice-frame observation while preserving MMDVM-Host as sole modem owner;
-- adaptive browser RX polling/playout and browser DMR recovery work;
-- explicit duplex configuration with separate RX/TX and TS1/TS2;
-- capability-based candidate validation;
-- guarded YWD MMDVM extension build/activation/fallback work.
-
-Detailed Alpha21/22 implementation archaeology remains in [`docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md`](docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md). Plugin/RX/voice/vocoder development checkpoints/tags are intentionally retained separately from ordinary repository cleanup.
-
-## Earlier Alpha history
-
-Earlier builds established the core Raspberry Pi + MMDVM appliance, canonical configuration, pinned radio stack, BrandMeister controls, dashboard/OLED/diagnostics, calibration, GitHub update management, RadioID maintenance, and RF-state-preserving installer/updater behavior. Exact detail remains available through Git history and retained historical refs.

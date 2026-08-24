@@ -38,8 +38,10 @@ docs/OS-DEVELOPMENT.md
 docs/PLUGIN-PACKAGES.md
 docs/PLUGIN-UI.md
 docs/PLUGINS.md
+docs/RC3-TESTING.md
 docs/RELEASE-NOTES-0.2.0-rc1.md
 docs/RELEASE-NOTES-0.2.0-rc2.md
+docs/RELEASE-NOTES-0.2.0-rc3.md
 docs/REPOSITORY.md
 docs/SSH.md
 docs/TALKGROUPS.md
@@ -151,6 +153,8 @@ systemd/ywd-vocoder-mbelib.service.d/20-ywd-hotspot-normal-priority.conf
 tools/mmdvm-runtime-compat-smoke.py
 tools/phase3j-stream-smoke.py
 tools/plugin-feature-runtime-smoke.py
+tools/settings-restore-plugin-smoke.py
+tools/telemetry-config-smoke.py
 tools/ywdplugin-build.py
 web/app-core.js
 web/app.js

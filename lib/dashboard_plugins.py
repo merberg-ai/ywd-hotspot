@@ -15,6 +15,12 @@ import plugin_ui_manager
 
 _VOICE_CAPABILITY = "read:dmr-voice"
 _VOICE_PLUGIN_CACHE = {}
+# Plugin lifecycle mutations may perform a guarded MMDVM restart plus Gateway
+# preservation.  Pi Zero systemd operations can legitimately exceed the old
+# 40-second request budget; killing the privileged helper mid-reconcile can
+# leave a half-applied lifecycle transition.  Keep this bounded, but long
+# enough for the trusted transaction to complete and report its final state.
+_PLUGIN_MUTATION_TIMEOUT = 120
 
 
 def _manifest_stamp(path: Path):
@@ -278,7 +284,7 @@ def wrap_handler(base):
                 elif path == "/api/plugins/check":
                     out = check_plugin(body.get("id"), str(body.get("kind") or "all"))
                 else:
-                    out = core.admin_call(routes[path], body, 40)
+                    out = core.admin_call(routes[path], body, _PLUGIN_MUTATION_TIMEOUT)
                 self.send_json({**out, "plugins_state": current_snapshot()})
             except ValueError as exc:
                 self.send_json({"error": str(exc)[:800]}, 400)

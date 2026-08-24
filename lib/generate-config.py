@@ -254,7 +254,7 @@ Suffix=3
 
 [MQTT]
 Address=127.0.0.1
-Port=1883
+Port=18883
 Keepalive=60
 Auth=0
 Name=dmr-gateway

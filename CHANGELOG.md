@@ -6,7 +6,7 @@
 
 ## 0.2.0-rc3 — DMR RX Monitor / Runtime Hardening
 
-**Status:** release candidate reopened briefly for UI-only pre-image polish. Core/RF pre-freeze appliance regression passed; exact factory-image and published RC2 -> final RC3 updater acceptance remain pending before public promotion.
+**Status:** final release candidate after physically accepted pre-image UI polish. Exact factory-image and published RC2 -> final RC3 updater acceptance remain pending before public promotion.
 
 RC3 integrates the physically proven Phase 3J DMR RX Monitor path and the hardening found during Raspberry Pi Zero validation:
 
@@ -23,7 +23,9 @@ RC3 integrates the physically proven Phase 3J DMR RX Monitor path and the harden
 - new runtime, telemetry, streamed-audio and settings-restore regression smokes;
 - pre-image WebUI polish adds a readiness-gated branded startup overlay with RF-style animation, a blocking stage-aware Save / Save & Apply transaction modal, and responsive cyber-style toggle switches for boolean settings on mobile and desktop.
 
-Pre-freeze hardware validation covered duplex TS1/TS2 Parrot, RF/network paths, RX Monitor lifecycle/audio cleanup, reboot persistence, application-update preservation, encrypted backup/restore including a real config delta, MQTT/BrandMeister recovery, and zero failed systemd units.
+Physical development/candidate validation covered duplex TS1/TS2 Parrot, RF/network paths, RX Monitor lifecycle/audio cleanup, reboot persistence, application-update preservation, encrypted backup/restore including a real config delta, MQTT/BrandMeister recovery, zero failed systemd units, and the final UI polish batch on the running appliance.
+
+Final exact-artifact acceptance still requires the published RC2 -> final RC3 updater test and the exact RC3 factory-image fresh-flash/first-boot/RF/plugin/vocoder/reboot test before promotion.
 
 Full candidate notes: [`docs/RELEASE-NOTES-0.2.0-rc3.md`](docs/RELEASE-NOTES-0.2.0-rc3.md).
 

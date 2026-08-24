@@ -185,7 +185,11 @@ def _write_trust(keys):
 def _available_map():
     plugin_catalog_overlay.install()
     result = {}
-    for entry in list(plugin_manager.discover()) + list(plugin_service_manager.discover()):
+    # Use the same complete inventory as normal plugin administration. In
+    # particular this includes uploaded browser-UI packages such as RX Monitor;
+    # omitting UI discovery here can falsely mark a present package missing and
+    # rewrite its installed registration to false during restore.
+    for entry in plugin_admin_common.all_entries():
         if entry.get("valid"):
             manifest = entry["manifest"]
             result[manifest["id"]] = manifest

@@ -117,7 +117,7 @@ def validate_requirements(dependencies, hardware):
 def _mmdvm_runtime():
     raw = _read_json(MMDVM_RUNTIME_STATE)
     if not isinstance(raw, dict):
-        return {"variant": "unknown", "extension_api": None, "capabilities": []}
+        return {"variant": "unknown", "extension_api": None, "capabilities": [], "patch_sha256": None}
     variant = str(raw.get("variant") or "unknown").strip().lower()
     try:
         extension_api = int(raw.get("extension_api")) if raw.get("extension_api") is not None else None
@@ -126,10 +126,32 @@ def _mmdvm_runtime():
     caps = raw.get("capabilities")
     if not isinstance(caps, list):
         caps = []
+    caps = [str(x) for x in caps]
+    patch_sha = str(raw.get("patch_sha256") or "").lower() or None
+
+    # Older runtime_build.py revisions wrote the exact current patch identity
+    # before they learned to persist the new demand-gated capability token.
+    # The state file is root-owned and already trusted for the other capability
+    # checks, so normalize that one known omission cheaply for UI snapshots.
+    # Privileged install/enable/start operations still perform exact live
+    # binary/marker verification through mmdvm_runtime_state.observed_runtime().
+    try:
+        expected_patch = str(mmdvm_runtime_state._pins().get("MMDVM_YWD_PATCH_SHA256") or "").lower()
+    except Exception:
+        expected_patch = ""
+    if (
+        variant == "ywd-extended"
+        and patch_sha
+        and patch_sha == expected_patch
+        and "demand-gated-dmr-voice" not in caps
+    ):
+        caps.append("demand-gated-dmr-voice")
+
     return {
         "variant": variant,
         "extension_api": extension_api,
-        "capabilities": [str(x) for x in caps],
+        "capabilities": caps,
+        "patch_sha256": patch_sha,
     }
 
 
@@ -163,8 +185,14 @@ def _dependency_result(token, verify_runtime=False):
         # privileged lifecycle actions where compatibility is being changed.
         state = mmdvm_runtime_state.observed_runtime() if verify_runtime else _mmdvm_runtime()
         ok = "demand-gated-dmr-voice" in state.get("capabilities", [])
+        if ok:
+            return True, "available"
+        if verify_runtime and state.get("upgrade_required"):
+            release = str(state.get("legacy_release") or "legacy YWD Extended")
+            command = str(state.get("upgrade_command") or mmdvm_runtime_state.RUNTIME_REFRESH_COMMAND)
+            return False, f"{release} runtime recognized; explicit YWD Extended refresh required: {command}"
         mode = "verified" if verify_runtime else "selected"
-        return ok, "available" if ok else f"capability unavailable on {mode} MMDVM runtime {state.get('variant', 'unknown')}"
+        return False, f"capability unavailable on {mode} MMDVM runtime {state.get('variant', 'unknown')}"
     return False, "unsupported dependency"
 
 

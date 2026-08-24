@@ -68,15 +68,60 @@ Physical retest after the fix:
 - DMRGateway re-authenticated to BrandMeister successfully;
 - zero failed systemd units.
 
-## Next — Test 3
+## Test 3 — application update preservation + private MQTT telemetry
 
-Verify application-update preservation with RX Monitor installed and enabled:
+Status: **PASS after telemetry config fix**
 
-1. begin from the physically proven Test 2 state;
-2. enable RX Monitor but leave browser audio stopped;
-3. apply the next validated `dev` application update;
-4. verify plugin package/config/enabled state is preserved;
-5. verify trusted feature-runtime reconciliation restores the demand-gated voice bridge;
-6. verify MMDVMHost and DMRGateway return active and BrandMeister reconnects;
-7. verify no failed units;
-8. perform a short Start Audio / Stop Audio check after the update.
+Application-update preservation was tested with DMR RX Monitor installed and enabled while browser audio was stopped.
+
+Validated:
+
+- update from `0cc125a377...` to `923007634f...` preserved the enabled `dmr-rx-monitor` state;
+- trusted feature-runtime reconciliation retained `desired=true`;
+- `YWD_DMR_VOICE_TAP=1` remained inherited by live MMDVM-Host;
+- voice bridge remained enabled/active;
+- MMDVMHost and DMRGateway returned active;
+- external mbelib vocoder remained inactive while browser audio was stopped;
+- live audio socket remained absent while browser audio was stopped;
+- short Start Audio / Stop Audio check returned the vocoder to inactive and removed the live audio socket;
+- zero failed systemd units.
+
+A transient pre-update `gateway_active=false` snapshot was investigated with the persistent journal. DMRGateway was not stranded: it restarted during the guarded MMDVM transition, authenticated to BrandMeister, and remained running until the application updater intentionally stopped it.
+
+### Telemetry issue discovered
+
+DMRGateway repeatedly logged `MQTT Error connecting: Connection refused` even though YWD's private Mosquitto broker and MMDVM telemetry path were healthy.
+
+Root cause:
+
+- MMDVM-Host was generated with private MQTT `127.0.0.1:18883`;
+- DMRGateway was incorrectly generated with `127.0.0.1:1883`;
+- the private YWD broker listens only on `127.0.0.1:18883`.
+
+Fix:
+
+- DMRGateway config generation now uses MQTT port `18883`;
+- `tools/telemetry-config-smoke.py` verifies both publishers target the same private broker.
+
+Physical retest on core `cf2b3d7e66246c8e78165a5d652b17e564cc8573`:
+
+- source smoke reports MMDVM-Host on `127.0.0.1:18883`;
+- source smoke reports DMRGateway on `127.0.0.1:18883`;
+- generated `/etc/ywd-hotspot/DMRGateway.ini` contains `Port=18883`;
+- live TCP state shows both `MMDVM-Host` and `DMRGateway` established to `127.0.0.1:18883`;
+- `ywd-mqtt.service`, `ywd-mmdvmhost.service`, and `ywd-dmrgateway.service` are active;
+- zero failed systemd units.
+
+## Next — Test 4
+
+Verify reboot/persistence and backup/restore regression:
+
+1. begin with RX Monitor enabled and browser audio stopped;
+2. reboot the appliance normally;
+3. verify RF autostart, BrandMeister login, MQTT publishers, plugin demand gate, and zero failed units;
+4. verify external vocoder remains dormant until Start Audio;
+5. perform one short Start Audio / Stop Audio check after reboot;
+6. create a settings backup through the supported backup path;
+7. make one reversible non-RF setting change;
+8. restore the backup;
+9. verify configuration, plugin state, RF policy, and service health return correctly.

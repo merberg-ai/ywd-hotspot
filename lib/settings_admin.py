@@ -416,7 +416,7 @@ def restore_settings(data):
             "warnings": warnings,
             "wifi": wifi_result,
             "dashboard": _dashboard_url(candidate["web"]["port"]),
-            "mdns_dashboard": f"http://ywd-hotspot.local:{candidate['web']["port"]}/",
+            "mdns_dashboard": f"http://ywd-hotspot.local:{candidate['web']['port']}/",
             "dashboard_restart_deferred": deferred_dashboard_restart,
         }
     except Exception:

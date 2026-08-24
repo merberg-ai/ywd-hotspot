@@ -1,27 +1,30 @@
 # 🗒️ Changelog
 
-[Project README](README.md) · [Docs](docs/README.md) · [0.2.0-rc2 Release Notes](docs/RELEASE-NOTES-0.2.0-rc2.md) · [0.2.0-rc1 Release Notes](docs/RELEASE-NOTES-0.2.0-rc1.md)
+[Project README](README.md) · [Docs](docs/README.md) · [0.2.0-rc3 Release Notes](docs/RELEASE-NOTES-0.2.0-rc3.md) · [0.2.0-rc2 Release Notes](docs/RELEASE-NOTES-0.2.0-rc2.md) · [0.2.0-rc1 Release Notes](docs/RELEASE-NOTES-0.2.0-rc1.md)
 
 ---
 
-## Unreleased — RC3 Development
+## 0.2.0-rc3 — DMR RX Monitor / Runtime Hardening
 
-Development after `0.2.0-rc2` is integrated on `dev` while `main` remains frozen at the accepted RC2 public/update commit. `dev-plugins` starts from the same baseline and is reserved for intentionally isolated plugin/framework experiments.
+**Status:** frozen release candidate. Pre-freeze appliance regression passed; exact factory-image and published RC2 -> RC3 updater acceptance remain pending before public promotion.
 
-Current post-RC2 work includes:
+RC3 integrates the physically proven Phase 3J DMR RX Monitor path and the hardening found during Raspberry Pi Zero validation:
 
-- integrating the physically proven Phase 3J DMR RX Monitor core path into `dev`;
-- trusted direct AF_UNIX live-audio transport, DMR AMBE49 recovery/FEC and 10-frame/200 ms vocoder batching;
-- YWD Vocoder Protocol v1 integration with a separately installed external decoder backend; no mbelib/AMBE decoder is bundled in core or the plugin;
-- the selected Pi Zero scheduling policy for the known external backend (`Nice=0`, `CPUWeight=200`);
-- streamed PCM delivery to the sandboxed browser plugin while preserving MMDVM-Host as the sole RF/modem owner;
-- hardening candidate validation so streamed RX/audio/vocoder candidates fail closed when the audio-stream bridge, AMBE recovery helper, vocoder policy/backend scaffolding or dashboard wrapper integration is incomplete;
-- bringing `MANIFEST.txt` up to date with the trusted Phase 3J/vocoder runtime and documentation assets;
-- archiving completed Phase 3H planning/observation notes under `docs/history/`;
-- pruning redundant historical working/checkpoint branch labels while retaining durable release and plugin/RX/vocoder anchors;
-- refreshing README, plugin, vocoder, passive-voice, development and repository-policy documentation around the integrated `dev` baseline and RC3 workflow.
+- trusted persistent AF_UNIX live-audio transport and DMR AMBE49/FEC recovery;
+- 10-frame / 200 ms vocoder batching;
+- external YWD Vocoder Protocol v1 decoder boundary with no bundled mbelib/libmbe/AMBE Wasm;
+- sandboxed browser plugin receives PCM only;
+- selected external-vocoder scheduling policy `Nice=0`, `CPUWeight=200`;
+- demand-gated MMDVM voice tap controlled by installed+enabled plugin capability demand;
+- current-vs-legacy YWD Extended runtime recognition and explicit refresh instead of surprise MMDVM recompilation;
+- guarded plugin feature reconciliation that restores DMRGateway safely on Pi Zero transitions;
+- DMRGateway private MQTT corrected to the YWD loopback broker on `127.0.0.1:18883`;
+- encrypted settings restore fixed for uploaded UI-plugin package state and trusted feature-runtime reconciliation;
+- new runtime, telemetry, streamed-audio and settings-restore regression smokes.
 
-The Phase 3J runtime itself was physically proven before integration. The validation/manifest/documentation cleanup above is intended to strengthen candidate completeness and repository reproducibility without changing the selected RF/audio tuning baseline.
+Pre-freeze hardware validation covered duplex TS1/TS2 Parrot, RF/network paths, RX Monitor lifecycle/audio cleanup, reboot persistence, application-update preservation, encrypted backup/restore including a real config delta, MQTT/BrandMeister recovery, and zero failed systemd units.
+
+Full candidate notes: [`docs/RELEASE-NOTES-0.2.0-rc3.md`](docs/RELEASE-NOTES-0.2.0-rc3.md).
 
 ## 0.2.0-rc2 — Documentation / Updater Validation
 

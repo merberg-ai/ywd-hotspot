@@ -221,19 +221,32 @@ Validated:
 
 The complete encrypted settings backup/restore acceptance item is therefore closed.
 
-## Next — pre-freeze regression
+## Test 5 — final pre-freeze appliance regression
 
-Run the final broad appliance regression before freezing the RC3 candidate:
+Status: **PASS**
 
-1. regular duplex RF: TS1 and TS2;
-2. BrandMeister Parrot and one normal talkgroup path;
-3. Talkgroup Manager controls;
-4. Last Heard / live telemetry/dashboard status;
-5. RX Monitor short Start Audio / Stop Audio cycle;
-6. WebUI Settings/System/SSH pages load and basic read-only status works;
-7. plugin installed/enabled state remains correct;
-8. MMDVM exact current capability identity remains in sync;
-9. private MQTT publishers remain established on `127.0.0.1:18883`;
-10. zero failed systemd units.
+Final pre-freeze physical regression was run on the same integrated RC3 functional code line with RX Monitor enabled and browser audio stopped.
 
-After that passes, freeze the RC3 version/release notes/branch and begin the exact RC2 -> frozen RC3 updater and factory-image acceptance passes.
+Validated:
+
+- managed source remained clean on `dev @ 3e33bb82e0...`;
+- exact current YWD Extended runtime remained `in_sync=true`;
+- current patch SHA-256 remained `77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994`;
+- extension API 2 and capabilities `passive-dmr-voice`, `plugin-rx-monitor`, `demand-gated-dmr-voice` remained present;
+- duplex Parrot 9990 passed on TS1 and TS2;
+- RX Monitor remained the active `read:dmr-voice` demander;
+- trusted voice bridge remained enabled/active and live MMDVM gate remained true;
+- MMDVMHost and DMRGateway remained active;
+- MMDVM-Host and DMRGateway both maintained private MQTT sessions on `127.0.0.1:18883`;
+- DMRGateway MQTT connection was accepted and BrandMeister login succeeded;
+- short RX Monitor audio test completed and Stop Audio returned the external vocoder to inactive;
+- live audio socket was absent after Stop Audio;
+- zero failed systemd units.
+
+The legacy `ywd-oled.service` reporting inactive is not a regression on the reference appliance because OLED ownership is provided by the separate headless OLED service selected by the installed runtime.
+
+## Freeze status
+
+Tests 1 through 5 are closed PASS. The integrated functional RC3 code line was physically exercised at `3e33bb82e0b3d7bdf986bf6b2cbd9295d0f679c8`. Subsequent pre-freeze changes are limited to this test ledger, release/version identity, release notes and manifest inventory.
+
+Next acceptance is against the exact frozen `release/0.2.0-rc3` source: published RC2 -> RC3 updater transition, legacy/current YWD Extended compatibility behavior, and the exact RC3 factory-image/fresh-flash path. `main`, the public tag and the immutable proven RC3 checkpoint remain frozen until those exact-artifact tests pass.

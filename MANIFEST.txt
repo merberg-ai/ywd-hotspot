@@ -148,6 +148,7 @@ systemd/ywd-update.service
 systemd/ywd-vocoder-fake.service
 systemd/ywd-vocoder-fake.socket
 systemd/ywd-vocoder-mbelib.service.d/20-ywd-hotspot-normal-priority.conf
+tools/mmdvm-runtime-compat-smoke.py
 tools/phase3j-stream-smoke.py
 tools/ywdplugin-build.py
 web/app-core.js

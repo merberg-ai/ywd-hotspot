@@ -61,6 +61,141 @@
 }
 .system-power-card .card-title{color:var(--bad)}
 .system-power-actions .btn{min-width:132px}
+
+/* MODEM / MMDVM
+ * Keep this in an external first-party stylesheet. The dashboard CSP rejects
+ * dynamically injected <style> blocks, so runtime-generated panel CSS must not
+ * be relied on for layout or theming. */
+.system-modem-card{
+  grid-column:1/-1;
+  border-color:#1b5260;
+  background:linear-gradient(180deg,#06151bee,#041016ee);
+}
+.system-modem-card .modem-badge{
+  font-size:10px;
+  letter-spacing:.08em;
+  font-weight:700;
+  white-space:nowrap;
+}
+.modem-intro{margin:4px 0 12px;font-size:11px;line-height:1.5}
+.modem-section{
+  margin-top:12px;
+  padding-top:11px;
+  border-top:1px solid #17343d;
+}
+.modem-section-title{
+  margin:0 0 7px;
+  color:var(--cyan);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.11em;
+  text-transform:uppercase;
+}
+.modem-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0 18px;
+  border-top:1px solid #132f38;
+}
+.modem-grid>div{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  min-width:0;
+  padding:7px 0;
+  border-bottom:1px solid #102a32;
+}
+.modem-grid span{
+  flex:0 0 auto;
+  color:var(--muted);
+  font-size:9px;
+  line-height:1.45;
+  letter-spacing:.055em;
+  text-transform:uppercase;
+}
+.modem-grid b{
+  min-width:0;
+  color:var(--text);
+  font-size:10px;
+  line-height:1.45;
+  font-weight:600;
+  text-align:right;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.modem-wide{grid-column:1/-1}
+.modem-wide b{max-width:76%}
+.modem-capabilities{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:9px;
+}
+.modem-capability{
+  border:1px solid #1a5767;
+  border-radius:999px;
+  padding:3px 7px;
+  background:#071820;
+  color:#86eaff;
+  font-size:9px;
+  letter-spacing:.035em;
+}
+.modem-details{
+  margin-top:10px;
+  border:1px solid #173b45;
+  border-radius:9px;
+  background:#051016;
+  overflow:hidden;
+}
+.modem-details summary{
+  cursor:pointer;
+  padding:9px 11px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.3;
+  letter-spacing:.075em;
+  user-select:none;
+}
+.modem-details[open] summary{
+  border-bottom:1px solid #17343d;
+  color:var(--cyan);
+}
+.modem-details-body{padding:3px 11px 11px}
+.modem-journal{
+  margin:0;
+  padding:7px 0 0;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  color:var(--muted);
+  font:9px/1.45 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+.modem-maintenance{
+  margin-top:12px;
+  padding:11px;
+  border:1px dashed #24505b;
+  border-radius:9px;
+  background:#061117;
+}
+.modem-maintenance .hint{margin:0 0 9px;font-size:10px}
+.modem-maintenance .buttonrow{margin-bottom:8px}
+.modem-maintenance .btn{font-size:10px}
+.modem-maintenance .btn[disabled]{opacity:.36;cursor:not-allowed;filter:none}
+.modem-refresh{min-width:130px}
+#mmdvmCollectedAt{margin-top:5px;font-size:9px}
+
+@media(max-width:620px){
+  .modem-intro{font-size:10px}
+  .modem-grid{grid-template-columns:1fr}
+  .modem-wide{grid-column:auto}
+  .modem-wide b{max-width:68%}
+  .modem-grid>div{padding:6px 0}
+  .modem-grid span{font-size:8.5px}
+  .modem-grid b{font-size:9.5px}
+  .modem-maintenance .buttonrow{display:grid;grid-template-columns:1fr}
+  .modem-maintenance .btn{width:100%}
+}
+
 @media(max-width:520px){
   .bm-quick-controls{align-items:flex-start;flex-direction:column}
   .bm-quick-actions{width:100%;justify-content:flex-start}
@@ -69,4 +204,5 @@
   .dmrid-grid{grid-template-columns:1fr}
   .dmrid-actions .btn{width:100%}
   .system-power-actions .btn{min-width:0;width:100%}
+  .system-modem-card{padding:12px}
 }

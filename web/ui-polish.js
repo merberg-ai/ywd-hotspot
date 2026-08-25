@@ -175,6 +175,65 @@
   }
   document.querySelector('[data-close="loginModal"]')?.addEventListener('click', clearLoginFeedback);
 
+  // Settings remain readable while the dashboard is locked, but every editable
+  // control follows the same authenticated control session as the rest of the UI.
+  // Preserve each control's existing disabled state so mode-specific controls
+  // (for example simplex/duplex frequency fields) restore correctly after unlock.
+  const settingsPage = $('settings');
+  let settingsLocked = null;
+  function ensureSettingsLockNotice() {
+    if (!settingsPage) return null;
+    let notice = $('settingsLockState');
+    if (!notice) {
+      notice = document.createElement('div');
+      notice.id = 'settingsLockState';
+      notice.className = 'notice';
+      notice.setAttribute('role', 'status');
+      const bar = settingsPage.querySelector('.settingsbar');
+      if (bar) bar.insertAdjacentElement('afterend', notice);
+      else settingsPage.prepend(notice);
+    }
+    return notice;
+  }
+
+  function syncSettingsLock() {
+    if (!settingsPage) return;
+    const locked = !(typeof state !== 'undefined' && state?.controls?.authenticated);
+    const notice = ensureSettingsLockNotice();
+    if (notice) {
+      notice.hidden = !locked;
+      notice.textContent = 'SETTINGS LOCKED · Unlock the dashboard to edit configuration.';
+    }
+    settingsPage.classList.toggle('settings-locked', locked);
+    settingsPage.setAttribute('aria-readonly', locked ? 'true' : 'false');
+
+    settingsPage.querySelectorAll('input,select,textarea,button').forEach(el => {
+      if (locked) {
+        if (!Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
+          el.dataset.ywdLockDisabled = el.disabled ? '1' : '0';
+        }
+        el.disabled = true;
+      } else if (Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
+        el.disabled = el.dataset.ywdLockDisabled === '1';
+        delete el.dataset.ywdLockDisabled;
+      }
+    });
+    settingsLocked = locked;
+  }
+
+  if (settingsPage && typeof render === 'function') {
+    const baseSettingsRender = render;
+    render = function(d) {
+      baseSettingsRender(d);
+      syncSettingsLock();
+    };
+    const settingsObserver = new MutationObserver(() => {
+      if (settingsLocked) syncSettingsLock();
+    });
+    settingsObserver.observe(settingsPage, {childList:true, subtree:true});
+    syncSettingsLock();
+  }
+
   function runBusy(el, label, fn) {
     const done = beginBusy(el, label);
     let result;

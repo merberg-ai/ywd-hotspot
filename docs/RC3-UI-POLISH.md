@@ -40,6 +40,26 @@ The underlying controls remain native checkboxes for data binding, keyboard beha
 6. Verify the same behavior on a narrow/mobile browser and a desktop-width browser.
 7. Lock the dashboard and confirm disabled switches remain visibly recognizable as switches while becoming non-interactive.
 
+## System SSH client-key user
+
+The appliance remote-login account is fixed to **`ywd`**. The System -> SSH Access card therefore no longer presents a username input for client-key creation.
+
+**CREATE & EXPORT CLIENT KEY** always enrolls a fresh Ed25519 client key for the managed `ywd` account. The visible SSH status summary continues to show **Login user: ywd**.
+
+The dashboard's privileged dispatch path also enforces this policy. A crafted request that attempts to enroll a client key for another username is rejected rather than relying only on the hidden/default WebUI value.
+
+This does not change the established SSH security policy: factory SSH remains disabled, enabling SSH exposes public-key-only authentication on port 22, password authentication remains disabled, root SSH login remains disabled, and creating a client key does not itself enable SSH.
+
+### Physical acceptance for fixed SSH user
+
+1. Unlock dashboard controls and open **System -> SSH Access**.
+2. Confirm the status summary shows **Login user: ywd**.
+3. Confirm there is no editable SSH/SFTP username box.
+4. Confirm **CREATE & EXPORT CLIENT KEY** remains visible and uses the full available row width on mobile and desktop layouts.
+5. Create/export a client key and confirm the downloaded archive identifies the Linux user as `ywd`.
+6. Confirm the new public key increases or preserves the expected authorized-key count for `ywd`.
+7. Confirm creating the key does not change whether SSH is enabled or disabled.
+
 ## Physical acceptance for Settings lock
 
 On the configured RC3 development hotspot:

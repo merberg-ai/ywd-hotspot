@@ -21,7 +21,7 @@ case "${1:-}" in
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_client_key_admin.py "$@"
     ;;
   diagnostics)
-    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/diagnostics_admin.py "$@"
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/diagnostics_policy.py "$@"
     ;;
   shutdown)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/system_admin.py "$@"

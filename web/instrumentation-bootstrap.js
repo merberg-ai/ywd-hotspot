@@ -10,6 +10,29 @@
     document.head.appendChild(link);
   }
 
+  function ensureStartupThemes() {
+    if (!document.querySelector('link[data-ywd-startup-themes="1"]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/startup-themes.css?v=rc3.1';
+      link.dataset.ywdStartupThemes = '1';
+      link.onerror = () => console.error('YWD-Hotspot failed to load startup theme CSS');
+      document.head.appendChild(link);
+    }
+    if (window.YWDStartupThemes) {
+      window.YWDStartupThemes.init();
+      return;
+    }
+    if (document.querySelector('script[data-ywd-startup-themes="1"]')) return;
+    const script = document.createElement('script');
+    script.src = '/startup-themes.js?v=rc3.1';
+    script.async = false;
+    script.dataset.ywdStartupThemes = '1';
+    script.onload = () => window.YWDStartupThemes?.init();
+    script.onerror = () => console.error('YWD-Hotspot failed to load startup theme JS');
+    document.head.appendChild(script);
+  }
+
   function hasUsableRssi(d) {
     const rows = [];
     const cur = d?.activity?.current;
@@ -55,6 +78,7 @@
 
   function wire() {
     ensureLayoutStyle();
+    ensureStartupThemes();
     if (!window.YWDInstrumentation) return;
     if (typeof window.render === 'function' && !window.render.__ywdInstrumented) {
       const base = window.render;

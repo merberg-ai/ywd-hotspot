@@ -22,7 +22,25 @@ Locking the dashboard again returns Settings to read-only mode.
 
 This is a frontend usability/safety layer only. Existing server-side authenticated control checks remain authoritative.
 
-## Physical acceptance for this tweak
+## Consistent boolean switches
+
+Boolean settings rendered with the dashboard's standard `.field.check` structure use the same cyber-style pill switch everywhere, including dynamically injected OLED runtime and Live DMR instrumentation settings.
+
+Feature-specific stylesheets may still style ordinary text, number, and select inputs, but they must not replace the switch background, pill radius, checked-state glow, or mobile switch geometry. The shared switch visual properties are deliberately pinned so later generic input rules cannot turn checkbox switches back into plain rectangular boxes.
+
+The underlying controls remain native checkboxes for data binding, keyboard behavior, accessibility, checked state, and disabled state.
+
+### Physical acceptance for switch consistency
+
+1. Check **Network Enabled** in the BrandMeister Settings card as the visual reference.
+2. Check OLED Runtime Display booleans such as **Show Destination**, **Show Slot**, **Show Elapsed**, **Show BER**, **Show RSSI**, **Show Packet Loss**, and **Cycle Idle Pages**.
+3. Check Live DMR Instrumentation booleans, including both collapsed and expanded meter/trace settings.
+4. Confirm unchecked controls show the same pill-switch shape and visible left-side thumb rather than an empty rectangle.
+5. Toggle representative controls on and confirm the thumb moves right with the cyan active treatment.
+6. Verify the same behavior on a narrow/mobile browser and a desktop-width browser.
+7. Lock the dashboard and confirm disabled switches remain visibly recognizable as switches while becoming non-interactive.
+
+## Physical acceptance for Settings lock
 
 On the configured RC3 development hotspot:
 

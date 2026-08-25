@@ -316,6 +316,63 @@
     return result?.status === 'fulfilled' ? result.value : fallback;
   }
 
+  function selectSupportPreview(preview) {
+    try {
+      const selection = window.getSelection?.();
+      if (!selection || !document.createRange) return false;
+      const range = document.createRange();
+      range.selectNodeContents(preview);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function copySupportText(text, preview) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return 'modern';
+      } catch (_) {
+        // Plain LAN HTTP and browser permission policies can reject this even
+        // when the Clipboard API exists. Fall through to the legacy path.
+      }
+    }
+
+    const area = document.createElement('textarea');
+    const previousFocus = document.activeElement;
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.setAttribute('aria-hidden', 'true');
+    area.style.position = 'fixed';
+    area.style.top = '0';
+    area.style.left = '-9999px';
+    area.style.width = '1px';
+    area.style.height = '1px';
+    area.style.opacity = '0';
+    area.style.fontSize = '16px';
+    area.style.pointerEvents = 'none';
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+
+    let copied = false;
+    try {
+      copied = typeof document.execCommand === 'function' && document.execCommand('copy');
+    } catch (_) {
+      copied = false;
+    }
+    area.remove();
+    try { previousFocus?.focus?.({preventScroll: true}); } catch (_) {}
+    if (copied) return 'legacy';
+
+    selectSupportPreview(preview);
+    return 'manual';
+  }
+
   function tgList(items) {
     if (!Array.isArray(items) || !items.length) return 'none';
     return items.slice(0, 16).map(item => {
@@ -467,11 +524,13 @@
         const update = fulfilled(results[5], {});
         const text = modernSupportSummary(status, health, plugins, dmrid, ssh, update);
         preview.textContent = text;
-        try {
-          await navigator.clipboard.writeText(text);
+        const copyMode = await copySupportText(text, preview);
+        if (copyMode === 'modern') {
           toast('Expanded support summary copied');
-        } catch (_) {
-          toast('Support summary generated; clipboard permission was denied', true);
+        } else if (copyMode === 'legacy') {
+          toast('Expanded support summary copied · LAN compatibility mode');
+        } else {
+          toast('Automatic clipboard copy was blocked; the support summary is selected for manual copy', true);
         }
       } catch (err) {
         preview.textContent = `Support summary failed: ${err.message || err}`;

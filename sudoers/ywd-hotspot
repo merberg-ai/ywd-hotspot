@@ -18,6 +18,10 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin ssh-client-key-create, \
  /usr/local/libexec/ywd-hotspot-admin update-check, \
  /usr/local/libexec/ywd-hotspot-admin update-start, \
+ /usr/local/libexec/ywd-hotspot-admin update-branches, \
+ /usr/local/libexec/ywd-hotspot-admin update-branch-check, \
+ /usr/local/libexec/ywd-hotspot-admin update-branch-switch, \
+ /usr/local/libexec/ywd-hotspot-admin mmdvm-system-info, \
  /usr/local/libexec/ywd-hotspot-admin rf-start, \
  /usr/local/libexec/ywd-hotspot-admin rf-stop, \
  /usr/local/libexec/ywd-hotspot-admin rf-restart, \

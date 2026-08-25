@@ -14,8 +14,11 @@ case "${1:-}" in
   ssh-status|ssh-configure)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_runtime_admin.py "$@"
     ;;
-  ssh-keys-export|ssh-client-key-create)
+  ssh-keys-export)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_keys_admin.py "$@"
+    ;;
+  ssh-client-key-create)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_client_key_admin.py "$@"
     ;;
   shutdown)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/system_admin.py "$@"

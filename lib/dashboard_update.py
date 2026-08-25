@@ -70,6 +70,25 @@ def wrap_handler(base):
 
         def do_POST(self):
             path = urlparse(self.path).path
+            branch_actions = {
+                "/api/update/branches": ("update-branches", 120),
+                "/api/update/branch/check": ("update-branch-check", 260),
+                "/api/update/branch/switch": ("update-branch-switch", 360),
+            }
+            if path in branch_actions:
+                if not self.require_control():
+                    return
+                try:
+                    body = self.body_json()
+                    action, timeout = branch_actions[path]
+                    out = core.admin_call(action, body, timeout)
+                    self.send_json(out)
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)[:800]}, 400)
+                except Exception as exc:
+                    self.send_json({"error": str(exc)[:1000]}, 502)
+                return
+
             if path not in {"/api/update/check", "/api/update/start"}:
                 super().do_POST()
                 return

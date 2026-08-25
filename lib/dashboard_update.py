@@ -20,6 +20,10 @@ PUBLIC_KEYS = {
     "target_commit", "target_date", "channel", "available", "up_to_date",
     "validated", "started_at", "completed_at", "updated_at", "backup", "error",
 }
+_LOADING_THEMES = {
+    "rf_sweep", "radar_scan", "packet_burst", "digital_waterfall", "rf_orbit",
+    "boot_telemetry", "signal_lock", "vfo_tuning", "dmr_frame",
+}
 
 
 def public_status():
@@ -44,10 +48,56 @@ def public_status():
     return out
 
 
+def startup_theme():
+    """Return the validated presentation-only startup theme for first paint."""
+    try:
+        value = str(core.canonical_cfg().get("web", {}).get("loading_animation", "rf_sweep"))
+    except Exception:
+        value = "rf_sweep"
+    return value if value in _LOADING_THEMES else "rf_sweep"
+
+
+def _asset_bytes(name, limit=512 * 1024):
+    path = core.WEB / name
+    if not path.is_file():
+        return b""
+    data = path.read_bytes()
+    return data if len(data) <= limit else b""
+
+
 def wrap_handler(base):
     class UpdateHandler(base):
         def do_GET(self):
             path = urlparse(self.path).path
+
+            # First-paint startup presentation is bundled into the two assets the
+            # base index already requests. This avoids a config round-trip and,
+            # more importantly, avoids painting the historical spinner before the
+            # selected startup theme is known. The only server-generated value is
+            # a validated nine-value presentation enum; no configuration or secret
+            # data is embedded in JavaScript.
+            if path == "/style.css":
+                base_css = _asset_bytes("style.css")
+                theme_css = _asset_bytes("startup-themes.css")
+                if not base_css:
+                    self.send_json({"error": "style asset unavailable"}, 404)
+                    return
+                body = base_css + (b"\n\n/* startup themes: first-paint bundle */\n" + theme_css if theme_css else b"")
+                self.send_bytes(200, body, "text/css; charset=utf-8", cache="no-cache")
+                return
+            if path == "/app.js":
+                app_js = _asset_bytes("app.js")
+                theme_js = _asset_bytes("startup-themes.js")
+                if not app_js:
+                    self.send_json({"error": "application asset unavailable"}, 404)
+                    return
+                hint = ("window.__YWD_LOADING_ANIMATION=" + json.dumps(startup_theme()) + ";\n").encode("utf-8")
+                body = hint + (theme_js + b"\n;\n" if theme_js else b"") + app_js
+                # The response contains the current saved presentation preference,
+                # so never let a stale cached app.js carry an old theme choice.
+                self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
+                return
+
             static = {
                 "/update.js": ("update.js", "application/javascript; charset=utf-8"),
                 "/update-progress.js": ("update-progress.js", "application/javascript; charset=utf-8"),

@@ -296,6 +296,213 @@
     }
   }
 
+  function formatBytes(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return 'unknown size';
+    if (n < 1024) return `${Math.round(n)} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+
+  async function supportJson(url, options = {}) {
+    const r = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options});
+    let d = {};
+    try { d = await r.json(); } catch (_) {}
+    if (!r.ok || d?.error) throw new Error(d?.error || `HTTP ${r.status}`);
+    return d;
+  }
+
+  function fulfilled(result, fallback = {}) {
+    return result?.status === 'fulfilled' ? result.value : fallback;
+  }
+
+  function tgList(items) {
+    if (!Array.isArray(items) || !items.length) return 'none';
+    return items.slice(0, 16).map(item => {
+      if (item && typeof item === 'object') {
+        const tg = item.talkgroup ?? item.id ?? item.tg ?? '?';
+        const slot = item.slot ?? item.timeslot;
+        const name = item.name ? ` ${item.name}` : '';
+        return `${tg}${slot !== undefined && slot !== null ? `/TS${slot}` : ''}${name}`;
+      }
+      return String(item);
+    }).join(', ');
+  }
+
+  function pluginSummary(doc) {
+    const system = doc?.system || {};
+    const rows = Array.isArray(doc?.plugins) ? doc.plugins : [];
+    const visible = rows.filter(p => p?.installed || p?.enabled || p?.health === 'error').slice(0, 16);
+    const detail = visible.length
+      ? visible.map(p => `${p.id || p.name || '?'}@${p.version || '?'}:${p.health || (p.enabled ? 'enabled' : 'installed')}`).join(', ')
+      : 'none installed';
+    return `health=${system.health || 'unknown'} | installed=${system.installed ?? 'unknown'} | enabled=${system.enabled_plugins ?? 'unknown'} | active=${system.active_plugins ?? 'unknown'} | ${detail}`;
+  }
+
+  function trafficSummary(activity) {
+    const rows = Array.isArray(activity?.lastheard) ? activity.lastheard.slice(0, 3) : [];
+    if (!rows.length) return ['Recent traffic: none recorded'];
+    return rows.map((row, index) => {
+      const src = row?.source?.display || row?.source?.callsign || row?.source || '?';
+      const dst = row?.destination?.display || row?.destination?.name || row?.destination || '?';
+      const path = row?.path || row?.direction || '?';
+      const duration = Number.isFinite(Number(row?.duration_s)) ? `${Number(row.duration_s).toFixed(1)}s` : '—';
+      const metrics = [
+        row?.ber_pct !== undefined && row?.ber_pct !== null ? `BER ${row.ber_pct}%` : null,
+        row?.rssi_dbm !== undefined && row?.rssi_dbm !== null ? `RSSI ${row.rssi_dbm} dBm` : null,
+        row?.packet_loss_pct !== undefined && row?.packet_loss_pct !== null ? `loss ${row.packet_loss_pct}%` : null,
+      ].filter(Boolean).join(' | ') || 'no quality metrics';
+      return `Recent traffic ${index + 1}: ${path} | ${src} -> ${dst} | ${duration} | ${metrics}`;
+    });
+  }
+
+  function modernSupportSummary(status, health, plugins, dmrid, ssh, update) {
+    const s = status || {};
+    const h = health || {};
+    const c = s.config || {};
+    const r = c.radio || {};
+    const bmCfg = c.brandmeister || {};
+    const display = c.display || {};
+    const web = c.web || {};
+    const maintenance = c.maintenance || {};
+    const build = s.build || {};
+    const wifi = h.wifi || s.system?.wifi || {};
+    const throttled = h.throttled || s.system?.throttled || {};
+    const mem = h.memory || s.system?.memory || {};
+    const disk = h.disk || s.system?.disk || {};
+    const db = dmrid?.database || {};
+    const cal = s.calibration || {};
+    const baseline = cal.baseline || {};
+    const best = cal.best || null;
+    const u = update?.update || update || {};
+    const channel = u.channel || build.update_channel || build.branch || 'unknown';
+    const mode = String(r.mode || 'simplex').toLowerCase();
+    const mhz = value => Number.isFinite(Number(value)) && Number(value) > 0 ? `${(Number(value) / 1e6).toFixed(6)} MHz` : 'unknown';
+    const rfLine = mode === 'duplex'
+      ? `duplex | hotspot RX ${mhz(r.rx_frequency_hz || r.frequency_hz)} | hotspot TX ${mhz(r.tx_frequency_hz || r.frequency_hz)} | DMR slots 1+2`
+      : `simplex | ${mhz(r.frequency_hz)} | DMR slot 2`;
+    const serviceHealth = h.services || {};
+    const extendedServices = Object.entries(serviceHealth)
+      .filter(([name]) => name.startsWith('ywd-') || name === 'ssh.service')
+      .map(([name, value]) => `${name}=${value?.active || value || 'unknown'}${value?.restarts !== undefined && value?.restarts !== null ? `(restarts:${value.restarts})` : ''}`)
+      .join(' | ');
+    const baselineText = baseline?.saved_at || baseline?.time
+      ? `saved ${new Date(Number(baseline.saved_at || baseline.time) * 1000).toLocaleString()}`
+      : 'none';
+    const bestText = best ? `${best.rx_offset ?? '?'} Hz / BER ${best.ber_pct ?? '?'}%` : 'none';
+    const previous = h.previous_boot || {};
+    const warnings = Array.isArray(h.kernel_warnings) ? h.kernel_warnings.length : 0;
+    const sourceCommit = build.commit || u.current_commit || 'unknown';
+
+    return [
+      `YWD-Hotspot support summary · ${new Date().toISOString()}`,
+      `Version/build: ${s.version || build.version || 'unknown'} | ${build.branch || 'unknown'} @ ${sourceCommit} | channel ${channel}`,
+      `Source: ${build.source || 'unknown'} / ${build.source_state || 'unknown'} | commit date ${build.commit_date || 'unknown'}`,
+      `Host: ${h.hostname || s.system?.hostname || 'unknown'} | uptime ${Math.floor(Number(h.uptime_s ?? s.system?.uptime_s ?? 0))}s | boot ${h.boot_id || 'unknown'}`,
+      `Core services: MMDVM=${s.services?.mmdvmhost || 'unknown'} | Gateway=${s.services?.dmrgateway || 'unknown'} | Dashboard=${s.services?.dashboard || 'unknown'} | OLED=${s.services?.oled || 'unknown'} (${s.services?.oled_unit || 'unknown'}) | Activity=${s.services?.activity || 'unknown'}`,
+      extendedServices ? `Discovered service health: ${extendedServices}` : 'Discovered service health: unavailable',
+      `RF: ${rfLine} | CC${r.color_code ?? '?'} | RX/TX offset ${r.rx_offset ?? '?'} / ${r.tx_offset ?? '?'} Hz | RX/TX/RF levels ${r.rx_level ?? '?'} / ${r.tx_level ?? '?'} / ${r.rf_level ?? '?'}%`,
+      `Modem: ${r.port || 'unknown'} @ ${r.baud || 'unknown'} | TX/RX invert ${r.tx_invert ?? '?'} / ${r.rx_invert ?? '?'} | jitter ${r.jitter_ms ?? '?'} ms | hang ${r.call_hang_s ?? '?'}/${r.tx_hang_s ?? '?'} s`,
+      `BrandMeister config: enabled=${bmCfg.enabled ?? false} | ${bmCfg.master || 'unknown'}:${bmCfg.port || 'unknown'} | hotspot password configured=${bmCfg.password_configured ?? false} | API key configured=${s.brandmeister?.api_key_configured ?? false}`,
+      `BrandMeister runtime: ${s.brandmeister?.state || 'unknown'} | ${s.brandmeister?.detail || s.brandmeister?.profile_error || 'no detail'} | static=${tgList(s.brandmeister?.static)} | dynamic=${tgList(s.brandmeister?.dynamic)}`,
+      `Config: pending=${s.pending?.pending ?? 'unknown'} | hash=${s.pending?.current_hash || 'unknown'} | RF autostart=${maintenance.rf_autostart ?? 'unknown'} | persistent journal=${maintenance.persistent_journal ?? 'unknown'} (${maintenance.journal_max_mb ?? '?'} MB)`,
+      `Display/WebUI: OLED enabled=${display.enabled ?? false} | address=${display.address || 'unknown'} | brightness=${display.brightness ?? 'unknown'} | idle=${display.idle_timeout_s ?? 'unknown'}s | Web ${web.bind || 'unknown'}:${web.port || 'unknown'}`,
+      `System: temp ${h.temperature_c ?? s.system?.temp_c ?? '—'} C | load ${(h.load || s.system?.load || []).join(' / ') || '—'} | memory ${mem.used_mb ?? '—'}/${mem.total_mb ?? '—'} MB | disk ${disk.used_gb ?? '—'}/${disk.total_gb ?? '—'} GB (${disk.used_pct ?? '—'}%)`,
+      `Power/throttle: ${throttled.raw || throttled.value || 'unavailable'} | history=${Array.isArray(throttled.history) && throttled.history.length ? throttled.history.join(', ') : 'none'}`,
+      `Wi-Fi: ${wifi.interface || 'wlan0'} | SSID=${wifi.ssid || 'unknown'} | IP=${wifi.ip || 'none'} | signal=${wifi.signal_dbm ?? '—'} dBm | gateway=${wifi.gateway || 'unknown'} | RX errors/dropped=${wifi.rx_errors ?? '—'}/${wifi.rx_dropped ?? '—'} | TX=${wifi.tx_errors ?? '—'}/${wifi.tx_dropped ?? '—'}`,
+      `DMR ID DB: ${db.state || 'unknown'} | records=${db.records ?? 'unknown'} | size=${db.size_bytes ?? 'unknown'} | age=${formatAge(db.age_s)} | interval=${db.interval_days ?? 'unknown'}d | due=${db.due ?? 'unknown'} | timer=${dmrid?.timer?.active || 'unknown'}/${dmrid?.timer?.enabled || 'unknown'}`,
+      `Plugins: ${pluginSummary(plugins)}`,
+      `SSH: active=${ssh?.active ?? 'unknown'} | boot=${ssh?.enabled_at_boot ?? 'unknown'} | policy=${ssh?.authentication || 'unknown'} | managed=${ssh?.policy_managed ?? 'unknown'} | user=${ssh?.login_user || 'ywd'} | authorized keys=${ssh?.authorized_key_count ?? 'unknown'} | host keys=${ssh?.host_key_count ?? 'unknown'}`,
+      `Updater: state=${u.state || 'idle'} | phase=${u.phase || '—'} | channel=${channel} | current=${u.current_commit || sourceCommit} | target=${u.target_commit || '—'} | available=${u.available ?? false}`,
+      `Calibration: baseline ${baselineText} | best ${bestText} | runs=${Array.isArray(cal.tests) ? cal.tests.length : 0}`,
+      `Boot/crash: previous=${previous.shutdown || 'unknown'} | kernel/hardware warning matches=${warnings} | journal=${h.journal_disk || 'unknown'}`,
+      ...trafficSummary(s.activity),
+      'Secrets intentionally omitted: BrandMeister password/API key, WebUI credentials, Wi-Fi PSK, and SSH key material are not included in this summary.',
+      'For deeper troubleshooting use CREATE DIAGNOSTIC BUNDLE; review third-party/plugin logs before posting an archive publicly.'
+    ].join('\n');
+  }
+
+  function installDiagnosticsPolish() {
+    if (window.__ywdDiagnosticsPolish) return true;
+    const copy = document.getElementById('copySupport');
+    const make = document.getElementById('makeDiag');
+    const preview = document.getElementById('supportPreview');
+    const link = document.getElementById('diagLink');
+    if (!copy || !make || !preview || !link) return false;
+    window.__ywdDiagnosticsPolish = true;
+
+    copy.onclick = async () => {
+      if (copy.dataset.ywdSystemBusy === '1') return;
+      const old = copy.textContent;
+      copy.dataset.ywdSystemBusy = '1';
+      copy.disabled = true;
+      copy.classList.add('ywd-working');
+      copy.textContent = 'COLLECTING…';
+      preview.textContent = 'Collecting fresh sanitized support state…';
+      try {
+        const results = await Promise.allSettled([
+          supportJson('/api/status'),
+          supportJson('/api/health'),
+          supportJson('/api/plugins'),
+          supportJson('/api/system/dmrid'),
+          supportJson('/api/ssh/status', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'}),
+          supportJson('/api/update/status'),
+        ]);
+        const status = fulfilled(results[0], (typeof state !== 'undefined' ? state : {}));
+        const health = fulfilled(results[1], (typeof healthDoc !== 'undefined' ? healthDoc : {}));
+        const plugins = fulfilled(results[2], {});
+        const dmrid = fulfilled(results[3], {});
+        const ssh = fulfilled(results[4], {});
+        const update = fulfilled(results[5], {});
+        const text = modernSupportSummary(status, health, plugins, dmrid, ssh, update);
+        preview.textContent = text;
+        try {
+          await navigator.clipboard.writeText(text);
+          toast('Expanded support summary copied');
+        } catch (_) {
+          toast('Support summary generated; clipboard permission was denied', true);
+        }
+      } catch (err) {
+        preview.textContent = `Support summary failed: ${err.message || err}`;
+        toast(err.message || 'Could not create support summary', true);
+      } finally {
+        delete copy.dataset.ywdSystemBusy;
+        copy.classList.remove('ywd-working');
+        copy.textContent = old;
+        copy.disabled = false;
+        if (typeof setCtl === 'function') setCtl();
+      }
+    };
+
+    make.onclick = async () => {
+      if (make.dataset.ywdSystemBusy === '1') return;
+      const old = make.textContent;
+      make.dataset.ywdSystemBusy = '1';
+      make.disabled = true;
+      make.classList.add('ywd-working');
+      make.textContent = 'COLLECTING…';
+      link.textContent = '';
+      try {
+        const d = await post('/api/diagnostics/create', {});
+        const a = document.createElement('a');
+        a.href = `/api/diagnostics/${encodeURIComponent(d.filename)}`;
+        a.textContent = `DOWNLOAD ${d.filename} · ${formatBytes(d.size)}`;
+        link.replaceChildren(a);
+        toast(`Diagnostic bundle v${d.schema || 1} ready · ${formatBytes(d.size)}`);
+        a.click();
+      } catch (err) {
+        toast(err.message || 'Could not create diagnostic bundle', true);
+      } finally {
+        delete make.dataset.ywdSystemBusy;
+        make.classList.remove('ywd-working');
+        make.textContent = old;
+        make.disabled = false;
+        if (typeof setCtl === 'function') setCtl();
+      }
+    };
+    return true;
+  }
+
   function hookRender() {
     if (window.__ywdSystemRenderHook || typeof render !== 'function') return false;
     window.__ywdSystemRenderHook = true;
@@ -312,9 +519,10 @@
     const quick = installStatusQuickActions();
     const runtime = installRuntimeCard();
     const dmrid = installDmrIdCard();
+    const diagnostics = installDiagnosticsPolish();
     const hooked = hookRender();
     if (typeof setCtl === 'function') setCtl();
-    return nav && quick && runtime && dmrid && hooked;
+    return nav && quick && runtime && dmrid && diagnostics && hooked;
   }
 
   let tries = 0;

@@ -40,6 +40,10 @@ Expandable **BUILD / PROVENANCE DETAILS** also show:
 
 Expandable **MODEM JOURNAL IDENTITY LINES** provides only the current-boot MMDVMHost lines relevant to modem protocol/description/open/version identity. It does not perform an active serial probe.
 
+## Diagnostics integration
+
+Diagnostic bundle schema 2 stores the same sanitized aggregate inventory as `runtime/mmdvm-system-info.json`. This keeps support archives synchronized with the System card and includes the runtime variant/generation, exact binary/patch/upstream identity, board description/protocol, serial mapping, service state, source/build-tool/cache readiness, and maintenance capability flags without adding a second active modem probe.
+
 ## Future maintenance area
 
 The card reserves a **RUNTIME MAINTENANCE** area. In the RC3 UI-polish build only **REFRESH INFO** is active.
@@ -77,4 +81,5 @@ The read-only `/api/system/modem` endpoint is intentionally available while dash
 9. Expand modem journal identity lines and confirm only passive current-boot identity/version/open lines are shown.
 10. Select **REFRESH INFO** and confirm the card refreshes without interrupting RF.
 11. Confirm **BUILD / UPDATE YWD-EXTENDED** and **HAT FIRMWARE TOOLS** remain disabled in this RC3 UI-polish build.
-12. Confirm MMDVMHost/DMRGateway remain active and `systemctl --failed` remains clean after viewing/refreshing the card.
+12. Confirm a new diagnostic bundle includes `runtime/mmdvm-system-info.json`.
+13. Confirm MMDVMHost/DMRGateway remain active and `systemctl --failed` remains clean after viewing/refreshing the card.

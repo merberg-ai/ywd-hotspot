@@ -11,21 +11,25 @@
   }
 
   function ensureStartupThemes() {
-    if (!document.querySelector('link[data-ywd-startup-themes="1"]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = '/startup-themes.css?v=rc3.1';
-      link.dataset.ywdStartupThemes = '1';
-      link.onerror = () => console.error('YWD-Hotspot failed to load startup theme CSS');
-      document.head.appendChild(link);
-    }
+    // Current builds bundle the startup theme CSS into /style.css and the theme
+    // engine into /app.js so the selected animation is available before first
+    // paint. If that engine is already present, only initialize it; do not fetch
+    // duplicate assets later in dashboard startup.
     if (window.YWDStartupThemes) {
       window.YWDStartupThemes.init();
       return;
     }
+    if (!document.querySelector('link[data-ywd-startup-themes="1"]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/startup-themes.css?v=rc3.2';
+      link.dataset.ywdStartupThemes = '1';
+      link.onerror = () => console.error('YWD-Hotspot failed to load startup theme CSS');
+      document.head.appendChild(link);
+    }
     if (document.querySelector('script[data-ywd-startup-themes="1"]')) return;
     const script = document.createElement('script');
-    script.src = '/startup-themes.js?v=rc3.1';
+    script.src = '/startup-themes.js?v=rc3.2';
     script.async = false;
     script.dataset.ywdStartupThemes = '1';
     script.onload = () => window.YWDStartupThemes?.init();

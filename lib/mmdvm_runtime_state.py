@@ -24,6 +24,7 @@ LIB = Path(__file__).resolve().parent
 APP = LIB.parent
 PINS = APP / "pins.env"
 RUNTIME_STATE = Path(os.environ.get("YWD_MMDVM_RUNTIME_STATE", "/etc/ywd-hotspot/mmdvm-runtime.json"))
+VOICE_MARKER = Path(os.environ.get("YWD_MMDVM_VOICE_MARKER", "/var/lib/ywd-hotspot/mmdvm-voice-tap.json"))
 
 YWD_EXTENDED_CAPABILITIES = [
     "passive-dmr-voice",
@@ -192,6 +193,12 @@ def observed_runtime() -> dict:
     """Return runtime identity derived from the currently installed binary."""
     pins = _pins()
     ywd = _helper_status("mmdvm_voice_build.py")
+    # mmdvm_voice_build.py status intentionally summarizes marker metadata and
+    # may omit the full historical marker. Read the same root-owned marker
+    # directly so an exact allowlisted RC1/RC2 runtime can still be positively
+    # identified without trusting persisted capability state or rebuilding RF.
+    if not isinstance(ywd.get("marker"), dict) or not ywd.get("marker"):
+        ywd["marker"] = _read_json(VOICE_MARKER)
     upstream = _helper_status("mmdvm_upstream_build.py")
     observed = classify_runtime(pins, ywd, upstream)
     if observed.get("installed"):

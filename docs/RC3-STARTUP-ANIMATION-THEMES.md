@@ -6,7 +6,24 @@ YWD-Hotspot now supports multiple lightweight startup/loading animations. The st
 
 The default is **RF Sweep**. Existing schema-6 configurations that do not yet contain a loading-animation preference automatically use RF Sweep. No configuration schema bump is required for this presentation-only setting.
 
-The saved preference is stored as `web.loading_animation`. The browser also remembers the last server-confirmed value so the selected visual can appear before the next `/api/config` response completes. The appliance configuration remains authoritative once loaded.
+The saved preference is stored as `web.loading_animation`. The browser also remembers the last server-confirmed value as a compatibility fallback, but the appliance configuration is authoritative.
+
+## First-paint behavior
+
+The selected startup animation is now available before the normal `/api/config` request completes. This prevents the historical spinner from briefly appearing before the selected theme takes over.
+
+The dashboard does this without a second configuration file:
+
+- the normal `/style.css` response includes the startup-theme CSS needed for first paint;
+- the normal `/app.js` response contains only the validated `web.loading_animation` enum, followed by the startup-theme engine and the ordinary application loader;
+- the theme engine watches for creation of the startup overlay and replaces the historical loader during the same browser microtask checkpoint, before normal paint;
+- only the nine approved theme identifiers may be emitted;
+- no passwords, API keys, station data, RF settings, or other configuration values are embedded in JavaScript;
+- if the saved value is absent, invalid, or cannot be read, the first-paint fallback is **RF Sweep**.
+
+Because the saved preference is bundled into the dynamic `/app.js` response, that response is not stored as a reusable cached copy with an old theme choice. A new browser/device therefore receives the appliance-selected theme immediately rather than needing browser-local storage to learn it first.
+
+The later instrumentation bootstrap detects that the theme engine is already present and does not reload duplicate theme assets.
 
 ## Available themes
 
@@ -42,12 +59,14 @@ The loading-animation selector and Preview button follow the existing Settings l
 2. Confirm a configuration with no explicit `web.loading_animation` uses **RF Sweep**.
 3. Unlock Settings -> WEBUI and confirm the selector lists all nine themes.
 4. Preview each theme and confirm the preview closes automatically and does not alter RF/service/config state.
-5. Save a non-default theme, reload the dashboard, and confirm that theme is used on the next startup overlay.
-6. Save **RF Sweep** again and confirm it becomes the startup visual.
-7. Confirm Settings lock disables both the selector and Preview control.
-8. Test at least one mobile-width and one desktop-width browser.
-9. If possible, enable browser reduced-motion preference and confirm the loader remains readable without continuous animation.
-10. Confirm `ywd-mmdvmhost.service`, `ywd-dmrgateway.service`, and `ywd-dashboard.service` remain active and `systemctl --failed` remains clean.
+5. Save **DMR Frame Pulse**, fully close/reopen or reload the dashboard, and confirm DMR Frame Pulse is the first loader shown — the historical spinner must not flash first.
+6. Repeat step 5 from a different browser/device or cleared site storage if practical; the appliance-selected theme should still be the first loader shown.
+7. Save **RF Sweep**, reload, and confirm RF Sweep is the first startup visual and remains the canonical default.
+8. Confirm Settings lock disables both the selector and Preview control.
+9. Test at least one mobile-width and one desktop-width browser.
+10. If possible, enable browser reduced-motion preference and confirm the loader remains readable without continuous animation.
+11. Confirm the startup overlay still closes through the normal readiness gate and that the 12-second fail-safe still removes it if readiness cannot complete.
+12. Confirm `ywd-mmdvmhost.service`, `ywd-dmrgateway.service`, and `ywd-dashboard.service` remain active and `systemctl --failed` remains clean.
 
 ## Release status
 

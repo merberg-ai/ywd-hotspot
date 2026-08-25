@@ -360,9 +360,11 @@
     const s = status || {};
     const h = health || {};
     const c = s.config || {};
+    const station = c.station || {};
     const r = c.radio || {};
     const bmCfg = c.brandmeister || {};
     const display = c.display || {};
+    const instrumentation = display.instrumentation || {};
     const web = c.web || {};
     const maintenance = c.maintenance || {};
     const build = s.build || {};
@@ -374,6 +376,7 @@
     const cal = s.calibration || {};
     const baseline = cal.baseline || {};
     const best = cal.best || null;
+    const counters = s.activity?.counters || {};
     const u = update?.update || update || {};
     const channel = u.channel || build.update_channel || build.branch || 'unknown';
     const mode = String(r.mode || 'simplex').toLowerCase();
@@ -393,28 +396,36 @@
     const previous = h.previous_boot || {};
     const warnings = Array.isArray(h.kernel_warnings) ? h.kernel_warnings.length : 0;
     const sourceCommit = build.commit || u.current_commit || 'unknown';
+    const modemPort = r.uart || r.port || 'unknown';
+    const modemBaud = r.uart_speed || r.baud || 'unknown';
+    const modemDescription = s.activity?.modem?.description || 'unknown';
+    const coords = Number.isFinite(Number(station.latitude)) && Number.isFinite(Number(station.longitude))
+      ? `${Number(station.latitude).toFixed(5)},${Number(station.longitude).toFixed(5)}`
+      : 'unknown';
 
     return [
       `YWD-Hotspot support summary · ${new Date().toISOString()}`,
       `Version/build: ${s.version || build.version || 'unknown'} | ${build.branch || 'unknown'} @ ${sourceCommit} | channel ${channel}`,
       `Source: ${build.source || 'unknown'} / ${build.source_state || 'unknown'} | commit date ${build.commit_date || 'unknown'}`,
       `Host: ${h.hostname || s.system?.hostname || 'unknown'} | uptime ${Math.floor(Number(h.uptime_s ?? s.system?.uptime_s ?? 0))}s | boot ${h.boot_id || 'unknown'}`,
+      `Station: ${station.callsign || 'unknown'} | base DMR ID ${station.base_dmr_id || 'unknown'} | ESSID ${station.essid || '—'} | hotspot ID ${station.hotspot_id || 'unknown'} | ${station.location || 'unknown'} | coordinates ${coords}`,
       `Core services: MMDVM=${s.services?.mmdvmhost || 'unknown'} | Gateway=${s.services?.dmrgateway || 'unknown'} | Dashboard=${s.services?.dashboard || 'unknown'} | OLED=${s.services?.oled || 'unknown'} (${s.services?.oled_unit || 'unknown'}) | Activity=${s.services?.activity || 'unknown'}`,
       extendedServices ? `Discovered service health: ${extendedServices}` : 'Discovered service health: unavailable',
-      `RF: ${rfLine} | CC${r.color_code ?? '?'} | RX/TX offset ${r.rx_offset ?? '?'} / ${r.tx_offset ?? '?'} Hz | RX/TX/RF levels ${r.rx_level ?? '?'} / ${r.tx_level ?? '?'} / ${r.rf_level ?? '?'}%`,
-      `Modem: ${r.port || 'unknown'} @ ${r.baud || 'unknown'} | TX/RX invert ${r.tx_invert ?? '?'} / ${r.rx_invert ?? '?'} | jitter ${r.jitter_ms ?? '?'} ms | hang ${r.call_hang_s ?? '?'}/${r.tx_hang_s ?? '?'} s`,
+      `RF: ${rfLine} | CC${r.color_code ?? '?'} | RX/TX offset ${r.rx_offset ?? '?'} / ${r.tx_offset ?? '?'} Hz | RX/TX/RF levels ${r.rx_level ?? '?'} / ${r.tx_level ?? '?'} / ${r.rf_level ?? '?'}% | timeout ${r.timeout_s ?? '?'}s`,
+      `Modem: ${modemPort} @ ${modemBaud} | ${modemDescription} | TX/RX invert ${r.tx_invert ?? '?'} / ${r.rx_invert ?? '?'} | jitter ${r.jitter_ms ?? '?'} ms | hang ${r.call_hang_s ?? '?'}/${r.tx_hang_s ?? '?'} s`,
       `BrandMeister config: enabled=${bmCfg.enabled ?? false} | ${bmCfg.master || 'unknown'}:${bmCfg.port || 'unknown'} | hotspot password configured=${bmCfg.password_configured ?? false} | API key configured=${s.brandmeister?.api_key_configured ?? false}`,
       `BrandMeister runtime: ${s.brandmeister?.state || 'unknown'} | ${s.brandmeister?.detail || s.brandmeister?.profile_error || 'no detail'} | static=${tgList(s.brandmeister?.static)} | dynamic=${tgList(s.brandmeister?.dynamic)}`,
-      `Config: pending=${s.pending?.pending ?? 'unknown'} | hash=${s.pending?.current_hash || 'unknown'} | RF autostart=${maintenance.rf_autostart ?? 'unknown'} | persistent journal=${maintenance.persistent_journal ?? 'unknown'} (${maintenance.journal_max_mb ?? '?'} MB)`,
-      `Display/WebUI: OLED enabled=${display.enabled ?? false} | address=${display.address || 'unknown'} | brightness=${display.brightness ?? 'unknown'} | idle=${display.idle_timeout_s ?? 'unknown'}s | Web ${web.bind || 'unknown'}:${web.port || 'unknown'}`,
+      `Config: schema=${c.schema ?? 'unknown'} | pending=${s.pending?.pending ?? 'unknown'} | hash=${s.pending?.current_hash || 'unknown'} | RF autostart=${maintenance.rf_autostart ?? 'unknown'} | persistent journal=${maintenance.persistent_journal ?? 'unknown'} (${maintenance.journal_max_mb ?? '?'} MB)`,
+      `Display/WebUI: OLED enabled=${display.enabled ?? false} | ${display.runtime_mode || 'unknown'} | address=${display.address || 'unknown'} | brightness=${display.brightness ?? 'unknown'} | callsign=${display.callsign_size || 'unknown'} | instrumentation=${instrumentation.enabled ?? false}/${instrumentation.preset || 'unknown'} @ ${instrumentation.render_fps ?? '?'} fps | Web ${web.bind || 'unknown'}:${web.port || 'unknown'}`,
       `System: temp ${h.temperature_c ?? s.system?.temp_c ?? '—'} C | load ${(h.load || s.system?.load || []).join(' / ') || '—'} | memory ${mem.used_mb ?? '—'}/${mem.total_mb ?? '—'} MB | disk ${disk.used_gb ?? '—'}/${disk.total_gb ?? '—'} GB (${disk.used_pct ?? '—'}%)`,
       `Power/throttle: ${throttled.raw || throttled.value || 'unavailable'} | history=${Array.isArray(throttled.history) && throttled.history.length ? throttled.history.join(', ') : 'none'}`,
       `Wi-Fi: ${wifi.interface || 'wlan0'} | SSID=${wifi.ssid || 'unknown'} | IP=${wifi.ip || 'none'} | signal=${wifi.signal_dbm ?? '—'} dBm | gateway=${wifi.gateway || 'unknown'} | RX errors/dropped=${wifi.rx_errors ?? '—'}/${wifi.rx_dropped ?? '—'} | TX=${wifi.tx_errors ?? '—'}/${wifi.tx_dropped ?? '—'}`,
-      `DMR ID DB: ${db.state || 'unknown'} | records=${db.records ?? 'unknown'} | size=${db.size_bytes ?? 'unknown'} | age=${formatAge(db.age_s)} | interval=${db.interval_days ?? 'unknown'}d | due=${db.due ?? 'unknown'} | timer=${dmrid?.timer?.active || 'unknown'}/${dmrid?.timer?.enabled || 'unknown'}`,
+      `DMR ID DB: ${db.state || 'unknown'} | records=${db.records ?? 'unknown'} | size=${db.size_bytes ?? 'unknown'} | age=${formatAge(db.age_s)} | interval=${db.interval_days ?? maintenance.dmrid_update_days ?? 'unknown'}d | due=${db.due ?? 'unknown'} | timer=${dmrid?.timer?.active || 'unknown'}/${dmrid?.timer?.enabled || 'unknown'}`,
       `Plugins: ${pluginSummary(plugins)}`,
       `SSH: active=${ssh?.active ?? 'unknown'} | boot=${ssh?.enabled_at_boot ?? 'unknown'} | policy=${ssh?.authentication || 'unknown'} | managed=${ssh?.policy_managed ?? 'unknown'} | user=${ssh?.login_user || 'ywd'} | authorized keys=${ssh?.authorized_key_count ?? 'unknown'} | host keys=${ssh?.host_key_count ?? 'unknown'}`,
       `Updater: state=${u.state || 'idle'} | phase=${u.phase || '—'} | channel=${channel} | current=${u.current_commit || sourceCommit} | target=${u.target_commit || '—'} | available=${u.available ?? false}`,
       `Calibration: baseline ${baselineText} | best ${bestText} | runs=${Array.isArray(cal.tests) ? cal.tests.length : 0}`,
+      `Traffic counters: RF calls=${counters.rf_calls ?? '—'} | network calls=${counters.net_calls ?? '—'} | RF lost=${counters.rf_lost ?? '—'} | network lost=${counters.net_lost ?? '—'}`,
       `Boot/crash: previous=${previous.shutdown || 'unknown'} | kernel/hardware warning matches=${warnings} | journal=${h.journal_disk || 'unknown'}`,
       ...trafficSummary(s.activity),
       'Secrets intentionally omitted: BrandMeister password/API key, WebUI credentials, Wi-Fi PSK, and SSH key material are not included in this summary.',

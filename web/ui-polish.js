@@ -181,6 +181,7 @@
   // controls (for example simplex/duplex frequency fields) restore correctly.
   const settingsPage = $('settings');
   let settingsLocked = null;
+  let settingsLockSyncing = false;
   function ensureSettingsLockNotice() {
     if (!settingsPage) return null;
     let notice = $('settingsLockState');
@@ -197,29 +198,35 @@
   }
 
   function syncSettingsLock() {
-    if (!settingsPage) return;
+    if (!settingsPage || settingsLockSyncing) return;
+    settingsLockSyncing = true;
     const locked = !(typeof state !== 'undefined' && state?.controls?.authenticated);
-    const notice = ensureSettingsLockNotice();
-    if (notice) {
-      notice.hidden = !locked;
-      notice.textContent = 'SETTINGS LOCKED · Unlock the dashboard to edit configuration.';
-    }
-    settingsPage.classList.toggle('settings-locked', locked);
-    settingsPage.setAttribute('aria-readonly', locked ? 'true' : 'false');
-
-    settingsPage.querySelectorAll('input,select,textarea,button').forEach(el => {
-      if (locked) {
-        if (!Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
-          el.dataset.ywdLockDisabled = el.classList.contains('ctl') ? 'managed' : (el.disabled ? '1' : '0');
-        }
-        el.disabled = true;
-      } else if (Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
-        const previous = el.dataset.ywdLockDisabled;
-        if (previous !== 'managed') el.disabled = previous === '1';
-        delete el.dataset.ywdLockDisabled;
+    try {
+      const notice = ensureSettingsLockNotice();
+      if (notice) {
+        if (notice.hidden === locked) notice.hidden = !locked;
+        const text = 'SETTINGS LOCKED · Unlock the dashboard to edit configuration.';
+        if (notice.textContent !== text) notice.textContent = text;
       }
-    });
-    settingsLocked = locked;
+      settingsPage.classList.toggle('settings-locked', locked);
+      settingsPage.setAttribute('aria-readonly', locked ? 'true' : 'false');
+
+      settingsPage.querySelectorAll('input,select,textarea,button').forEach(el => {
+        if (locked) {
+          if (!Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
+            el.dataset.ywdLockDisabled = el.classList.contains('ctl') ? 'managed' : (el.disabled ? '1' : '0');
+          }
+          el.disabled = true;
+        } else if (Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
+          const previous = el.dataset.ywdLockDisabled;
+          if (previous !== 'managed') el.disabled = previous === '1';
+          delete el.dataset.ywdLockDisabled;
+        }
+      });
+      settingsLocked = locked;
+    } finally {
+      settingsLockSyncing = false;
+    }
   }
 
   if (settingsPage && typeof render === 'function') {
@@ -228,8 +235,13 @@
       baseSettingsRender(d);
       syncSettingsLock();
     };
-    const settingsObserver = new MutationObserver(() => {
-      if (settingsLocked) syncSettingsLock();
+    const settingsObserver = new MutationObserver(records => {
+      if (!settingsLocked || settingsLockSyncing) return;
+      const meaningful = records.some(record => {
+        const target = record.target;
+        return !(target === $('settingsLockState') || target?.parentElement === $('settingsLockState'));
+      });
+      if (meaningful) syncSettingsLock();
     });
     settingsObserver.observe(settingsPage, {childList:true, subtree:true});
     syncSettingsLock();

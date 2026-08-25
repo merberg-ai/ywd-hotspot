@@ -55,6 +55,8 @@ def wrap_handler(base):
                 "/instrumentation.js": ("instrumentation.js", "application/javascript; charset=utf-8"),
                 "/instrumentation-bootstrap.js": ("instrumentation-bootstrap.js", "application/javascript; charset=utf-8"),
                 "/instrumentation.css": ("instrumentation.css", "text/css; charset=utf-8"),
+                "/startup-themes.js": ("startup-themes.js", "application/javascript; charset=utf-8"),
+                "/startup-themes.css": ("startup-themes.css", "text/css; charset=utf-8"),
             }
             if path in static:
                 name, mime = static[path]

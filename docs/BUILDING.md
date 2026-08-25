@@ -125,14 +125,14 @@ Public releases use the fail-closed wrapper:
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-The wrapper is intentionally pinned to a specific release identity rather than acting as a generic "publish whatever branch is checked out" command. For the accepted RC2 source it requires:
+The wrapper is intentionally pinned to a specific release identity rather than acting as a generic "publish whatever branch is checked out" command. For RC3 it requires:
 
 ```text
-VERSION   0.2.0-rc2
-branch    release/0.2.0-rc2
+VERSION   0.2.0-rc3
+branch    release/0.2.0-rc3
 ```
 
-A future release must intentionally update that release identity before building.
+Each future release must intentionally advance that release identity before building.
 
 The public wrapper:
 
@@ -151,7 +151,7 @@ The public wrapper:
 13. writes `BUILD-METADATA.json` and `README-FIRST.txt`;
 14. restores the developer's original local builder settings.
 
-The release gate refuses personalized images rather than trying to sanitize them after the fact.
+The release gate refuses personalized images rather than trying to sanitize them after the fact. RC3 release metadata records the current YWD Extended capability set: `passive-dmr-voice`, `plugin-rx-monitor`, and `demand-gated-dmr-voice`.
 
 ## Accepted RC2 build
 

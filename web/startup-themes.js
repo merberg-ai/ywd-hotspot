@@ -20,12 +20,17 @@
   let pollTimer = null;
   let previewTimer = null;
   let hooksInstalled = false;
+  let earlyObserver = null;
+  let earlyObserverTimer = null;
 
   const safeTheme = value => allowed.has(String(value || '')) ? String(value) : DEFAULT_THEME;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   function storedTheme() {
     try { return safeTheme(localStorage.getItem(STORAGE_KEY)); } catch (_) { return DEFAULT_THEME; }
+  }
+  function initialTheme() {
+    return safeTheme(window.__YWD_LOADING_ANIMATION || storedTheme());
   }
   function rememberTheme(theme) {
     try { localStorage.setItem(STORAGE_KEY, safeTheme(theme)); } catch (_) {}
@@ -117,6 +122,7 @@
   function applyConfig(config) {
     lastConfig = config || lastConfig;
     const chosen = safeTheme(config?.web?.loading_animation || DEFAULT_THEME);
+    window.__YWD_LOADING_ANIMATION = chosen;
     rememberTheme(chosen);
     const select = document.getElementById('loadingAnimationSelect');
     if (select) select.value = chosen;
@@ -144,7 +150,7 @@
       const row = THEMES.find(item => item[0] === select.value) || THEMES[0];
       help.textContent = row[2] + (row[0] === DEFAULT_THEME ? ' · Default' : '');
     };
-    select.value = safeTheme(lastConfig?.web?.loading_animation || storedTheme());
+    select.value = safeTheme(lastConfig?.web?.loading_animation || initialTheme());
     syncHelp();
     select.addEventListener('change', () => { syncHelp(); if (typeof window.setDirty === 'function') window.setDirty(true); else if (typeof setDirty === 'function') setDirty(true); });
     document.getElementById('loadingAnimationPreview').addEventListener('click', () => preview(select.value));
@@ -191,7 +197,7 @@
   }
 
   function init() {
-    applyStartupTheme(storedTheme());
+    applyStartupTheme(initialTheme());
     installHooks();
     installSetting();
     fetch('/api/config',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{ if(d?.config){ applyConfig(d.config); if(typeof window.fillForm==='function') window.fillForm(d.config); } }).catch(()=>{});
@@ -199,6 +205,37 @@
     if (!pollTimer && document.getElementById('ywdStartupOverlay')) pollTimer = setInterval(refreshRuntimeData, 450);
   }
 
-  window.YWDStartupThemes = {init, themes:THEMES.map(([id,label,description])=>({id,label,description})), defaultTheme:DEFAULT_THEME, preview};
+  function installEarlyOverlayWatcher() {
+    const apply = () => applyStartupTheme(initialTheme());
+    if (apply()) return;
+    if (!document.documentElement || typeof MutationObserver !== 'function') return;
+    earlyObserver = new MutationObserver(() => {
+      if (!apply()) return;
+      earlyObserver?.disconnect();
+      earlyObserver = null;
+      clearTimeout(earlyObserverTimer);
+      earlyObserverTimer = null;
+    });
+    earlyObserver.observe(document.documentElement, {childList:true, subtree:true});
+    earlyObserverTimer = setTimeout(() => {
+      earlyObserver?.disconnect();
+      earlyObserver = null;
+      earlyObserverTimer = null;
+    }, 2000);
+  }
+
+  window.YWDStartupThemes = {
+    init,
+    applyStartupTheme,
+    themes: THEMES.map(([id,label,description])=>({id,label,description})),
+    defaultTheme: DEFAULT_THEME,
+    preview,
+  };
+
+  // When this engine is bundled ahead of app.js, the observer sees the startup
+  // overlay mutation and replaces the historical spinner in the same microtask
+  // checkpoint, before the browser paints. The server-provided theme hint wins;
+  // browser storage remains a fallback for older dashboard builds.
+  installEarlyOverlayWatcher();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true}); else init();
 })();

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -18,9 +19,25 @@ if str(HERE) not in sys.path:
 
 import diagnostics_admin as base
 
-_ORIGINAL_REDACT = base.redact_json
 _ORIGINAL_MARKERS = base.marker_state
+_ORIGINAL_READ_JSON = base.read_json
+_ORIGINAL_SANITIZE = base.sanitize_text
 _ORIGINAL_SUMMARY = base.support_summary
+CLI_SECRET_RE = re.compile(
+    r"(?i)(--?(?:password|passwd|passphrase|api[-_]?key|token|secret|credential|psk)\s+)(\S+)"
+)
+PSK_ASSIGN_RE = re.compile(r"(?i)\b(psk)(\s*[:=]\s*)([^\s,;]+)")
+URL_CREDENTIAL_RE = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)([^/\s:@]+):([^@\s/]+)@")
+LOCAL_SECRET_KEY_RE = re.compile(r"(?:psk|pre[_ -]?shared[_ -]?key)", re.I)
+
+
+def sanitize_text(text: str) -> str:
+    """Scrub structured values plus common command-line/URL credential forms."""
+    value = _ORIGINAL_SANITIZE(text)
+    value = CLI_SECRET_RE.sub(lambda m: f"{m.group(1)}***REDACTED***", value)
+    value = PSK_ASSIGN_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}***REDACTED***", value)
+    value = URL_CREDENTIAL_RE.sub(lambda m: f"{m.group(1)}***:***@", value)
+    return value
 
 
 def redact_json(value, key=""):
@@ -29,7 +46,11 @@ def redact_json(value, key=""):
         out = {}
         for k, v in value.items():
             name = str(k)
-            if base.SECRET_KEY_RE.search(name) and not base.SAFE_SECRET_META_RE.search(name):
+            is_secret = (
+                base.SECRET_KEY_RE.search(name)
+                or LOCAL_SECRET_KEY_RE.search(name)
+            )
+            if is_secret and not base.SAFE_SECRET_META_RE.search(name):
                 out[name] = "***REDACTED***" if v not in (None, "", False) else v
             else:
                 out[name] = redact_json(v, name)
@@ -37,15 +58,33 @@ def redact_json(value, key=""):
     if isinstance(value, list):
         return [redact_json(item, key) for item in value]
     if isinstance(value, str):
-        return base.sanitize_text(value).rstrip("\n")
+        return sanitize_text(value).rstrip("\n")
     return value
+
+
+def read_json(path: Path, default=None):
+    """Inject the separately persisted first-party update channel into build info."""
+    doc = _ORIGINAL_READ_JSON(path, default)
+    try:
+        same_build = Path(path).resolve() == (base.ETC / "build-info.json").resolve()
+    except Exception:
+        same_build = False
+    if same_build and isinstance(doc, dict):
+        doc = dict(doc)
+        try:
+            channel = (base.ETC / "update-channel").read_text(encoding="utf-8").strip()
+            if channel:
+                doc["update_channel"] = channel
+        except Exception:
+            pass
+    return doc
 
 
 def _safe_runtime_json(root: Path, rel: str, path: Path, state: dict) -> None:
     if not path.is_file() or path.is_symlink():
         state[rel] = {"present": False, "readable": False, "path": str(path)}
         return
-    doc = base.read_json(path, None)
+    doc = read_json(path, None)
     if not isinstance(doc, dict):
         state[rel] = {"present": True, "readable": False, "path": str(path)}
         return
@@ -80,7 +119,7 @@ def marker_state(root: Path) -> dict:
         state["mmdvm-telemetry-public.json"] = {
             "present": False,
             "readable": False,
-            "error": base.sanitize_text(str(exc))[:400],
+            "error": sanitize_text(str(exc))[:400],
         }
 
     try:
@@ -114,7 +153,7 @@ def marker_state(root: Path) -> dict:
         state["mmdvm-voice-public.json"] = {
             "present": False,
             "readable": False,
-            "error": base.sanitize_text(str(exc))[:400],
+            "error": sanitize_text(str(exc))[:400],
         }
 
     # Presence/ownership/size clues for transient runtime files without dumping
@@ -148,7 +187,7 @@ def support_summary(build, cfg, h, units, plugins, dmrid, ssh, vocoder, git):
             build["update_channel"] = channel
     except Exception:
         pass
-    return base.sanitize_text(
+    return sanitize_text(
         _ORIGINAL_SUMMARY(build, cfg, h, units, plugins, dmrid, ssh, vocoder, git)
     )
 
@@ -161,7 +200,9 @@ def main() -> None:
         raise SystemExit("usage: diagnostics_policy.py diagnostics")
 
     # Monkey-patch only the policy seams intentionally exposed by the collector.
+    base.sanitize_text = sanitize_text
     base.redact_json = redact_json
+    base.read_json = read_json
     base.marker_state = marker_state
     base.support_summary = support_summary
     print(json.dumps(base.diagnostics(), separators=(",", ":")))
@@ -171,5 +212,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": base.sanitize_text(str(exc))[:1000]}, separators=(",", ":")))
+        print(json.dumps({"ok": False, "error": sanitize_text(str(exc))[:1000]}, separators=(",", ":")))
         raise SystemExit(1)

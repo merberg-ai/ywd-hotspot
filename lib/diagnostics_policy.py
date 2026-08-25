@@ -194,6 +194,25 @@ def marker_state(root: Path) -> dict:
     # is often the fastest way to reconcile "radio did X / dashboard showed Y".
     _safe_runtime_json(root, "activity.json", Path("/run/ywd-hotspot/activity.json"), state)
 
+    # Keep Diagnostics synchronized with the System modem card. This is the same
+    # read-only aggregate view: it never opens the UART, refreshes markers,
+    # rebuilds MMDVMHost, or restarts RF.
+    try:
+        import mmdvm_system_info
+        base.write_json(
+            root,
+            "runtime/mmdvm-system-info.json",
+            redact_json(mmdvm_system_info.snapshot()),
+            redact=False,
+        )
+        state["mmdvm-system-info.json"] = {"present": True, "readable": True}
+    except Exception as exc:
+        state["mmdvm-system-info.json"] = {
+            "present": False,
+            "readable": False,
+            "error": sanitize_text(str(exc))[:400],
+        }
+
     # Raw bridge JSON is already local/trusted, but export only the public
     # projections for telemetry/voice where possible so frame payloads are not
     # needlessly copied into support archives.

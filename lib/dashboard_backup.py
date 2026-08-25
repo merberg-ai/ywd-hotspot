@@ -6,6 +6,7 @@ import json
 from urllib.parse import urlparse
 
 import dashboard_core as core
+import mmdvm_system_info
 
 
 def wrap_handler(base):
@@ -54,6 +55,16 @@ def wrap_handler(base):
                 return
             if path == "/instrumentation-layout.css":
                 self.serve_static("instrumentation-layout.css", "text/css; charset=utf-8")
+                return
+            if path == "/api/system/modem":
+                # Read-only/sanitized hardware + host-runtime inventory. This does
+                # not touch the UART, rebuild MMDVMHost, refresh markers, or
+                # restart RF, so it remains useful while dashboard controls are
+                # locked.
+                try:
+                    self.send_json(mmdvm_system_info.snapshot())
+                except Exception as exc:
+                    self.send_json({"error": str(exc)[:1000]}, 502)
                 return
             super().do_GET()
 

@@ -26,6 +26,9 @@ case "${1:-}" in
   diagnostics)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/diagnostics_policy.py "$@"
     ;;
+  mmdvm-system-info)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/mmdvm_system_info.py
+    ;;
   shutdown)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/system_admin.py "$@"
     ;;

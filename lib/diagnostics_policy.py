@@ -280,15 +280,34 @@ def marker_state(root: Path) -> dict:
 
 def support_summary(build, cfg, h, units, plugins, dmrid, ssh, vocoder, git):
     build = dict(build or {})
+    cfg_doc = dict(cfg or {})
+    radio = dict(cfg_doc.get("radio") or {})
+    # The original summary predates schema 6 naming. Feed it aliases so the
+    # human-readable bundle summary shows the real current UART settings.
+    radio["port"] = radio.get("uart") or radio.get("port") or "unknown"
+    radio["baud"] = radio.get("uart_speed") or radio.get("baud") or "unknown"
+    cfg_doc["radio"] = radio
     try:
         channel = (base.ETC / "update-channel").read_text(encoding="utf-8").strip()
         if channel:
             build["update_channel"] = channel
     except Exception:
         pass
-    return sanitize_text(
-        _ORIGINAL_SUMMARY(build, cfg, h, units, plugins, dmrid, ssh, vocoder, git)
-    )
+
+    text = _ORIGINAL_SUMMARY(build, cfg_doc, h, units, plugins, dmrid, ssh, vocoder, git).rstrip()
+    station = cfg_doc.get("station") if isinstance(cfg_doc.get("station"), dict) else {}
+    display = cfg_doc.get("display") if isinstance(cfg_doc.get("display"), dict) else {}
+    instrument = display.get("instrumentation") if isinstance(display.get("instrumentation"), dict) else {}
+    activity = read_json(Path("/run/ywd-hotspot/activity.json"), {}) or {}
+    modem = activity.get("modem") if isinstance(activity.get("modem"), dict) else {}
+    counters = activity.get("counters") if isinstance(activity.get("counters"), dict) else {}
+    extra = [
+        f"Station: {station.get('callsign', 'unknown')} | base DMR ID {station.get('base_dmr_id', 'unknown')} | ESSID {station.get('essid', '—')} | hotspot ID {station.get('hotspot_id', 'unknown')} | location {station.get('location', 'unknown')}",
+        f"Schema-6 modem: {radio.get('uart', 'unknown')} @ {radio.get('uart_speed', 'unknown')} | {modem.get('description', 'unknown')} | timeout {radio.get('timeout_s', 'unknown')} s",
+        f"Display runtime: mode={display.get('runtime_mode', 'unknown')} | callsign={display.get('callsign_size', 'unknown')} | instrumentation={instrument.get('enabled', False)}/{instrument.get('preset', 'unknown')} @ {instrument.get('render_fps', 'unknown')} fps",
+        f"Traffic counters: RF calls={counters.get('rf_calls', 'unknown')} | network calls={counters.get('net_calls', 'unknown')} | RF lost={counters.get('rf_lost', 'unknown')} | network lost={counters.get('net_lost', 'unknown')}",
+    ]
+    return sanitize_text(text + "\n" + "\n".join(extra) + "\n")
 
 
 def main() -> None:

@@ -20,6 +20,9 @@ case "${1:-}" in
   ssh-client-key-create)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_client_key_admin.py "$@"
     ;;
+  diagnostics)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/diagnostics_admin.py "$@"
+    ;;
   shutdown)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/system_admin.py "$@"
     ;;

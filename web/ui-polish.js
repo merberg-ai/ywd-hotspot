@@ -177,8 +177,8 @@
 
   // Settings remain readable while the dashboard is locked, but every editable
   // control follows the same authenticated control session as the rest of the UI.
-  // Preserve each control's existing disabled state so mode-specific controls
-  // (for example simplex/duplex frequency fields) restore correctly after unlock.
+  // Preserve each non-auth control's existing disabled state so mode-specific
+  // controls (for example simplex/duplex frequency fields) restore correctly.
   const settingsPage = $('settings');
   let settingsLocked = null;
   function ensureSettingsLockNotice() {
@@ -210,11 +210,12 @@
     settingsPage.querySelectorAll('input,select,textarea,button').forEach(el => {
       if (locked) {
         if (!Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
-          el.dataset.ywdLockDisabled = el.disabled ? '1' : '0';
+          el.dataset.ywdLockDisabled = el.classList.contains('ctl') ? 'managed' : (el.disabled ? '1' : '0');
         }
         el.disabled = true;
       } else if (Object.prototype.hasOwnProperty.call(el.dataset, 'ywdLockDisabled')) {
-        el.disabled = el.dataset.ywdLockDisabled === '1';
+        const previous = el.dataset.ywdLockDisabled;
+        if (previous !== 'managed') el.disabled = previous === '1';
         delete el.dataset.ywdLockDisabled;
       }
     });

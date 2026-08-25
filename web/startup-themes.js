@@ -158,21 +158,22 @@
   }
 
   function installHooks() {
-    if (hooksInstalled) return;
+    if (hooksInstalled) return true;
+    // The first-paint theme engine now runs before app-core. Do not mark these
+    // form hooks installed until the core functions actually exist; a later
+    // initialization pass will attach them once app-core has loaded.
+    if (typeof window.fillForm !== 'function' || typeof window.formConfig !== 'function') return false;
     hooksInstalled = true;
-    if (typeof window.fillForm === 'function') {
-      const baseFill = window.fillForm;
-      window.fillForm = function(c) { const out = baseFill(c); applyConfig(c); installSetting(); return out; };
-    }
-    if (typeof window.formConfig === 'function') {
-      const baseForm = window.formConfig;
-      window.formConfig = function() {
-        const c = baseForm();
-        c.web = c.web || {};
-        c.web.loading_animation = safeTheme(document.getElementById('loadingAnimationSelect')?.value || lastConfig?.web?.loading_animation || DEFAULT_THEME);
-        return c;
-      };
-    }
+    const baseFill = window.fillForm;
+    window.fillForm = function(c) { const out = baseFill(c); applyConfig(c); installSetting(); return out; };
+    const baseForm = window.formConfig;
+    window.formConfig = function() {
+      const c = baseForm();
+      c.web = c.web || {};
+      c.web.loading_animation = safeTheme(document.getElementById('loadingAnimationSelect')?.value || lastConfig?.web?.loading_animation || DEFAULT_THEME);
+      return c;
+    };
+    return true;
   }
 
   function preview(theme) {

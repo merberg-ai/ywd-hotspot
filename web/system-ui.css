@@ -45,6 +45,14 @@
 .dmrid-grid span{color:var(--muted);font-size:9px;letter-spacing:.06em}
 .dmrid-grid b{font-size:10px;text-align:right;overflow-wrap:anywhere}
 .dmrid-actions{margin-top:4px}
+
+/* The appliance has one managed SSH/SFTP login account: ywd. Keep the hidden
+ * compatibility value for the existing client-key action, but do not present a
+ * fake user-selectable field in the System UI. */
+#sshClientUser{display:none!important}
+#sshAccessCard .lookup-row:has(#sshClientUser){grid-template-columns:1fr}
+#sshClientCreate{width:100%;min-width:0}
+
 .system-power-card{
   align-self:start;
   height:auto;

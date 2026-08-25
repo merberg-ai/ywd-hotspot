@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Locked dashboard routes for settings backup/restore and SSH operations."""
+"""Locked dashboard routes for settings backup/restore, diagnostics, and SSH operations."""
 from __future__ import annotations
 
 import json
@@ -67,17 +67,24 @@ def wrap_handler(base):
                 "/api/ssh/configure": "ssh-configure",
                 "/api/ssh-keys/export": "ssh-keys-export",
                 "/api/ssh-client-key/create": "ssh-client-key-create",
+                "/api/diagnostics/create": "diagnostics",
             }
             if path not in routes:
                 super().do_POST()
                 return
-            # SSH/runtime and settings migration operations are unreachable until
-            # the existing dashboard control session has been authenticated.
+            # SSH/runtime, diagnostics, and settings migration operations are
+            # unreachable until the existing dashboard control session has been
+            # authenticated.
             if not self.require_control():
                 return
             try:
                 body = self._large_json()
-                if path == "/api/ssh/configure":
+                if path == "/api/diagnostics/create":
+                    # The v2 collector deliberately gathers many bounded service,
+                    # journal, hardware, network, plugin, and provenance probes.
+                    # Give a Pi Zero or degraded appliance enough time to finish.
+                    timeout = 150
+                elif path == "/api/ssh/configure":
                     timeout = 45
                 elif path.startswith("/api/ssh"):
                     timeout = 30

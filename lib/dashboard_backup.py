@@ -29,7 +29,7 @@ def wrap_handler(base):
 
         def _serve_backup_js(self):
             parts = []
-            for name in ("backup-restore.js", "ssh-key-export.js", "modem-ui.js"):
+            for name in ("backup-restore.js", "ssh-key-export.js", "modem-ui.js", "update-branch.js"):
                 path = core.WEB / name
                 if not path.is_file():
                     self.send_json({"error": "not found"}, 404)

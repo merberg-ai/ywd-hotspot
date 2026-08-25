@@ -124,7 +124,11 @@ def main() -> int:
             "upstream_commit": p.get("MMDVM_HOST_COMMIT"),
             "extension_api": int(p.get("MMDVM_YWD_PATCH_API", "0")) if variant == "ywd-extended" else None,
             "patch_sha256": p.get("MMDVM_YWD_PATCH_SHA256") if variant == "ywd-extended" else None,
-            "capabilities": ["passive-dmr-voice", "plugin-rx-monitor"] if variant == "ywd-extended" else [],
+            "capabilities": [
+                "passive-dmr-voice",
+                "plugin-rx-monitor",
+                "demand-gated-dmr-voice",
+            ] if variant == "ywd-extended" else [],
         },
         "dmrgateway": {
             "upstream_commit": p.get("DMR_GATEWAY_COMMIT"),

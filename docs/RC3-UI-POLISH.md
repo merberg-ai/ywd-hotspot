@@ -83,6 +83,8 @@ The copied summary includes, where available:
 
 It does **not** copy BrandMeister passwords/API keys, the WebUI control credential, Wi-Fi PSKs, or SSH key material.
 
+Clipboard handling is deliberately compatible with the appliance's normal plain-LAN HTTP use. The dashboard first uses the modern Clipboard API when available. If browser security policy blocks that path, it falls back to a temporary hidden textarea and the legacy browser copy command. If both automatic methods are denied, the generated support summary remains visible and is automatically selected for manual copying rather than being discarded or reported as a diagnostics-generation failure.
+
 ### Diagnostic bundle v2
 
 **CREATE DIAGNOSTIC BUNDLE** now uses a current-appliance collector instead of the original hard-coded Alpha-era service list. The archive discovers installed `ywd-*` units so newer first-party services and plugin instances are automatically represented.
@@ -111,14 +113,15 @@ The diagnostics directory retains a bounded set of recent generated archives rat
 
 1. Unlock dashboard controls and open **Diagnostics**.
 2. Select **COPY SUPPORT SUMMARY** and confirm the preview/copy contains the exact current build/channel, correct simplex/duplex RF values, service state, BrandMeister state, DMR ID status, plugin state, SSH state, system/network health, and recent activity where available.
-3. Confirm the summary contains only `configured=true/false` style secret metadata and does not expose password/API-key/key material.
-4. Select **CREATE DIAGNOSTIC BUNDLE** and allow the Pi time to collect the broader support archive.
-5. Confirm the resulting archive identifies itself as diagnostic schema 2 and contains `README.txt`, `support-summary.txt`, `bundle-manifest.json`, and the expected `config/`, `state/`, `runtime/`, `runtime-state/`, `system/`, `hardware/`, `network/`, `journals/`, `plugins/`, `dmrid/`, `security/`, `vocoder/`, `update/`, and `inventory/` support areas as applicable on that appliance.
-6. Confirm the manifest/build metadata reports the saved `dev` channel and exact installed development commit during this UI-polish window.
-7. Review the redacted generated INIs and representative logs/state documents; confirm no BrandMeister password/API key, WebUI credential, Wi-Fi PSK, SSH key body, or AMBE voice-frame payload is present.
-8. Confirm newly added/dynamically installed `ywd-*` services appear automatically in discovered service state and per-service journals when present.
-9. Confirm creating/copying diagnostics does not change RF state, plugin state, SSH enabled state, configuration, or updater channel.
-10. Confirm `ywd-mmdvmhost.service`, `ywd-dmrgateway.service`, and `ywd-dashboard.service` remain active and `systemctl --failed` remains clean after collection.
+3. Test **COPY SUPPORT SUMMARY** from the normal plain-LAN `http://` dashboard on the mobile browser. Confirm it either reports a normal copy, reports the LAN compatibility copy path, or visibly selects the generated summary for manual copying if that browser blocks both automatic methods. In all cases the generated summary must remain intact in the preview.
+4. Confirm the summary contains only `configured=true/false` style secret metadata and does not expose password/API-key/key material.
+5. Select **CREATE DIAGNOSTIC BUNDLE** and allow the Pi time to collect the broader support archive.
+6. Confirm the resulting archive identifies itself as diagnostic schema 2 and contains `README.txt`, `support-summary.txt`, `bundle-manifest.json`, and the expected `config/`, `state/`, `runtime/`, `runtime-state/`, `system/`, `hardware/`, `network/`, `journals/`, `plugins/`, `dmrid/`, `security/`, `vocoder/`, `update/`, and `inventory/` support areas as applicable on that appliance.
+7. Confirm the manifest/build metadata reports the saved `dev` channel and exact installed development commit during this UI-polish window.
+8. Review the redacted generated INIs and representative logs/state documents; confirm no BrandMeister password/API key, WebUI credential, Wi-Fi PSK, SSH key body, or AMBE voice-frame payload is present.
+9. Confirm newly added/dynamically installed `ywd-*` services appear automatically in discovered service state and per-service journals when present.
+10. Confirm creating/copying diagnostics does not change RF state, plugin state, SSH enabled state, configuration, or updater channel.
+11. Confirm `ywd-mmdvmhost.service`, `ywd-dmrgateway.service`, and `ywd-dashboard.service` remain active and `systemctl --failed` remains clean after collection.
 
 ## Physical acceptance for Settings lock
 

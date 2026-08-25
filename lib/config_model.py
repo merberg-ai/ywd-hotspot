@@ -109,6 +109,7 @@ def defaults() -> dict:
         "web": {
             "bind": "0.0.0.0",
             "port": 8080,
+            "loading_animation": "rf_sweep",
         },
         "maintenance": {
             "rf_autostart": False,
@@ -326,6 +327,11 @@ def normalize(raw: dict, preserve_password: str | None = None) -> dict:
     except ValueError:
         raise ValueError("dashboard bind must be an IP address such as 0.0.0.0 or 127.0.0.1")
     w["port"] = _int(w.get("port", 8080), "dashboard port", 1024, 65535)
+    w["loading_animation"] = _choice(
+        w.get("loading_animation", "rf_sweep"),
+        "loading animation",
+        {"rf_sweep", "radar_scan", "packet_burst", "digital_waterfall", "rf_orbit", "boot_telemetry", "signal_lock", "vfo_tuning", "dmr_frame"},
+    )
 
     m = c["maintenance"]
     m["rf_autostart"] = bool(m.get("rf_autostart", True))
@@ -386,7 +392,7 @@ def classify_changes(paths):
     p = set(paths)
     rf = any(x.startswith(("station.", "radio.", "brandmeister.")) for x in p)
     oled = any(x.startswith("display.") and not x.startswith("display.instrumentation.") for x in p)
-    dashboard = any(x.startswith("web.") or x.startswith("display.instrumentation.") for x in p)
+    dashboard = any(x in {"web.bind", "web.port"} or x.startswith("display.instrumentation.") for x in p)
     journald = any(x in {"maintenance.persistent_journal", "maintenance.journal_max_mb"} for x in p)
     autostart = "maintenance.rf_autostart" in p
     return {

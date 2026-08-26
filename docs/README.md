@@ -3,7 +3,7 @@
 [← Back to project README](../README.md)
 
 > [!IMPORTANT]
-> `0.2.0-rc2` is the current physically accepted public-testing release. It was validated both as a freshly flashed factory image and through an in-place `0.2.0-rc1 -> 0.2.0-rc2` dashboard update, followed by a clean reboot with zero failed systemd units.
+> `0.2.0-rc2` is the current physically accepted public-testing release. It was validated both as a freshly flashed factory image and through an in-place `0.2.0-rc1 -> 0.2.0-rc2` dashboard update, followed by a clean reboot with zero failed systemd units. RC3 is in final pre-image acceptance and is not public until the exact factory artifact passes.
 
 ## Documentation map
 
@@ -14,6 +14,7 @@
 | 🛠️ Validate/build source, MMDVM variants, or images | **[Building](BUILDING.md)** |
 | 🥧 Understand the appliance/public-image workflow | **[OS Development](OS-DEVELOPMENT.md)** |
 | 🔄 Check/apply updates | **[Upgrading](UPGRADING.md)** |
+| 🌿 Change/check the main/dev/dev-plugins software channel | **[Software Channels](SOFTWARE-CHANNELS.md)** |
 | 🔐 Export/restore `.ywdsettings` | **[Backup / Restore](BACKUP-RESTORE.md)** |
 | 📻 Manage BrandMeister talkgroups | **[Talkgroup Manager](TALKGROUPS.md)** |
 | 📟 Configure gauges/OLED | **[Display + Instrumentation](DISPLAY.md)** |
@@ -22,12 +23,14 @@
 | 📦 Build/sign/update `.ywdplugin` packages | **[Plugin Packages](PLUGIN-PACKAGES.md)** |
 | 🖥️ Understand isolated browser plugins | **[Plugin UI](PLUGIN-UI.md)** |
 | 🎧 Understand YWD Extended/passive DMR voice | **[Passive DMR Voice](DMR-VOICE.md)** |
+| 📡 Inspect MMDVM HAT/runtime identity in System | **[MODEM / MMDVM System Card](MODEM-SYSTEM-CARD.md)** |
 | 🎙️ Install/verify the external RX vocoder backend | **[External Vocoder](VOCODER.md)** |
 | 📡 Understand trusted MMDVM telemetry | **[Telemetry](TELEMETRY.md)** |
 | 📞 Understand normalized sessions | **[MMDVM Sessions](MMDVM-SESSIONS.md)** |
 | 🧱 Understand RF/runtime boundaries | **[Architecture](ARCHITECTURE.md)** |
 | 🌿 Understand branches/checkpoints/releases | **[Repository Policy](REPOSITORY.md)** |
 | 🧰 Develop safely | **[GitHub / Development](GITHUB-SETUP.md)** |
+| 🧪 Review the RC3 candidate/release notes | **[0.2.0-rc3 Release Notes](RELEASE-NOTES-0.2.0-rc3.md)** |
 | 🧪 Review the accepted RC2 release | **[0.2.0-rc2 Release Notes](RELEASE-NOTES-0.2.0-rc2.md)** |
 | 📦 Review RC1 release notes | **[0.2.0-rc1 Release Notes](RELEASE-NOTES-0.2.0-rc1.md)** |
 | 🗄️ Browse completed plans / Alpha archaeology | **[Historical Documentation](history/README.md)** |

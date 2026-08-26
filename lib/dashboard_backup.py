@@ -27,19 +27,19 @@ def wrap_handler(base):
             return obj
 
         def _serve_backup_js(self):
-            parts = []
-            for name in ("backup-restore.js", "ssh-key-export.js", "modem-ui.js", "update-branch.js"):
-                path = core.WEB / name
-                if not path.is_file():
-                    self.send_json({"error": "not found"}, 404)
-                    return
-                data = path.read_bytes()
-                if len(data) > 512 * 1024:
-                    self.send_json({"error": "backup UI asset is too large"}, 500)
-                    return
-                parts.append(data)
-            body = b"\n;\n".join(parts)
-            self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-cache")
+            # Keep this endpoint single-purpose. Historically it also concatenated
+            # SSH, MMDVM and software-channel modules, which hid missing explicit
+            # dashboard wiring and made one feature bundle responsible for several
+            # unrelated controls. Those modules now have their own static routes.
+            path = core.WEB / "backup-restore.js"
+            if not path.is_file():
+                self.send_json({"error": "not found"}, 404)
+                return
+            data = path.read_bytes()
+            if len(data) > 512 * 1024:
+                self.send_json({"error": "backup UI asset is too large"}, 500)
+                return
+            self.send_bytes(200, data, "application/javascript; charset=utf-8", cache="no-cache")
 
         def do_GET(self):
             path = urlparse(self.path).path
@@ -48,6 +48,12 @@ def wrap_handler(base):
                 return
             if path == "/ssh-key-export.js":
                 self.serve_static("ssh-key-export.js", "application/javascript; charset=utf-8")
+                return
+            if path == "/modem-ui.js":
+                self.serve_static("modem-ui.js", "application/javascript; charset=utf-8")
+                return
+            if path == "/update-branch.js":
+                self.serve_static("update-branch.js", "application/javascript; charset=utf-8")
                 return
             if path == "/backup-restore.css":
                 self.serve_static("backup-restore.css", "text/css; charset=utf-8")

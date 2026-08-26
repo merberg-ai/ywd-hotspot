@@ -20,44 +20,6 @@
     return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
   };
 
-  function installStyle() {
-    if (document.getElementById('ywdModemUiStyle')) return;
-    const style = document.createElement('style');
-    style.id = 'ywdModemUiStyle';
-    style.textContent = `
-      .system-modem-card{grid-column:1/-1;border-color:#1b5260;background:linear-gradient(180deg,#06151bee,#041016ee)}
-      .system-modem-card .modem-badge{font-size:10px;letter-spacing:.08em;font-weight:700}
-      .modem-intro{margin:4px 0 14px}
-      .modem-section{margin-top:14px;padding-top:12px;border-top:1px solid #17343d}
-      .modem-section-title{margin:0 0 8px;color:var(--accent);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
-      .modem-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px;border-top:1px solid #132f38}
-      .modem-grid>div{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:8px 0;border-bottom:1px solid #102a32;min-width:0}
-      .modem-grid span{color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase;flex:0 0 auto}
-      .modem-grid b{font-size:10px;text-align:right;overflow-wrap:anywhere;word-break:break-word;min-width:0}
-      .modem-wide{grid-column:1/-1}
-      .modem-wide b{max-width:74%}
-      .modem-capabilities{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-      .modem-capability{border:1px solid #1a5767;border-radius:999px;padding:4px 7px;background:#071820;color:#86eaff;font-size:9px;letter-spacing:.04em}
-      .modem-details{margin-top:12px;border:1px solid #173b45;border-radius:9px;background:#051016}
-      .modem-details summary{cursor:pointer;padding:10px 12px;color:var(--muted);font-size:10px;letter-spacing:.08em;user-select:none}
-      .modem-details[open] summary{border-bottom:1px solid #17343d;color:var(--accent)}
-      .modem-details-body{padding:4px 12px 12px}
-      .modem-journal{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:9px;line-height:1.45;color:var(--muted)}
-      .modem-maintenance{margin-top:14px;padding:12px;border:1px dashed #24505b;border-radius:9px;background:#061117}
-      .modem-maintenance .hint{margin:0 0 10px}
-      .modem-maintenance .btn[disabled]{opacity:.42;cursor:not-allowed;filter:none}
-      .modem-refresh{min-width:130px}
-      @media(max-width:620px){
-        .modem-grid{grid-template-columns:1fr}
-        .modem-wide{grid-column:auto}
-        .modem-wide b{max-width:62%}
-        .modem-maintenance .buttonrow{display:grid;grid-template-columns:1fr}
-        .modem-maintenance .btn{width:100%}
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
   function row(label, value, wide = false, title = '') {
     return `<div${wide ? ' class="modem-wide"' : ''}><span>${esc(label)}</span><b${title ? ` title="${esc(title)}"` : ''}>${esc(value)}</b></div>`;
   }
@@ -204,7 +166,6 @@
     const grid = runtime?.parentElement;
     if (!page || !runtime || !grid) return false;
 
-    installStyle();
     const card = document.createElement('article');
     card.className = 'card system-modem-card';
     card.id = 'mmdvmInfoCard';

@@ -70,6 +70,8 @@ After Wi-Fi connects:
 6. review and finish setup;
 7. the wizard shows apply progress/errors inline and hands off to the configured dashboard on success.
 
+If you choose **RESTORE FROM .YWDSETTINGS BACKUP** instead, the first-boot restore page now shows real upload progress for the encrypted backup, a busy spinner/status while the server decrypts and verifies it, and a second progress/status phase while the verified settings are uploaded and applied. The restore button remains disabled while the apply transaction is running so an impatient double-click cannot start a duplicate restore.
+
 RF remains off unless explicitly enabled.
 
 ## SSH / SFTP after setup
@@ -130,6 +132,8 @@ A normal Git clone preserves executable bits. If source came through a ZIP/Windo
 ```bash
 sudo bash ./INSTALL.sh
 ```
+
+The source installer is interactive. Its configuration phase is deliberately kept attached directly to the controlling terminal rather than being piped through the installer's output colorizer. This keeps typed characters, `[default]` values and validation messages visible on SSH and local-console sessions. A required value with no usable default, such as a fresh Base DMR Radio ID, is shown as `[required]` rather than as a blank-looking prompt.
 
 ### SSH note for source-installed systems
 

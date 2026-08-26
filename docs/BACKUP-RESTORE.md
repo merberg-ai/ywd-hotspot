@@ -158,6 +158,8 @@ The restore page still requires the six-digit OLED code. After it is unlocked:
 7. check the final restore confirmation box
 8. press **RESTORE HOTSPOT**
 
+The first-boot restore UI provides explicit feedback for both phases. During **DECRYPT & VERIFY**, the browser shows the actual HTTP upload percentage for the encrypted backup and then changes the status to indicate that upload is complete while decryption/authentication and preview generation continue on the Pi. The verify button shows a spinner and remains disabled until that operation finishes. During **RESTORE HOTSPOT**, the UI shows a second upload progress bar, switches to an applying-settings status after transfer completes, and keeps the restore button disabled/spinning until the transactional import returns success or failure. Error text remains visible instead of leaving the operator guessing whether the browser or Pi is still working.
+
 A successful first-boot restore writes the normal setup-complete state and then shuts down the temporary setup service. The resulting dashboard uses the restored WebUI authentication record from the old hotspot.
 
 SSH remains independent of that restore and stays off until explicitly configured from the dashboard.

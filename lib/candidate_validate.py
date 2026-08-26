@@ -33,6 +33,9 @@ CORE_REQUIRED = (
     "bin/ywd-ui.sh",
     "lab/mmdvm-diag.sh",
     "lib/admin.py",
+    "lib/admin_dispatch.sh",
+    "lib/branch_update_admin.py",
+    "lib/branch_update_runner.py",
     "lib/dashboard.py",
     "lib/dashboard_backup.py",
     "lib/dashboard_core.py",
@@ -46,6 +49,7 @@ CORE_REQUIRED = (
     "lib/generate-config.py",
     "lib/id-update.py",
     "lib/migrate.py",
+    "lib/mmdvm_system_info.py",
     "lib/mmdvm_upstream_build.py",
     "lib/runtime_build.py",
     "lib/oled.py",
@@ -74,8 +78,12 @@ CORE_REQUIRED = (
     "web/update.js",
     "web/update.css",
     "web/update-progress.js",
+    "web/update-branch.js",
+    "web/update-branch.css",
     "web/system-ui.js",
     "web/system-ui.css",
+    "web/modem-ui.js",
+    "web/modem-ui.css",
     "web/backup-restore.js",
     "web/backup-restore.css",
     "web/ssh-key-export.js",
@@ -83,6 +91,8 @@ CORE_REQUIRED = (
     "web/instrumentation-bootstrap.js",
     "web/instrumentation.css",
     "web/instrumentation-layout.css",
+    "web/startup-themes.js",
+    "web/startup-themes.css",
 )
 
 PLUGIN_MARKERS = (
@@ -205,6 +215,24 @@ def _require_text_markers(
         errors.append(f"{label} is incomplete in {rel}; missing markers: {', '.join(missing)}")
 
 
+def _forbid_text_markers(
+    root: Path,
+    label: str,
+    rel: str,
+    markers: tuple[str, ...],
+    errors: list[str],
+) -> None:
+    path = root / rel
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:
+        errors.append(f"{label} cannot read {rel}: {exc}")
+        return
+    found = [marker for marker in markers if marker in text]
+    if found:
+        errors.append(f"{label} violates release UI policy in {rel}; forbidden markers: {', '.join(found)}")
+
+
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
     _require(root, "core runtime", CORE_REQUIRED, errors)
@@ -261,6 +289,100 @@ def validate(root: Path) -> list[str]:
         ("import dashboard_plugin_audio_stream", "dashboard_plugin_audio_stream.wrap_handler"),
         errors,
     )
+
+    # Late-RC3 release UI must be explicitly served and bootstrapped. Do not hide
+    # unrelated modules inside the settings-backup asset; that previously allowed
+    # a candidate to validate while the About channel switcher and MMDVM card were
+    # absent from the live dashboard.
+    _require_text_markers(
+        root,
+        "release UI bootstrap",
+        "lib/dashboard_update.py",
+        (
+            "/update-branch.js?v=rc3-wire1",
+            "/modem-ui.js?v=rc3-wire1",
+            '"/update-branch.js":',
+            '"/modem-ui.js":',
+            "update-branch.css",
+            "modem-ui.css",
+        ),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "software channel dashboard backend",
+        "lib/dashboard_update.py",
+        ("/api/update/branches", "/api/update/branch/check", "/api/update/branch/switch"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "software channel privileged dispatch",
+        "lib/admin_dispatch.sh",
+        ("update-branches|update-branch-check|update-branch-switch", "branch_update_admin.py"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "software channel dashboard UI",
+        "web/update-branch.js",
+        ("CHANGE CHANNEL", "/api/update/branches", "/api/update/branch/switch"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "MMDVM dashboard transport",
+        "lib/dashboard_backup.py",
+        ('path == "/modem-ui.js"', 'path == "/api/system/modem"', '"mmdvm-system-info"'),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "MMDVM dashboard UI",
+        "web/modem-ui.js",
+        ("MODEM / MMDVM", "/api/system/modem", "mmdvmInfoCard"),
+        errors,
+    )
+    _forbid_text_markers(
+        root,
+        "CSP-safe MMDVM styling",
+        "web/modem-ui.js",
+        ("document.createElement('style')", 'document.createElement("style")'),
+        errors,
+    )
+    _forbid_text_markers(
+        root,
+        "CSP-safe software-channel styling",
+        "web/update-branch.js",
+        ("document.createElement('style')", 'document.createElement("style")'),
+        errors,
+    )
+
+    # Audit the other non-obvious bundled/dynamic UI assets too. These are
+    # intentional compositions and should stay explicit in validation so a
+    # future refactor cannot silently orphan them.
+    _require_text_markers(
+        root,
+        "transactional plugin package UI",
+        "lib/dashboard_plugin_upload.py",
+        ("plugin-package-update.js", "/api/plugins/package-review", "/api/plugins/package-apply"),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "sandboxed plugin UI runtime",
+        "lib/dashboard_plugins.py",
+        ('<script src=\\"/plugin-ui-runtime.js\\"></script>', '"/plugin-ui-runtime.js":'),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "startup theme bundle",
+        "lib/dashboard_update.py",
+        ("startup-themes.js", "startup-themes.css", "startup_theme()"),
+        errors,
+    )
+
     for rel in ("systemd/ywd-setup.service", "systemd/ywd-activity.service"):
         _require_text_markers(
             root,

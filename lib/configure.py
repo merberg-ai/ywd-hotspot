@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive fallback configuration wizard. Alpha6 also supports web configuration."""
+"""Interactive fallback configuration wizard for source installs."""
 import getpass
 import json
 import os
@@ -11,6 +11,11 @@ from pathlib import Path
 import config_model
 
 CFG = Path("/etc/ywd-hotspot/config.json")
+APP = Path(__file__).resolve().parents[1]
+try:
+    VERSION = (APP / "VERSION").read_text(encoding="utf-8").strip() or "unknown"
+except Exception:
+    VERSION = "unknown"
 
 
 def load():
@@ -19,7 +24,12 @@ def load():
 
 
 def ask(label, default=None, required=False):
-    suffix=f" [{default}]" if default not in (None,"") else ""
+    if default not in (None, ""):
+        suffix = f" [{default}]"
+    elif required:
+        suffix = " [required]"
+    else:
+        suffix = ""
     while True:
         v=input(f"{label}{suffix}: ").strip()
         if not v and default is not None: v=str(default)
@@ -76,9 +86,10 @@ def main():
     if os.geteuid()!=0: raise SystemExit("Run with sudo/root.")
     c=load(); st=c["station"]; rf=c["radio"]; bm=c["brandmeister"]; web=c["web"]; disp=c["display"]; m=c["maintenance"]
     print("\n============================================================")
-    print(" YWD-Hotspot 0.1.0-alpha6 configuration")
+    print(f" YWD-Hotspot {VERSION} configuration")
     print("============================================================")
-    print("Press Enter to keep the current value. The same settings are available in the Alpha6 web UI.\n")
+    print("Enter each value below. Press Enter to keep a displayed [default].")
+    print("Prompts marked [required] do not have a usable default.\n")
     while True:
         callsign=ask("Callsign",st.get("callsign"),True).upper()
         if re.fullmatch(r"[A-Z0-9]{3,10}(?:-[A-Z0-9]{1,2})?",callsign): break

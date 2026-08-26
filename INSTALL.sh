@@ -73,8 +73,14 @@ PY
 CORE="$SELF/INSTALL-core.sh"
 [[ -f "$CORE" ]] || CORE="/opt/ywd-hotspot/repo/INSTALL-core.sh"
 [[ -f "$CORE" ]] || { echo "[FAIL] Installer core not found." >&2; exit 1; }
-if declare -F ywd_run_colored >/dev/null; then
-  ywd_run_colored bash "$CORE" "$@"
+
+# INSTALL-core is intentionally interactive. Do not pipe it through the normal
+# stream colorizer: doing so makes Python/read prompts cease to behave like a
+# real terminal on some SSH/console combinations. Keep stdin and stdout attached
+# to the operator's terminal so typed values, defaults and validation feedback
+# remain visible throughout fresh/recovery installation.
+if [[ -r /dev/tty && -w /dev/tty ]]; then
+  bash "$CORE" "$@" </dev/tty
 else
   bash "$CORE" "$@"
 fi

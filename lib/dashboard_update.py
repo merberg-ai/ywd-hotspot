@@ -24,6 +24,19 @@ _LOADING_THEMES = {
     "rf_sweep", "radar_scan", "packet_burst", "digital_waterfall", "rf_orbit",
     "boot_telemetry", "signal_lock", "vfo_tuning", "dmr_frame",
 }
+_RELEASE_UI_BOOTSTRAP = b"""
+;(() => {
+  const loadReleaseUi = src => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.onerror = () => console.error(`YWD-Hotspot failed to load ${src}`);
+    document.head.appendChild(script);
+  };
+  loadReleaseUi('/update-branch.js?v=rc3-wire1');
+  loadReleaseUi('/modem-ui.js?v=rc3-wire1');
+})();
+"""
 
 
 def public_status():
@@ -73,16 +86,22 @@ def wrap_handler(base):
             # First-paint startup presentation is bundled into the two assets the
             # base index already requests. This avoids a config round-trip and,
             # more importantly, avoids painting the historical spinner before the
-            # selected startup theme is known. The only server-generated value is
-            # a validated nine-value presentation enum; no configuration or secret
-            # data is embedded in JavaScript.
+            # selected startup theme is known. Late-RC3 release UI modules are
+            # also bootstrapped explicitly here so an unrelated feature bundle can
+            # never accidentally hide the software-channel or MMDVM inventory UI.
             if path == "/style.css":
                 base_css = _asset_bytes("style.css")
                 theme_css = _asset_bytes("startup-themes.css")
-                if not base_css:
+                branch_css = _asset_bytes("update-branch.css")
+                modem_css = _asset_bytes("modem-ui.css")
+                if not base_css or not branch_css or not modem_css:
                     self.send_json({"error": "style asset unavailable"}, 404)
                     return
-                body = base_css + (b"\n\n/* startup themes: first-paint bundle */\n" + theme_css if theme_css else b"")
+                body = base_css
+                if theme_css:
+                    body += b"\n\n/* startup themes: first-paint bundle */\n" + theme_css
+                body += b"\n\n/* software channel UI */\n" + branch_css
+                body += b"\n\n/* MMDVM inventory UI */\n" + modem_css
                 self.send_bytes(200, body, "text/css; charset=utf-8", cache="no-cache")
                 return
             if path == "/app.js":
@@ -92,7 +111,7 @@ def wrap_handler(base):
                     self.send_json({"error": "application asset unavailable"}, 404)
                     return
                 hint = ("window.__YWD_LOADING_ANIMATION=" + json.dumps(startup_theme()) + ";\n").encode("utf-8")
-                body = hint + (theme_js + b"\n;\n" if theme_js else b"") + app_js
+                body = hint + (theme_js + b"\n;\n" if theme_js else b"") + app_js + _RELEASE_UI_BOOTSTRAP
                 # The response contains the current saved presentation preference,
                 # so never let a stale cached app.js carry an old theme choice.
                 self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
@@ -101,7 +120,11 @@ def wrap_handler(base):
             static = {
                 "/update.js": ("update.js", "application/javascript; charset=utf-8"),
                 "/update-progress.js": ("update-progress.js", "application/javascript; charset=utf-8"),
+                "/update-branch.js": ("update-branch.js", "application/javascript; charset=utf-8"),
+                "/modem-ui.js": ("modem-ui.js", "application/javascript; charset=utf-8"),
                 "/update.css": ("update.css", "text/css; charset=utf-8"),
+                "/update-branch.css": ("update-branch.css", "text/css; charset=utf-8"),
+                "/modem-ui.css": ("modem-ui.css", "text/css; charset=utf-8"),
                 "/instrumentation.js": ("instrumentation.js", "application/javascript; charset=utf-8"),
                 "/instrumentation-bootstrap.js": ("instrumentation-bootstrap.js", "application/javascript; charset=utf-8"),
                 "/instrumentation.css": ("instrumentation.css", "text/css; charset=utf-8"),

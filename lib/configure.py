@@ -9,6 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import config_model
+import web_auth
 
 CFG = Path("/etc/ywd-hotspot/config.json")
 APP = Path(__file__).resolve().parents[1]
@@ -132,6 +133,15 @@ def main():
     print("\nSaved canonical configuration.")
     rc=os.system("/usr/bin/python3 /opt/ywd-hotspot/app/lib/generate-config.py")
     if rc!=0: raise SystemExit("Config generation failed.")
+    if not web_auth.configured():
+        print("\n============================================================")
+        print(" DASHBOARD CONTROL PASSWORD")
+        print("============================================================")
+        print("This is separate from the BrandMeister Hotspot Security password.")
+        print("It unlocks WRITE/control actions in the YWD-Hotspot WebUI.")
+        web_auth.set_password()
+    else:
+        print("Dashboard control password: existing credential preserved.")
     print("Use: sudo ywd-hotspotctl restart   # only restarts services already running")
 
 if __name__=="__main__": main()

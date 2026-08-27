@@ -21,7 +21,13 @@ CATALOG = Path(os.environ.get("YWD_UI_PLUGIN_CATALOG", str(LIB / "ui_plugin_pack
 ALLOWED_TRUST = {"first-party", "experimental"}
 ALLOWED_KINDS = {"ui"}
 ALLOWED_PROVIDERS = {"browser-ui"}
-ALLOWED_CAPABILITIES = {"ui:section", "read:dmr-voice", "use:vocoder"}
+ALLOWED_CAPABILITIES = {
+    "ui:section",
+    "read:dmr-voice",
+    "use:vocoder",
+    "read:dmr-activity",
+    "read:dmr-directory",
+}
 MANIFEST_KEYS = {
     "api", "id", "name", "version", "description", "trust", "kind", "provider",
     "capabilities", "rf_mode", "config_schema", "dependencies", "hardware", "ui",

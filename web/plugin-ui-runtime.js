@@ -70,6 +70,12 @@
     getState: () => request('plugin.getState'),
     getConfig: () => request('plugin.getConfig'),
     ping: () => request('plugin.ping'),
+    readDmrActivity: options => request('plugin.readDmrActivity', options || {}),
+    lookupDmrIds: ids => request('plugin.lookupDmrIds', {ids:Array.isArray(ids) ? ids : []}),
+    searchDmrDirectory: (query, options = {}) => request('plugin.searchDmrDirectory', {
+      query:String(query || ''),
+      limit:options && typeof options === 'object' ? options.limit : undefined,
+    }),
     readDmrVoice: options => request('plugin.readDmrVoice', options || {}),
     vocoderStatus: () => request('plugin.vocoderStatus'),
     vocoderReset: () => request('plugin.vocoderReset'),

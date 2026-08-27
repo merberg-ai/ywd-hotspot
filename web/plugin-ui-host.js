@@ -169,6 +169,29 @@
         ui: plugin.ui || null,
       };
     }
+    if (op === 'plugin.readDmrActivity') {
+      requireCapability(plugin, 'read:dmr-activity');
+      const limitRaw = Number(args?.limit ?? 20);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 20;
+      const data = await jsonFetch(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/dmr-activity?limit=${encodeURIComponent(limit)}`);
+      return data.activity || {schema:1, current:{active:false,direction:'idle'}, lastheard:[], counters:{}};
+    }
+    if (op === 'plugin.lookupDmrIds') {
+      requireCapability(plugin, 'read:dmr-directory');
+      const ids = Array.isArray(args?.ids) ? args.ids.slice(0, 64).map(x => String(x || '').trim()).filter(x => /^\d{1,8}$/.test(x)) : [];
+      if (!ids.length) throw new Error('DMR ID lookup requires at least one ID');
+      const data = await jsonFetch(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/dmr-directory?ids=${encodeURIComponent(ids.join(','))}`);
+      return data.directory || {ok:true, results:[]};
+    }
+    if (op === 'plugin.searchDmrDirectory') {
+      requireCapability(plugin, 'read:dmr-directory');
+      const query = String(args?.query || '').trim().slice(0, 32);
+      const limitRaw = Number(args?.limit ?? 15);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(25, Math.floor(limitRaw))) : 15;
+      if (!query) throw new Error('Directory search requires a callsign or DMR ID');
+      const data = await jsonFetch(`/api/plugins/ui/${encodeURIComponent(plugin.id)}/dmr-directory?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`);
+      return data.directory || {ok:true, results:[]};
+    }
     if (op === 'plugin.readDmrVoice') {
       requireCapability(plugin, 'read:dmr-voice');
       const afterRaw = Number(args?.after ?? 0);

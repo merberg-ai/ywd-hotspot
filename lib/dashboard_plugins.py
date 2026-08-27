@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 import dashboard_core as core
+import dmr_identity
 import mmdvm_voice
 import plugin_manager
 import plugin_package_manager
@@ -14,7 +15,9 @@ import plugin_service_manager
 import plugin_ui_manager
 
 _VOICE_CAPABILITY = "read:dmr-voice"
-_VOICE_PLUGIN_CACHE = {}
+_ACTIVITY_CAPABILITY = "read:dmr-activity"
+_DIRECTORY_CAPABILITY = "read:dmr-directory"
+_UI_PLUGIN_CACHE = {}
 # Plugin lifecycle mutations may perform a guarded MMDVM restart plus Gateway
 # preservation.  Pi Zero systemd operations can legitimately exceed the old
 # 40-second request budget; killing the privileged helper mid-reconcile can
@@ -28,7 +31,7 @@ def _manifest_stamp(path: Path):
     return (int(st.st_ino), int(st.st_mtime_ns), int(st.st_size))
 
 
-def _voice_live_authorized(ident: str) -> None:
+def _ui_live_authorized(ident: str) -> None:
     """Keep mutable UI-plugin authorization immediately revocable."""
     state = plugin_manager.read_state()
     if not state.get("enabled"):
@@ -39,35 +42,34 @@ def _voice_live_authorized(ident: str) -> None:
         raise ValueError("UI plugin is not installed")
 
 
-def _voice_plugin(ident: str):
+def _ui_plugin(ident: str, capability: str):
+    """Authorize a UI plugin capability while caching expensive manifest validation."""
     ident = str(ident or "")
     if not plugin_manager.ID_RE.fullmatch(ident):
         raise ValueError("invalid plugin id")
 
-    # The state/package files are tiny and intentionally checked for every poll,
-    # so disable/uninstall still revokes access immediately.  Full UI catalog
-    # discovery and signed manifest validation are much more expensive on a Pi
-    # Zero and are cached until the exact installed manifest changes.
-    _voice_live_authorized(ident)
-
-    cached = _VOICE_PLUGIN_CACHE.get(ident)
+    # State/package files are tiny and checked every request so disable or
+    # uninstall revokes access immediately. Full signed-manifest validation is
+    # cached until the installed manifest changes, which matters on Pi Zero.
+    _ui_live_authorized(ident)
+    cached = _UI_PLUGIN_CACHE.get(ident)
     if cached:
         manifest_path = Path(cached["manifest_path"])
         try:
             if _manifest_stamp(manifest_path) == cached["stamp"]:
                 plugin = cached["plugin"]
-                if _VOICE_CAPABILITY not in set(plugin.get("capabilities") or []):
-                    raise ValueError("plugin is not permitted to read DMR voice frames")
+                if capability not in set(plugin.get("capabilities") or []):
+                    raise ValueError(f"plugin is not permitted to use {capability}")
                 return plugin
         except (FileNotFoundError, OSError):
             pass
-        _VOICE_PLUGIN_CACHE.pop(ident, None)
+        _UI_PLUGIN_CACHE.pop(ident, None)
 
     plugin = plugin_ui_manager.get_effective_plugin(ident)
-    if _VOICE_CAPABILITY not in set(plugin.get("capabilities") or []):
-        raise ValueError("plugin is not permitted to read DMR voice frames")
+    if capability not in set(plugin.get("capabilities") or []):
+        raise ValueError(f"plugin is not permitted to use {capability}")
     manifest_path = Path(plugin["directory"]) / "plugin.json"
-    _VOICE_PLUGIN_CACHE[ident] = {
+    _UI_PLUGIN_CACHE[ident] = {
         "manifest_path": str(manifest_path),
         "stamp": _manifest_stamp(manifest_path),
         "plugin": plugin,
@@ -138,8 +140,80 @@ def check_plugin(ident, kind="all"):
 
 
 def voice_for(ident, after=0, limit=32):
-    _voice_plugin(ident)
+    _ui_plugin(ident, _VOICE_CAPABILITY)
     return mmdvm_voice.public_poll(after, limit)
+
+
+def _party(value):
+    value = value if isinstance(value, dict) else {}
+    ident = value.get("dmr_id")
+    try:
+        ident = int(ident) if ident is not None else None
+    except Exception:
+        ident = None
+    callsign = str(value.get("callsign") or "").strip().upper()[:24] or None
+    display = str(value.get("display") or callsign or ident or "")[:32]
+    return {"display": display, "dmr_id": ident, "callsign": callsign}
+
+
+def _activity_event(value):
+    value = value if isinstance(value, dict) else {}
+    destination = value.get("destination") if isinstance(value.get("destination"), dict) else {}
+    try:
+        dst_id = int(destination.get("id")) if destination.get("id") is not None else None
+    except Exception:
+        dst_id = None
+    event = {
+        "started_at": value.get("started_at"),
+        "ended_at": value.get("ended_at"),
+        "active": bool(value.get("active", False)),
+        "direction": str(value.get("direction") or "idle")[:12],
+        "path": str(value.get("path") or "")[:12],
+        "slot": value.get("slot"),
+        "source": _party(value.get("source")),
+        "destination": {
+            "display": str(destination.get("display") or dst_id or "")[:32],
+            "id": dst_id,
+            "group": bool(destination.get("group", False)),
+        },
+        "duration_s": value.get("duration_s"),
+        "ber_pct": value.get("ber_pct"),
+        "packet_loss_pct": value.get("packet_loss_pct"),
+        "rssi_dbm": value.get("rssi_dbm"),
+        "status": str(value.get("status") or "")[:16],
+    }
+    return event
+
+
+def activity_for(ident, limit=20):
+    _ui_plugin(ident, _ACTIVITY_CAPABILITY)
+    try:
+        limit = max(1, min(60, int(limit)))
+    except Exception:
+        limit = 20
+    state = core.activity_state()
+    rows = state.get("lastheard") if isinstance(state.get("lastheard"), list) else []
+    counters = state.get("counters") if isinstance(state.get("counters"), dict) else {}
+    return {
+        "schema": 1,
+        "updated_at": state.get("updated_at"),
+        "current": _activity_event(state.get("current")),
+        "lastheard": [_activity_event(row) for row in rows[:limit] if isinstance(row, dict)],
+        "counters": {
+            key: counters.get(key, 0)
+            for key in ("rf_calls", "net_calls", "rf_lost", "net_lost")
+        },
+    }
+
+
+def directory_for(ident, query="", ids=None, limit=15):
+    _ui_plugin(ident, _DIRECTORY_CAPABILITY)
+    if str(query or "").strip():
+        return dmr_identity.search(query, limit)
+    values = list(ids or [])[:dmr_identity.MAX_BATCH]
+    if not values:
+        raise ValueError("Provide a callsign query or at least one DMR ID")
+    return dmr_identity.lookup_ids(values)
 
 
 def plugin_frame_html(plugin):
@@ -216,6 +290,23 @@ def wrap_handler(base):
                         after = str((qs.get("after") or ["0"])[0])[:32]
                         limit = str((qs.get("limit") or ["32"])[0])[:8]
                         self.send_json({"ok": True, "id": ident, "voice": voice_for(ident, after, limit)})
+                        return
+                    if len(parts) == 5 and parts[4] == "dmr-activity":
+                        qs = parse_qs(parsed.query, keep_blank_values=False)
+                        limit = str((qs.get("limit") or ["20"])[0])[:8]
+                        self.send_json({"ok": True, "id": ident, "activity": activity_for(ident, limit)})
+                        return
+                    if len(parts) == 5 and parts[4] == "dmr-directory":
+                        qs = parse_qs(parsed.query, keep_blank_values=False)
+                        query = str((qs.get("q") or [""])[0])[:32]
+                        ids_raw = str((qs.get("ids") or [""])[0])[:1600]
+                        ids = [x.strip() for x in ids_raw.split(",") if x.strip()][:dmr_identity.MAX_BATCH]
+                        limit = str((qs.get("limit") or ["15"])[0])[:8]
+                        self.send_json({
+                            "ok": True,
+                            "id": ident,
+                            "directory": directory_for(ident, query=query, ids=ids, limit=limit),
+                        })
                         return
                     if len(parts) == 6 and parts[4] == "asset":
                         plugin, asset = plugin_ui_manager.asset_path(ident, parts[5])

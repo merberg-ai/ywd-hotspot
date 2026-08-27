@@ -61,7 +61,7 @@ Normal images may intentionally use Wi-Fi preconfiguration, station settings, im
 
 ### YWD Extended — default/recommended
 
-Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. Provides passive DMR voice/RX Monitor capability and a platform for future plugins that explicitly declare extension requirements.
+Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. Provides the current trusted passive DMR/RX Monitor capability set and the runtime surface used by compatible plugins.
 
 ### Stock Upstream
 
@@ -76,6 +76,22 @@ python3 os/builder/MMDVM-RUNTIME.py set upstream
 
 The two variants have separate compile-cache identities. DMRGateway remains pinned upstream.
 
+Current RC3 YWD Extended identity:
+
+```text
+MMDVM-Host upstream
+  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+
+YWD patch SHA256
+  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
+
+Extension API
+  2
+
+DMRGateway upstream
+  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
 ## Persistent runtime compile cache
 
 Status:
@@ -88,13 +104,20 @@ The cache is reused only when strict build signatures match. For YWD Extended th
 
 ## Public GitHub release image
 
-The accepted `0.2.0-rc2` public artifact was built with:
+The accepted `0.2.0-rc3` public artifact was built with:
 
 ```bash
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
 The wrapper requires the intended release branch/version and a clean tracked checkout. It saves the developer's local builder profile/runtime preference, resets to release defaults, builds, verifies factory state, writes provenance assets, then restores the original local state.
+
+Accepted RC3 source:
+
+```text
+release/0.2.0-rc3
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
+```
 
 ### Factory-image invariant
 
@@ -173,36 +196,41 @@ A private builder profile may intentionally enable key-only SSH and stage a buil
 
 Custom/development images are never interchangeable with the factory public release artifact.
 
-## 0.2.0-rc2 accepted artifact
+## 0.2.0-rc3 accepted artifact
 
 ```text
 source
-5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
 
 tag
-v0.2.0-rc2
+v0.2.0-rc3
 
 published image
-ywd-hotspot-0.2.0-rc2.img.xz
+ywd-hotspot-0.2.0-rc3.img.xz
 
 SHA256
-60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
 ```
 
-The exact compressed image bytes were flashed and tested on the reference Pi Zero W + duplex MMDVM setup. The same image was then published under the cleaner GitHub-facing filename after byte-for-byte SHA-256 verification. The RC1 -> RC2 dashboard updater path and a post-update reboot were also exercised successfully with zero failed systemd units.
+The exact compressed image passed the final fresh-flash acceptance on the reference Pi Zero W + MMDVM setup. The public filename was normalized after the build and re-hashed; byte identity remained unchanged and GitHub reports the same SHA-256 digest for the uploaded asset.
+
+The published RC2 -> RC3 dashboard/application updater path was also exercised successfully without silently recompiling the radio runtime.
 
 Immutable accepted refs:
 
 ```text
-checkpoint-release-0.2.0-rc2-image-updater-proven
-v0.2.0-rc2
+checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image
+release/0.2.0-rc3
+v0.2.0-rc3
 ```
 
 ## Release artifacts
 
-Successful public builds place image/checksum files under `os/deploy/`, then generate:
+The published RC3 release includes:
 
 ```text
+ywd-hotspot-0.2.0-rc3.img.xz
+SHA256SUMS
 BUILD-METADATA.json
 README-FIRST.txt
 ```
@@ -226,4 +254,4 @@ The compressed `.img.xz` is integrity-tested with `xz -t` before acceptance.
 
 A release image is not known-good because it compiled. The **exact file to be uploaded** must pass setup AP, Wi-Fi handoff, OLED code, first-boot wizard, MMDVM provenance, BrandMeister, Parrot, RF, duplex TS1/TS2 where configured, telemetry/dashboard behavior, graceful optional-RSSI behavior, reboot persistence, explicit RF-autostart persistence, factory SSH policy, OLED ownership and zero-failed-units testing.
 
-See [`docs/OS-DEVELOPMENT.md`](../docs/OS-DEVELOPMENT.md) and the archived [`RC1 release acceptance record`](../docs/history/RELEASE-PLAN-0.2.0-rc1.md).
+See [`docs/OS-DEVELOPMENT.md`](../docs/OS-DEVELOPMENT.md) and [`docs/history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md`](../docs/history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md).

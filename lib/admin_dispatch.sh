@@ -14,7 +14,7 @@ case "${1:-}" in
   settings-export|settings-preview|settings-import)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/settings_admin.py "$@"
     ;;
-  ssh-status|ssh-configure)
+  ssh-status|ssh-configure|ssh-password-set)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_runtime_admin.py "$@"
     ;;
   ssh-keys-export)

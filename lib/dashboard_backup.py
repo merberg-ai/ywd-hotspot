@@ -27,10 +27,6 @@ def wrap_handler(base):
             return obj
 
         def _serve_backup_js(self):
-            # Keep this endpoint single-purpose. Historically it also concatenated
-            # SSH, MMDVM and software-channel modules, which hid missing explicit
-            # dashboard wiring and made one feature bundle responsible for several
-            # unrelated controls. Those modules now have their own static routes.
             path = core.WEB / "backup-restore.js"
             if not path.is_file():
                 self.send_json({"error": "not found"}, 404)
@@ -44,28 +40,18 @@ def wrap_handler(base):
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/backup-restore.js":
-                self._serve_backup_js()
-                return
+                self._serve_backup_js(); return
             if path == "/ssh-key-export.js":
-                self.serve_static("ssh-key-export.js", "application/javascript; charset=utf-8")
-                return
+                self.serve_static("ssh-key-export.js", "application/javascript; charset=utf-8"); return
             if path == "/modem-ui.js":
-                self.serve_static("modem-ui.js", "application/javascript; charset=utf-8")
-                return
+                self.serve_static("modem-ui.js", "application/javascript; charset=utf-8"); return
             if path == "/update-branch.js":
-                self.serve_static("update-branch.js", "application/javascript; charset=utf-8")
-                return
+                self.serve_static("update-branch.js", "application/javascript; charset=utf-8"); return
             if path == "/backup-restore.css":
-                self.serve_static("backup-restore.css", "text/css; charset=utf-8")
-                return
+                self.serve_static("backup-restore.css", "text/css; charset=utf-8"); return
             if path == "/instrumentation-layout.css":
-                self.serve_static("instrumentation-layout.css", "text/css; charset=utf-8")
-                return
+                self.serve_static("instrumentation-layout.css", "text/css; charset=utf-8"); return
             if path == "/api/system/modem":
-                # The response is read-only and sanitized, but collecting complete
-                # build/cache provenance requires access to intentionally root-only
-                # runtime-build metadata. Use the existing narrow admin bridge
-                # rather than weakening filesystem permissions or opening the UART.
                 try:
                     self.send_json(core.admin_call("mmdvm-system-info", {}, 30))
                 except Exception as exc:
@@ -81,30 +67,23 @@ def wrap_handler(base):
                 "/api/settings/import": ("settings-import", 150),
                 "/api/ssh/status": ("ssh-status", 30),
                 "/api/ssh/configure": ("ssh-configure", 45),
+                "/api/ssh/password": ("ssh-password-set", 30),
                 "/api/ssh-keys/export": ("ssh-keys-export", 30),
                 "/api/ssh-client-key/create": ("ssh-client-key-create", 30),
                 "/api/diagnostics/create": ("diagnostics", 150),
-                # Keep software-channel transport in the outermost dashboard
-                # wrapper so plugin/backup handler composition cannot swallow a
-                # branch request before it reaches the privileged helper.
                 "/api/update/branches": ("update-branches", 120),
                 "/api/update/branch/check": ("update-branch-check", 260),
                 "/api/update/branch/switch": ("update-branch-switch", 360),
             }
             route = routes.get(path)
             if route is None:
-                super().do_POST()
-                return
-            # All state-changing/admin-backed operations, including branch
-            # inventory exposed by the channel modal, require the existing
-            # authenticated dashboard control session.
+                super().do_POST(); return
             if not self.require_control():
                 return
             try:
                 body = self._large_json()
                 action, timeout = route
-                out = core.admin_call(action, body, timeout)
-                self.send_json(out)
+                self.send_json(core.admin_call(action, body, timeout))
             except ValueError as exc:
                 self.send_json({"error": str(exc)[:800]}, 400)
             except Exception as exc:

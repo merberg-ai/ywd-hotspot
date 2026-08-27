@@ -14,6 +14,7 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin settings-import, \
  /usr/local/libexec/ywd-hotspot-admin ssh-status, \
  /usr/local/libexec/ywd-hotspot-admin ssh-configure, \
+ /usr/local/libexec/ywd-hotspot-admin ssh-password-set, \
  /usr/local/libexec/ywd-hotspot-admin ssh-keys-export, \
  /usr/local/libexec/ywd-hotspot-admin ssh-client-key-create, \
  /usr/local/libexec/ywd-hotspot-admin update-check, \

@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Fast SSH runtime controller for the authenticated YWD-Hotspot dashboard.
-
-Factory images ship with SSH disabled. The dashboard prepares the strict
-public-key-only sshd policy and unique host keys, manages boot persistence with
-the native systemd wants symlink, then asks systemd only to start/stop the
-service. This deliberately avoids `systemctl enable/disable`, which is slow
-enough on a Pi Zero to exceed an interactive dashboard request.
-"""
+"""Fast SSH runtime controller for the authenticated YWD-Hotspot dashboard."""
 from __future__ import annotations
 
 import json
@@ -27,31 +20,18 @@ SSH_UNIT = "ssh.service"
 SSH_PORT = 22
 SSHD_PRIVSEP_DIR = Path("/run/sshd")
 WANTS_DIR = Path("/etc/systemd/system/multi-user.target.wants")
-UNIT_CANDIDATES = (
-    Path("/lib/systemd/system/ssh.service"),
-    Path("/usr/lib/systemd/system/ssh.service"),
-)
+UNIT_CANDIDATES = (Path("/lib/systemd/system/ssh.service"), Path("/usr/lib/systemd/system/ssh.service"))
 
 
 def run(args, timeout=12):
-    """Run a bounded command; timeout is returned as rc=124, not an exception."""
     try:
-        return subprocess.run(
-            args,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            check=False,
-        )
+        return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
-        return subprocess.CompletedProcess(
-            args, 124, stdout="", stderr=f"timed out after {timeout}s"
-        )
+        return subprocess.CompletedProcess(args, 124, stdout="", stderr=f"timed out after {timeout}s")
 
 
 def payload() -> dict:
-    raw = sys.stdin.buffer.read(4096)
+    raw = sys.stdin.buffer.read(16384)
     if not raw:
         return {}
     try:
@@ -80,7 +60,6 @@ def boot_enabled() -> bool:
 
 
 def set_boot_enabled(enabled: bool) -> None:
-    """Manage the same wants symlink `systemctl enable ssh.service` would create."""
     link = boot_link()
     if enabled:
         target = unit_fragment()
@@ -98,13 +77,6 @@ def set_boot_enabled(enabled: bool) -> None:
 
 
 def ensure_privsep_dir() -> None:
-    """Recreate OpenSSH's ephemeral privilege-separation directory when needed.
-
-    Debian's ssh.service may remove /run/sshd when the service is stopped. YWD
-    validates sshd configuration before asking systemd to start it, and `sshd -t`
-    itself requires this directory to exist. Recreate it as the normal root-owned
-    0755 runtime directory so disable -> enable works without a reboot.
-    """
     if os.path.lexists(SSHD_PRIVSEP_DIR):
         if SSHD_PRIVSEP_DIR.is_symlink() or not SSHD_PRIVSEP_DIR.is_dir():
             raise RuntimeError(f"unsafe SSH privilege-separation path: {SSHD_PRIVSEP_DIR}")
@@ -132,47 +104,49 @@ def wait_port(wanted: bool, seconds: float) -> bool:
 
 
 def failure_detail() -> str:
-    show = run([
-        "systemctl", "show", SSH_UNIT,
-        "--property=ActiveState,SubState,Result",
-        "--no-pager",
-    ], 6)
-    journal = run([
-        "journalctl", "-u", SSH_UNIT, "-n", "16", "--no-pager", "-o", "cat",
-    ], 6)
+    show = run(["systemctl", "show", SSH_UNIT, "--property=ActiveState,SubState,Result", "--no-pager"], 6)
+    journal = run(["journalctl", "-u", SSH_UNIT, "-n", "16", "--no-pager", "-o", "cat"], 6)
     bits = []
     if (show.stdout or "").strip():
         bits.append(show.stdout.strip().replace("\n", "; "))
     if (journal.stdout or "").strip():
         bits.append(journal.stdout.strip().replace("\n", " | "))
-    if show.returncode == 124:
-        bits.append("systemctl status lookup timed out")
     return " · ".join(bits)[-1400:]
 
 
 def status() -> dict:
-    policy_managed = False
-    try:
-        policy_managed = (
-            keys.SSHD_DROPIN.is_file()
-            and keys.SSHD_DROPIN.read_text(encoding="utf-8") == keys.YWD_SSH_POLICY
-        )
-    except Exception:
-        pass
+    policy = keys.policy_state()
+    users = keys.eligible_login_users()
+    login_user = policy["login_user"]
+    exists = login_user in users
+    mode = policy["auth_mode"]
     return {
         "ok": True,
         "installed": keys.SSHD.is_file() and keys.SSH_DIR.is_dir(),
         "active": port_listening(),
         "enabled_at_boot": boot_enabled(),
         "port": SSH_PORT,
-        "authentication": "public-key-only",
-        "password_authentication": False,
+        "authentication": "password+key" if mode == keys.AUTH_PASSWORD_KEY else "public-key-only",
+        "auth_mode": mode,
+        "password_authentication": mode == keys.AUTH_PASSWORD_KEY,
         "root_login": False,
-        "policy_managed": policy_managed,
+        "policy_managed": bool(policy["managed"]),
         "host_key_count": len(keys._host_key_paths()),
-        "login_user": "ywd",
-        "authorized_key_count": keys._authorized_key_count("ywd"),
+        "login_user": login_user,
+        "login_user_exists": exists,
+        "suggested_login_user": login_user if exists else keys.suggested_login_user(),
+        "eligible_login_users": users,
+        "authorized_key_count": keys._authorized_key_count(login_user) if exists else 0,
+        "password_status": keys.password_status(login_user),
     }
+
+
+def _desired_settings(data: dict) -> tuple[str, str]:
+    current = status()
+    mode = keys.normalize_auth_mode(data.get("auth_mode") or current["auth_mode"])
+    username = str(data.get("login_user") or (current["login_user"] if current["login_user_exists"] else current["suggested_login_user"]) or "").strip()
+    keys._normal_user(username)
+    return mode, username
 
 
 def configure(data: dict) -> dict:
@@ -181,48 +155,44 @@ def configure(data: dict) -> dict:
     enabled = data.get("enabled")
     if not isinstance(enabled, bool):
         raise ValueError("enabled must be true or false")
-
     if enabled:
+        mode, username = _desired_settings(data)
         ensure_privsep_dir()
-        keys._install_public_key_policy()
+        keys.install_policy(mode, username)
         set_boot_enabled(True)
-
-        start = run(["systemctl", "start", "--no-block", SSH_UNIT], 12)
-        if wait_port(True, 14):
-            out = status()
-            out.update({
-                "changed": True,
-                "message": "SSH enabled in public-key-only mode",
-            })
-            return out
-
-        set_boot_enabled(False)
-        detail = failure_detail()
-        cmd = (start.stderr or start.stdout or "").strip()
-        if cmd:
-            detail = (cmd + (" · " + detail if detail else ""))[-1400:]
-        raise RuntimeError(
-            "SSH did not open port 22" + (f": {detail}" if detail else "")
-        )
-
+        if port_listening():
+            proc = run(["systemctl", "reload", SSH_UNIT], 12)
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or failure_detail()).strip()
+                raise RuntimeError("SSH policy was written but ssh.service reload failed" + (f": {detail[-1200:]}" if detail else ""))
+        else:
+            start = run(["systemctl", "start", "--no-block", SSH_UNIT], 12)
+            if not wait_port(True, 14):
+                set_boot_enabled(False)
+                detail = failure_detail()
+                cmd = (start.stderr or start.stdout or "").strip()
+                if cmd:
+                    detail = (cmd + (" · " + detail if detail else ""))[-1400:]
+                raise RuntimeError("SSH did not open port 22" + (f": {detail}" if detail else ""))
+        out = status()
+        out.update({"changed": True, "message": f"SSH enabled for {out['login_user']} with " + ("password or key authentication" if out["password_authentication"] else "key-only authentication")})
+        return out
     set_boot_enabled(False)
     stop = run(["systemctl", "stop", "--no-block", SSH_UNIT], 12)
-    closed = wait_port(False, 10)
-    if not closed:
+    if not wait_port(False, 10):
         detail = failure_detail()
         cmd = (stop.stderr or stop.stdout or "").strip()
         if cmd:
             detail = (cmd + (" · " + detail if detail else ""))[-1400:]
-        raise RuntimeError(
-            "SSH boot activation was disabled but port 22 did not close"
-            + (f": {detail}" if detail else "")
-        )
-
+        raise RuntimeError("SSH boot activation was disabled but port 22 did not close" + (f": {detail}" if detail else ""))
     out = status()
-    out.update({
-        "changed": True,
-        "message": "SSH disabled; saved keys were preserved",
-    })
+    out.update({"changed": True, "message": "SSH disabled; saved credentials and authentication policy were preserved"})
+    return out
+
+
+def set_password(data: dict) -> dict:
+    out = keys.set_login_password(data)
+    out["ssh"] = status()
     return out
 
 
@@ -233,8 +203,10 @@ def main() -> None:
         out = status()
     elif action == "ssh-configure":
         out = configure(data)
+    elif action == "ssh-password-set":
+        out = set_password(data)
     else:
-        raise SystemExit("usage: ssh_runtime_admin.py {ssh-status|ssh-configure}")
+        raise SystemExit("usage: ssh_runtime_admin.py {ssh-status|ssh-configure|ssh-password-set}")
     print(json.dumps(out, separators=(",", ":")))
 
 

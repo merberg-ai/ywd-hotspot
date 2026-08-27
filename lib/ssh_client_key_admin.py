@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
-"""Fixed-user SSH client-key enrollment for YWD-Hotspot.
-
-The appliance exposes exactly one managed remote-login account: ``ywd``.
-Dashboard client-key enrollment therefore never accepts an arbitrary Linux
-username, even if a crafted request tries to supply one.
-"""
+"""Validated SSH client-key enrollment for YWD-Hotspot."""
 from __future__ import annotations
 
 import json
 import sys
 
 import ssh_keys_admin
-
-LOGIN_USER = "ywd"
 
 
 def _payload() -> dict:
@@ -32,13 +25,9 @@ def main() -> None:
     action = sys.argv[1] if len(sys.argv) > 1 else ""
     if action != "ssh-client-key-create":
         raise SystemExit("usage: ssh_client_key_admin.py ssh-client-key-create")
-
     payload = _payload()
-    requested = str(payload.get("username") or LOGIN_USER).strip()
-    if requested != LOGIN_USER:
-        raise ValueError("SSH client login user is fixed to 'ywd'")
-
-    out = ssh_keys_admin.create_client_key({"username": LOGIN_USER})
+    requested = str(payload.get("username") or ssh_keys_admin.suggested_login_user()).strip()
+    out = ssh_keys_admin.create_client_key({"username": requested})
     print(json.dumps(out, separators=(",", ":")))
 
 

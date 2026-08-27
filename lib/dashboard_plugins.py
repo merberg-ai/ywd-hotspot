@@ -77,6 +77,11 @@ def _ui_plugin(ident: str, capability: str):
     return plugin
 
 
+def _voice_plugin(ident: str):
+    """Backward-compatible voice capability authorizer for existing RX audio bridges."""
+    return _ui_plugin(ident, _VOICE_CAPABILITY)
+
+
 def current_snapshot():
     base = plugin_manager.snapshot(core.brief_health())
     plugins = list(base.get("plugins", [])) + plugin_service_manager.snapshot() + plugin_ui_manager.snapshot()

@@ -16,6 +16,7 @@ RUN = Path(os.environ.get("YWD_ACTIVITY_STATE", "/run/ywd-hotspot/activity.json"
 HISTORY = Path(os.environ.get("YWD_ACTIVITY_HISTORY", "/var/lib/ywd-hotspot/lastheard.json"))
 OBS_DB = Path(os.environ.get("YWD_DMR_OBSERVATIONS", "/var/lib/ywd-hotspot/contact-observations.sqlite3"))
 MAX_HISTORY = 60
+_OBS_READY = False
 
 START = re.compile(
     r"DMR Slot (?P<slot>\d+), received (?P<path>RF|network) (?:voice header|late entry) "
@@ -73,6 +74,9 @@ def save(state, persist_history=False):
 
 def init_observation_db():
     """Create the tiny local station-history store without making activity startup fatal."""
+    global _OBS_READY
+    if _OBS_READY:
+        return True
     try:
         OBS_DB.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(OBS_DB, timeout=1.0) as conn:
@@ -96,8 +100,11 @@ def init_observation_db():
             )
             conn.execute("CREATE INDEX IF NOT EXISTS station_observations_dmr_id ON station_observations(dmr_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS station_observations_callsign ON station_observations(callsign)")
+        _OBS_READY = True
+        return True
     except Exception:
-        pass
+        _OBS_READY = False
+        return False
 
 
 def record_observation(event):
@@ -133,7 +140,8 @@ def record_observation(event):
         except Exception:
             slot = None
 
-        init_observation_db()
+        if not init_observation_db():
+            return
         with sqlite3.connect(OBS_DB, timeout=1.0) as conn:
             conn.execute(
                 "INSERT INTO station_observations (identity_key, dmr_id, callsign, first_seen, last_seen, "

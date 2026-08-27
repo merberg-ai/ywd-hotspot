@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -47,6 +48,14 @@ def _dmr_id(value) -> int | None:
     return ident if 1 <= ident <= 16_777_215 else None
 
 
+def _diagnostics(started: float, scanned: int, cache_hit: bool = False) -> dict:
+    return {
+        "elapsed_ms": max(0, int(round((time.monotonic() - started) * 1000))),
+        "scanned_records": max(0, int(scanned)),
+        "cache_hit": bool(cache_hit),
+    }
+
+
 def database_meta() -> dict:
     stamp = _sync_cache()
     if stamp is None:
@@ -65,6 +74,8 @@ def database_meta() -> dict:
 
 def lookup_ids(values) -> dict:
     """Resolve at most MAX_BATCH DMR IDs with one bounded sequential file scan."""
+    started = time.monotonic()
+    scanned = 0
     ordered: list[int] = []
     seen = set()
     for value in list(values or [])[:MAX_BATCH]:
@@ -75,14 +86,16 @@ def lookup_ids(values) -> dict:
 
     meta = database_meta()
     if not ordered:
-        return {"ok": True, "database": meta, "results": []}
+        return {"ok": True, "database": meta, "results": [], "diagnostics": _diagnostics(started, scanned)}
 
     pending = set()
     found: dict[int, str | None] = {}
+    cache_hits = 0
     for ident in ordered:
         if ident in _CACHE:
             found[ident] = _CACHE[ident]
             _CACHE.move_to_end(ident)
+            cache_hits += 1
         else:
             pending.add(ident)
 
@@ -92,6 +105,7 @@ def lookup_ids(values) -> dict:
                 for line in handle:
                     if not pending:
                         break
+                    scanned += 1
                     rid, sep, call = line.partition("\t")
                     if not sep or not rid.isdigit():
                         continue
@@ -116,11 +130,14 @@ def lookup_ids(values) -> dict:
             {"dmr_id": ident, "callsign": found.get(ident), "found": bool(found.get(ident))}
             for ident in ordered
         ],
+        "diagnostics": _diagnostics(started, scanned, cache_hit=bool(cache_hits and cache_hits == len(ordered))),
     }
 
 
 def search(query, limit=15) -> dict:
     """Search by exact/prefix callsign or DMR ID. Intended for user-triggered lookup."""
+    started = time.monotonic()
+    scanned = 0
     q = " ".join(str(query or "").upper().split())[:32]
     try:
         lim = max(1, min(MAX_SEARCH, int(limit)))
@@ -129,17 +146,38 @@ def search(query, limit=15) -> dict:
     if not q:
         raise ValueError("Enter a callsign or DMR ID")
     if q.isdigit():
-        return lookup_ids([q])
+        result = lookup_ids([q])
+        result["query"] = q
+        return result
     if len(q) < 2 or any(not (ch.isalnum() or ch in {"/", "-"}) for ch in q):
         raise ValueError("Enter at least 2 callsign characters")
 
     meta = database_meta()
+
+    # Activity enrichment already resolves DMR IDs through this module. Reuse
+    # those cached identities first so clicking/typing a just-heard callsign is
+    # instant instead of forcing another Pi Zero file scan.
+    cached = [
+        {"dmr_id": ident, "callsign": callsign, "found": True}
+        for ident, callsign in reversed(_CACHE.items())
+        if callsign == q
+    ][:lim]
+    if cached:
+        return {
+            "ok": True,
+            "database": meta,
+            "query": q,
+            "results": cached,
+            "diagnostics": _diagnostics(started, 0, cache_hit=True),
+        }
+
     rows = []
-    exact = []
+    exact = None
     if meta["present"]:
         try:
             with DB.open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
+                    scanned += 1
                     rid, sep, call = line.partition("\t")
                     if not sep or not rid.isdigit():
                         continue
@@ -148,12 +186,21 @@ def search(query, limit=15) -> dict:
                         continue
                     row = {"dmr_id": int(rid), "callsign": callsign, "found": True}
                     if callsign == q:
-                        exact.append(row)
-                    elif len(rows) < lim:
-                        rows.append(row)
+                        exact = row
+                        break
+                    rows.append(row)
+                    if len(rows) >= lim:
+                        break
         except OSError:
             pass
-    results = (exact + rows)[:lim]
+
+    results = ([exact] if exact else rows)[:lim]
     for row in results:
         _cache_put(int(row["dmr_id"]), str(row["callsign"]))
-    return {"ok": True, "database": database_meta(), "query": q, "results": results}
+    return {
+        "ok": True,
+        "database": database_meta(),
+        "query": q,
+        "results": results,
+        "diagnostics": _diagnostics(started, scanned),
+    }

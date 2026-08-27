@@ -29,7 +29,7 @@ If Node.js is available:
 for js in web/*.js; do node --check "$js"; done
 ```
 
-These checks do not replace hardware acceptance. Candidate validation also covers release-critical dynamic/static assets such as duplex dashboard controls, SSH UI assets, and LIVE DMR layout routes.
+These checks do not replace hardware acceptance. Candidate validation covers release-critical dynamic/static assets, including duplex controls, SSH UI, startup themes, software-channel UI, MODEM/MMDVM UI, plugin package/runtime integration and CSP-safe release wiring.
 
 ## 2. Build/install from GitHub source
 
@@ -46,7 +46,7 @@ The full installer asks which MMDVM runtime to build.
 
 ### YWD Extended — default/recommended
 
-Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. It advertises capabilities used by passive DMR voice/RX Monitor and compatible plugins.
+Exact pinned upstream MMDVM-Host plus the verified YWD extension patch. It advertises capabilities used by passive DMR/RX Monitor and compatible plugins.
 
 ### Stock Upstream
 
@@ -73,7 +73,7 @@ YWD Extended uses `lib/mmdvm_voice_build.py`. Stock uses `lib/mmdvm_upstream_bui
 
 The variants have separate cache namespaces/signatures. Extended cache identity includes the extension API/hash, so an unpatched binary cannot satisfy a patched cache lookup.
 
-Accepted RC1/RC2 radio identities remain:
+Current RC3 runtime identity:
 
 ```text
 MMDVM-Host
@@ -83,11 +83,18 @@ YWD extension API
   2
 
 YWD patch SHA256
-  f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
+  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
+
+Capabilities
+  slot_affinity_queued_work
+  dmr_pdu_route_metadata
+  dmr_rx_audio_events
 
 DMRGateway
   2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
+
+RC1/RC2 Extended remains a recognized legacy-compatible generation. See [UPGRADING.md](UPGRADING.md) for the explicit refresh path.
 
 ## 4. Personalized/development appliance image
 
@@ -125,11 +132,12 @@ Public releases use the fail-closed wrapper:
 bash os/builder/BUILD-PUBLIC-RELEASE.sh
 ```
 
-The wrapper is intentionally pinned to a specific release identity rather than acting as a generic "publish whatever branch is checked out" command. For RC3 it requires:
+The wrapper is intentionally pinned to a specific release identity rather than acting as a generic "publish whatever branch is checked out" command. The published RC3 build required:
 
 ```text
 VERSION   0.2.0-rc3
 branch    release/0.2.0-rc3
+source    3823140b9fd4d6e73fe9066af4b2280628f62f5e
 ```
 
 Each future release must intentionally advance that release identity before building.
@@ -151,44 +159,42 @@ The public wrapper:
 13. writes `BUILD-METADATA.json` and `README-FIRST.txt`;
 14. restores the developer's original local builder settings.
 
-The release gate refuses personalized images rather than trying to sanitize them after the fact. RC3 release metadata records the current YWD Extended capability set: `passive-dmr-voice`, `plugin-rx-monitor`, and `demand-gated-dmr-voice`.
-
-## Accepted RC2 build
+## Accepted RC3 build
 
 ```text
 source / tag
-  v0.2.0-rc2
-  5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+  v0.2.0-rc3
+  3823140b9fd4d6e73fe9066af4b2280628f62f5e
 
 published image
-  ywd-hotspot-0.2.0-rc2.img.xz
+  ywd-hotspot-0.2.0-rc3.img.xz
 
 SHA256
-  60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+  5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
 ```
 
-The GitHub-facing image was a byte-for-byte copy of the physically tested compressed artifact. The SHA matched before publication; no rebuild/recompression was performed after acceptance.
+The public filename was normalized after the build. The renamed compressed artifact was re-hashed and retained the exact accepted SHA-256; it was not rebuilt or recompressed after physical acceptance. GitHub's uploaded asset reports the same digest.
 
-RC2 was also exercised as an in-place dashboard update from the published RC1 image and passed a subsequent reboot with zero failed systemd units.
+The final fresh-flash acceptance covered the setup AP, Wi-Fi handoff, OLED code, first-run setup, dashboard auth/UI, RF-off and SSH-off factory policy, current runtime identity, BrandMeister/Parrot, reboot persistence and zero failed units.
+
+The published RC2 -> RC3 application updater path also passed separately.
 
 ## Publication assets
 
-For RC2 the published GitHub assets are:
+The RC3 GitHub release publishes:
 
 ```text
-ywd-hotspot-0.2.0-rc2.img.xz
-ywd-hotspot-0.2.0-rc2.bmap
-ywd-hotspot-0.2.0-rc2.info
+ywd-hotspot-0.2.0-rc3.img.xz
 SHA256SUMS
 BUILD-METADATA.json
 README-FIRST.txt
 ```
 
-Local builder/deploy filenames may reflect implementation-specific staging names. Artifact identity is established by exact source metadata and SHA-256, not by preserving an awkward local filename.
+Builder-local `.bmap`/`.info` or staging filenames may exist locally without being required release assets. Artifact identity is established by exact source metadata and SHA-256.
 
 ## Release-image acceptance
 
-A successful compile is not enough. For a future exact artifact intended for publication verify:
+A successful compile is not enough. For a future artifact intended for publication verify:
 
 ```text
 [ ] SHA256 verification passes
@@ -212,6 +218,6 @@ A successful compile is not enough. For a future exact artifact intended for pub
 [ ] zero failed systemd units
 ```
 
-Only after the exact public artifact passes should source be checkpointed/promoted/tagged and the exact tested assets published.
+Only after the exact public artifact passes should the accepted source be checkpointed/promoted/tagged and the exact tested assets published.
 
-See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)**, **[REPOSITORY.md](REPOSITORY.md)** and the completed **[RC1 acceptance record](history/RELEASE-PLAN-0.2.0-rc1.md)**.
+See **[OS-DEVELOPMENT.md](OS-DEVELOPMENT.md)**, **[REPOSITORY.md](REPOSITORY.md)** and **[RC3 publication acceptance](history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md)**.

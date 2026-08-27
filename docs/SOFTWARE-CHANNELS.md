@@ -2,11 +2,24 @@
 
 YWD-Hotspot exposes three approved first-party software channels in the dashboard:
 
-- `main` — the primary supported/stable release channel;
+- `main` — the primary supported public/update line;
 - `dev` — active YWD-Hotspot development;
 - `dev-plugins` — plugin/runtime integration development.
 
-The WebUI intentionally does **not** accept arbitrary branch names. Release, checkpoint, builder, and other engineering refs remain available only through the existing SSH/CLI updater workflow. This preserves RC/image acceptance workflows such as explicit `release/0.2.0-rc3` testing without exposing those refs to normal appliance users.
+The WebUI intentionally does **not** accept arbitrary branch names. Release, checkpoint, builder, and other engineering refs remain available only through the existing SSH/CLI updater workflow.
+
+## Current RC3 branch state
+
+After `0.2.0-rc3` publication, `main` and `dev` are intentionally aligned on RC3 code plus the post-release documentation refresh. The immutable release identity remains:
+
+```text
+v0.2.0-rc3
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
+```
+
+Future development may move `dev` ahead again. A moving channel head never changes the source represented by an existing release tag.
+
+`dev-plugins` may intentionally diverge for isolated plugin/framework work and should not be silently forced to follow ordinary docs/core housekeeping.
 
 ## Change Channel UI
 
@@ -27,7 +40,7 @@ Relationships are presented as:
 - **DIFFERENT LINE** — installed and selected heads have diverged;
 - **UNKNOWN** — ancestry cannot be proven from the managed checkout.
 
-The selected branch also gets channel-specific warnings. Development channels are clearly identified as development/experimental lines, and backward/diverged transitions receive stronger warnings.
+Development channels are clearly identified as development/experimental lines, and backward/diverged transitions receive stronger warnings.
 
 ## Exact-commit channel adoption
 
@@ -44,7 +57,7 @@ No RF service restart or application-file replacement is required for that case.
 
 If the selected branch points at a different commit, switching is treated as a full protected software transition rather than merely changing a preference file.
 
-Before the live appliance is touched, the current updater performs a full candidate dry-run against the explicitly selected branch. If validation fails, the saved channel and installed application remain unchanged.
+Before the live appliance is touched, the updater performs a full candidate dry-run against the explicitly selected branch. If validation fails, the saved channel and installed application remain unchanged.
 
 After successful preflight, a detached root-owned transient systemd service re-validates the same selected branch and runs the canonical GitHub updater with an explicit `--branch` argument. The existing updater remains responsible for:
 
@@ -63,9 +76,7 @@ The shared update-status document is used, so the existing staged update/reconne
 
 A branch switch can be a downgrade. The UI must never describe branch selection as harmless channel metadata when the selected branch contains older application code.
 
-Protected rollback significantly reduces risk, and the current approved branches use the same current configuration schema at the time this feature was introduced. However, future newer features may create state that an older branch does not understand. For that reason downgrade and diverged-line transitions are explicitly warned as higher-risk operations.
-
-During development of this feature, older `main` or `dev-plugins` heads may predate the WebUI channel selector itself. Switching to such a target can therefore remove **CHANGE CHANNEL** from the older dashboard after the transition. This does not prevent CLI recovery: an authorized administrator can return with the existing explicit GitHub updater, for example `sudo /opt/ywd-hotspot/app/GITHUB-UPDATE.sh --branch dev`. Once the channel-selector feature is promoted to those branches, normal WebUI switching remains available on both sides.
+Protected rollback significantly reduces risk, but future newer features may create state that an older branch does not understand. Downgrade and diverged-line transitions are therefore explicitly warned as higher-risk operations.
 
 ## Authentication and branch allowlist
 
@@ -79,24 +90,24 @@ dev
 dev-plugins
 ```
 
-This allowlist is intentionally scoped to the WebUI privilege boundary. The underlying engineering CLI updater continues to accept explicit release refs needed for release/image acceptance testing.
+This allowlist is intentionally scoped to the WebUI privilege boundary. The engineering CLI updater continues to accept explicit release refs needed for release/image acceptance testing.
 
 ## MMDVM behavior
 
-Changing the application software channel does not mean flashing the physical MMDVM HAT. Normal application branch transitions also do not intentionally compile MMDVM-Host or DMRGateway. Host-runtime rebuild/update and physical HAT firmware maintenance remain separate guarded workflows in the System **MODEM / MMDVM** area.
+Changing the application software channel does not mean flashing the physical MMDVM HAT. Normal application branch transitions also do not intentionally compile MMDVM-Host or DMRGateway. Host-runtime rebuild/update and physical HAT firmware maintenance remain separate guarded workflows in System **MODEM / MMDVM**.
 
-## Physical acceptance during RC3 UI polish
+RC3 specifically proved that the application updater can move a published RC2 appliance onto RC3 application code while correctly recognizing the historical Extended runtime rather than silently rebuilding it.
 
-1. Keep the hotspot on `dev` for the initial UI acceptance pass.
-2. With controls locked, confirm **CHANGE CHANNEL** cannot be used.
-3. Unlock controls and open **CHANGE CHANNEL**.
-4. Confirm current installed version/commit, saved channel, and checkout branch are correct.
-5. Confirm only `main`, `dev`, and `dev-plugins` are offered.
-6. Select each branch without switching and confirm its live GitHub metadata, relationship, and warning text are plausible.
-7. Confirm the current `dev` branch reports the exact installed commit after installing this UI batch.
-8. Confirm selecting the already-active branch disables the switch action.
-9. Do **not** switch this pre-release test appliance to an older branch merely to test the modal unless CLI recovery is intentionally planned; older targets may not yet contain this new selector.
-10. Confirm opening/refreshing the branch modal does not alter the saved channel, checkout, RF state, configuration, plugins, or services.
-11. Confirm `ywd-mmdvmhost.service`, `ywd-dmrgateway.service`, and `ywd-dashboard.service` remain active and `systemctl --failed` remains clean.
+## RC3 acceptance
 
-A true branch transition should be acceptance-tested separately after the selector itself is verified, using an explicitly chosen reversible path and checking the protected backup, service state, configuration preservation, update-status progress, and resulting saved channel/checkout.
+The software-channel UI was physically accepted before RC3 publication with controls both locked and unlocked. Acceptance confirmed:
+
+- only `main`, `dev`, and `dev-plugins` are offered;
+- current installed version/commit, saved channel and checkout branch are shown correctly;
+- live branch inventory/relationship metadata loads correctly;
+- the already-active branch cannot trigger an unnecessary switch;
+- opening/refreshing the modal does not alter channel, checkout, RF state, configuration, plugins or services;
+- release bootstrap/CSP wiring is present in the exact accepted RC3 source;
+- MMDVMHost, DMRGateway and dashboard remain healthy with zero failed units.
+
+A true future branch transition should still be acceptance-tested when it introduces new runtime behavior, especially across downgrade/diverged lines.

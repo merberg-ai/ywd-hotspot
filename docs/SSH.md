@@ -2,65 +2,76 @@
 
 [← Docs index](README.md) · [Installation](INSTALL.md) · [Security](../SECURITY.md) · [Backup / Restore](BACKUP-RESTORE.md)
 
-YWD-Hotspot OS includes OpenSSH for optional maintenance access, but the **public factory image ships with SSH disabled and TCP port 22 closed**. There is no default SSH password to discover or enable.
+YWD-Hotspot OS includes OpenSSH for optional maintenance access, but the **public factory image ships with SSH disabled and TCP port 22 closed**. There is no factory password intended for SSH login.
 
-The supported YWD-Hotspot OS workflow is dashboard-managed, public-key-only access:
-
-```text
-factory image
-  -> SSH OFF / port 22 closed
-  -> unlock dashboard controls
-  -> SYSTEM -> SSH ACCESS
-  -> create + download a client login key
-  -> enable SSH access
-  -> ssh/sftp with that private key
-```
-
-## Security model
-
-Whenever YWD enables SSH it enforces:
+On current development builds, the authenticated dashboard can enable SSH using either:
 
 ```text
-port                       22
-public-key authentication  enabled
-password authentication    disabled
-keyboard-interactive auth  disabled
-root SSH login             disabled
-factory host keys           none
+KEY ONLY          recommended/default
+PASSWORD OR KEY   explicit operator opt-in
 ```
 
-The first time SSH is enabled, the appliance generates its own unique OpenSSH server host keys. Disabling and later re-enabling SSH preserves those server identity keys and existing `authorized_keys` entries.
+Root SSH login, empty-password login, and keyboard-interactive/challenge-response authentication remain disabled in both modes.
 
-> [!CAUTION]
-> On the YWD-Hotspot OS image, the normal `ywd` account has passwordless sudo for appliance administration. A client private key authorized for `ywd` therefore grants effective administrative/root capability. Treat that private key like an administrator credential.
+## Factory/default security state
 
-Do not forward port 22 directly from the public Internet unless you intentionally accept that exposure. For remote administration, prefer reaching the hotspot through a VPN or other private encrypted network and then use SSH normally.
+A freshly flashed public appliance remains:
 
-## Recommended setup on the public appliance image
+```text
+SSH                        OFF
+port 22                    closed
+managed login policy       key-only when first enabled
+root SSH                   disabled
+factory client key         none
+reusable factory host key  none
+```
 
-### 1. Unlock dashboard controls
+The first time SSH is enabled, the appliance generates its own unique OpenSSH server host keys. Disabling and later re-enabling SSH preserves those server identity keys, the selected authentication policy, Linux account passwords, and existing `authorized_keys` entries.
 
-Open the normal YWD-Hotspot dashboard on the trusted LAN and unlock controls with the dashboard password created during first-boot setup.
+Do not forward port 22 directly from the public Internet unless you intentionally accept that exposure. For remote administration, prefer reaching the hotspot through a VPN or other private encrypted network.
 
-### 2. Open the SSH card
+## Dashboard setup
 
-Go to:
+Unlock dashboard controls and open:
 
 ```text
 SYSTEM -> SSH ACCESS
 ```
 
-The card shows the current server state, boot state, port, authentication policy, login-user hint, and authorized-key count.
+The SSH card reports:
 
-### 3. Create the client login key before opening SSH
+- server/boot state;
+- port;
+- active authentication policy;
+- active login user;
+- authorized-key count;
+- Linux password state;
+- eligible normal local login users.
 
-The public appliance uses the normal Linux user:
+### Login user selection
+
+YWD offers only existing local accounts that meet all of these checks:
 
 ```text
-ywd
+UID                 1000 or higher
+shell               interactive
+home                directly under /home
+root/service users  rejected
 ```
 
-Leave `ywd` in the **SSH / SFTP CLIENT LOGIN KEY** field and press:
+The normal factory appliance account is `ywd`. Development builds also allow another existing normal local account to be selected. This is useful on systems where the expected `ywd` account is absent or on source-installed systems that already have a normal operator account.
+
+Selecting another account does **not** create, rename, repair, or delete Linux users. A missing `ywd` account is therefore still visible for later troubleshooting rather than being silently repaired by the SSH feature.
+
+## Key-only mode — recommended
+
+Choose:
+
+```text
+Authentication: Key only — recommended
+```
+
+Optionally create a client key before opening port 22:
 
 ```text
 CREATE & EXPORT CLIENT KEY
@@ -69,107 +80,131 @@ CREATE & EXPORT CLIENT KEY
 YWD-Hotspot will:
 
 1. generate a new Ed25519 client key pair;
-2. add only the public key to `/home/ywd/.ssh/authorized_keys`;
-3. return a `.tar.gz` archive containing the private/public client key pair and a README;
+2. add only the public key to the selected user's `~/.ssh/authorized_keys`;
+3. return a `.tar.gz` containing the private/public pair and README;
 4. discard its temporary copy of the private key after the response.
 
-The archive name contains the current hotspot hostname, selected username and creation timestamp, for example:
-
-```text
-ywd-hotspot-ywd-ssh-client-login-20260822-070000.tar.gz
-```
-
-The private key is generated **without a passphrase** so it can be imported by common SSH/SFTP clients. Store it accordingly. Anyone who obtains it can authenticate while the matching public key remains authorized.
-
-Creating a key does **not** open port 22, so creating/downloading the key first is the preferred order.
-
-### 4. Enable SSH
-
-Press:
+Then press:
 
 ```text
 ENABLE SSH ACCESS
 ```
 
-Confirm the dialog. YWD creates unique server host keys if they do not already exist, installs the YWD public-key-only sshd policy, opens TCP port 22, and enables SSH at boot.
+YWD writes and validates a managed sshd policy, generates unique host keys if needed, opens TCP port 22, and enables SSH at boot.
 
-The card should report:
+Key-only effective policy includes:
 
 ```text
-Server   RUNNING
-At boot  ENABLED
-Port     22
-Policy   PUBLIC KEY ONLY
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+AuthenticationMethods publickey
 ```
 
-## Connect from Linux or macOS
+## Password-or-key mode
 
-Extract the downloaded archive, protect the private key, and connect:
+Choose:
+
+```text
+Authentication: Password or key
+```
+
+This mode accepts **either** the selected Linux user's password **or** an authorized SSH client key. It is not two-factor authentication requiring both credentials.
+
+If you want to set/change the selected account password from YWD, enter it twice under **SSH LOGIN PASSWORD** and press:
+
+```text
+SET / CHANGE PASSWORD
+```
+
+Password rules for the dashboard helper:
+
+```text
+minimum length  10 characters
+maximum length  128 characters
+newline/NUL     rejected
+```
+
+The password is passed only to the local privileged password helper through stdin. It is not returned by the API, written to YWD configuration, placed in command-line arguments, or included in diagnostics.
+
+After setting the password, enable SSH. If SSH is already running, change the authentication selector and press:
+
+```text
+APPLY AUTHENTICATION
+```
+
+The managed configuration is syntax-checked and its effective sshd settings are verified before the change is accepted. The dashboard keeps public-key authentication enabled as a recovery path.
+
+Password-or-key effective policy includes:
+
+```text
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+```
+
+## Managed login scope
+
+The generated YWD sshd policy also includes an `AllowUsers` entry for the selected dashboard login account. Changing the selected account and applying the policy therefore changes which account YWD intends to expose through its managed SSH path.
+
+The YWD drop-in is installed early in `sshd_config.d` and the helper checks the **effective** `sshd -T` result before accepting a policy. This prevents a conflicting distribution default from silently defeating the dashboard selection.
+
+## Connect with a password
+
+Linux/macOS/Windows OpenSSH:
 
 ```bash
-tar -xzf *-ywd-ssh-client-login-*.tar.gz
-chmod 600 ywd_hotspot_client_ed25519
-ssh -i ./ywd_hotspot_client_ed25519 ywd@HOTSPOT-IP
+ssh USER@HOTSPOT-IP
 ```
+
+Enter the selected Linux account password when prompted.
 
 SFTP:
 
 ```bash
-sftp -i ./ywd_hotspot_client_ed25519 ywd@HOTSPOT-IP
+sftp USER@HOTSPOT-IP
 ```
 
-Replace `HOTSPOT-IP` with the LAN address shown by the hotspot/dashboard. `ywd-hotspot.local` may also work when the client network supports mDNS:
-
-```bash
-ssh -i ./ywd_hotspot_client_ed25519 ywd@ywd-hotspot.local
-```
-
-The first connection to a newly initialized appliance normally asks you to trust its new server fingerprint. A later unexpected fingerprint change should be investigated rather than blindly accepted.
-
-## Connect from Windows 10/11 OpenSSH
-
-Recent Windows includes the `ssh` and `sftp` clients. In PowerShell, extract the archive and place the private key somewhere private, for example under your user `.ssh` directory:
-
-```powershell
-tar -xzf .\*-ywd-ssh-client-login-*.tar.gz
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.ssh" | Out-Null
-Move-Item .\ywd_hotspot_client_ed25519 "$env:USERPROFILE\.ssh\ywd_hotspot_client_ed25519"
-ssh -i "$env:USERPROFILE\.ssh\ywd_hotspot_client_ed25519" ywd@HOTSPOT-IP
-```
-
-SFTP:
-
-```powershell
-sftp -i "$env:USERPROFILE\.ssh\ywd_hotspot_client_ed25519" ywd@HOTSPOT-IP
-```
-
-If Windows OpenSSH rejects the private key because its ACL is too broad, restrict inheritance and grant your account read access:
-
-```powershell
-$key = "$env:USERPROFILE\.ssh\ywd_hotspot_client_ed25519"
-icacls $key /inheritance:r
-icacls $key /grant:r "${env:USERNAME}:(R)"
-```
-
-GUI SSH/SFTP clients may either accept the OpenSSH Ed25519 private key directly or require importing/converting it with that client's key utility. Use:
+GUI SSH/SFTP clients use:
 
 ```text
 Host      hotspot LAN IP/name
 Port      22
-Username  ywd
-Auth      downloaded private client key
-Password  none
+Username  selected SSH login user
+Auth      Password
+Password  selected Linux account password
 ```
 
-## Source-installed / non-appliance systems
+## Connect with an exported client key
 
-A normal GitHub source install does not create the YWD appliance `ywd` login account or install OpenSSH on behalf of an existing general-purpose OS. The SSH dashboard helper can enroll a key only for an existing normal local account that:
+Extract the downloaded archive and protect the private key:
 
-- has UID 1000 or higher;
-- has an interactive shell;
-- has a home directory directly under `/home`.
+```bash
+tar -xzf *-ssh-client-login-*.tar.gz
+chmod 600 ywd_hotspot_client_ed25519
+ssh -i ./ywd_hotspot_client_ed25519 USER@HOTSPOT-IP
+```
 
-If you installed YWD-Hotspot onto an existing Pi, enter that existing username in the client-key field instead of `ywd`. OpenSSH server must already be installed for the dashboard enable action to work.
+SFTP:
+
+```bash
+sftp -i ./ywd_hotspot_client_ed25519 USER@HOTSPOT-IP
+```
+
+Recent Windows includes `ssh` and `sftp`. If Windows OpenSSH rejects the private key because its ACL is too broad, restrict inheritance/read access before connecting.
+
+The first connection to a newly initialized appliance normally asks you to trust its new server fingerprint. An unexpected fingerprint change later should be investigated rather than blindly accepted.
+
+## Important administrator warning
+
+> [!CAUTION]
+> On the normal YWD-Hotspot appliance image, `ywd` has passwordless sudo for appliance administration. Password or client-key access to that account therefore grants effective administrative/root capability after login. Treat both the password and private client key as administrator credentials.
+
+Another selected local account has whatever privileges that Linux account already possesses; YWD does not automatically grant it sudo access.
 
 ## Disable SSH
 
@@ -183,71 +218,64 @@ Disabling SSH:
 
 - closes TCP port 22;
 - removes boot activation;
+- preserves the selected authentication policy;
+- preserves Linux account passwords;
 - preserves server host keys;
 - preserves client `authorized_keys` entries.
-
-Re-enabling SSH later therefore restores access with the same still-authorized client keys and normally the same server fingerprint.
 
 ## Multiple client keys and revocation
 
 Every **CREATE & EXPORT CLIENT KEY** action creates another independent Ed25519 key and appends its public half to the selected user's `authorized_keys` file.
 
-There is currently no dashboard button that selectively deletes an individual authorized client key. To revoke one permanently, remove its line from:
+To revoke a key, remove its matching line from that user's:
 
 ```text
-/home/ywd/.ssh/authorized_keys
+/home/USER/.ssh/authorized_keys
 ```
 
-The downloaded key archive identifies the comment used on that line. If a client key may have been stolen and you cannot immediately edit `authorized_keys`, disable SSH from the dashboard to close port 22 until you can revoke it.
+The downloaded key archive identifies the comment used on that line. If a key may have been stolen and you cannot revoke it immediately, disable SSH from the dashboard until you can remove it.
 
 ## Server identity export is not a login key
 
-The SSH card also offers:
+**EXPORT SERVER IDENTITY** exports the hotspot's private `ssh_host_*` server identity keys for advanced recovery. It preserves the server fingerprint after a rebuild.
 
-```text
-EXPORT SERVER IDENTITY
-```
-
-This is **recovery-only**. It exports the hotspot's private `ssh_host_*` server identity keys so an advanced rebuild can preserve the same SSH server fingerprint.
-
-It cannot be used by SSH, PuTTY, WinSCP, andFTP, or another client as a login credential.
-
-The server-identity archive is not encrypted and contains private server keys. Possession can allow impersonation of that SSH server, so store it privately.
+It cannot be used as a client login credential. The archive is not encrypted and contains private server keys, so store it privately.
 
 ## Backup / reflash behavior
 
 The normal encrypted `.ywdsettings` backup does **not** currently contain:
 
 - SSH client private keys;
-- `/home/ywd/.ssh/authorized_keys`;
-- OpenSSH server `ssh_host_*` identity keys.
+- user `authorized_keys` files;
+- Linux account passwords;
+- OpenSSH `ssh_host_*` identity keys.
 
-After a fresh public-image flash, SSH is off again. The simplest recovery path is to create a new client login key and then enable SSH. If preserving the old server fingerprint matters, use the separate **EXPORT SERVER IDENTITY** recovery archive and restore it manually as root.
+After a fresh public-image flash, SSH is off again. Configure SSH from the dashboard on the replacement system.
 
 ## Troubleshooting
 
-From an existing shell/console, useful checks are:
+Useful local-console checks:
 
 ```bash
+getent passwd ywd
+getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1,$3,$6,$7}'
 systemctl status ssh.service --no-pager
 sudo ss -ltnp | grep ':22 ' || true
 sudo sshd -t
-sudo sshd -T | grep -E '^(pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|permitrootlogin|authenticationmethods) '
-ls -ld /home/ywd/.ssh
-ls -l /home/ywd/.ssh/authorized_keys
+sudo sshd -T | grep -E '^(pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|permitrootlogin|authenticationmethods|allowusers) '
+ls -la /etc/ssh/sshd_config.d/
 ```
-
-Expected YWD policy includes public-key authentication, password authentication off, and root login off.
 
 Common causes of connection failure:
 
-- SSH Access still disabled in the dashboard;
+- SSH access is still disabled;
 - wrong LAN IP/hostname;
-- client did not select the downloaded private key;
-- wrong username;
+- wrong selected login user;
+- selected Linux user no longer exists;
+- password was not set/known for password mode;
+- client did not select the exported private key;
 - private-key file permissions rejected by the client;
-- client key was created for a different local Linux user;
 - stale/mismatched server fingerprint after a reflash;
 - OpenSSH server missing on a generic source-installed OS.
 
-The normal sanitized YWD diagnostics bundle is preferred for support. Never attach client private keys, server identity archives, or raw `authorized_keys` data to a public issue.
+The normal sanitized YWD diagnostics bundle is preferred for support. Never attach passwords, client private keys, server identity archives, raw `/etc/shadow`, or raw `authorized_keys` data to a public issue.

@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 import sys
 import time
 import urllib.error
@@ -14,6 +15,7 @@ from pathlib import Path
 URL = os.environ.get("YWD_DMRID_URL", "https://database.radioid.net/static/user.csv")
 OUT = Path(os.environ.get("YWD_DMRID_FILE", "/var/lib/ywd-hotspot/DMRIds.dat"))
 RICH_OUT = Path(os.environ.get("YWD_DMR_CONTACTS_FILE", "/var/lib/ywd-hotspot/DMRContacts.tsv"))
+INDEX_OUT = Path(os.environ.get("YWD_DMR_CONTACTS_DB", "/var/lib/ywd-hotspot/DMRContacts.sqlite3"))
 CFG = Path(os.environ.get("YWD_CONFIG", "/etc/ywd-hotspot/config.json"))
 UA = "YWD-Hotspot/0.2.0"
 
@@ -27,10 +29,10 @@ def interval_days():
 
 
 def due():
-    if not OUT.is_file() or not RICH_OUT.is_file():
+    if not OUT.is_file() or not RICH_OUT.is_file() or not INDEX_OUT.is_file():
         return True
     try:
-        age = time.time() - min(OUT.stat().st_mtime, RICH_OUT.stat().st_mtime)
+        age = time.time() - min(OUT.stat().st_mtime, RICH_OUT.stat().st_mtime, INDEX_OUT.stat().st_mtime)
     except FileNotFoundError:
         return True
     return age >= interval_days() * 86400
@@ -71,17 +73,56 @@ def _field(row, index):
     return row[index]
 
 
+def _set_owner_mode(path):
+    os.chmod(path, 0o640)
+    try:
+        import grp
+        os.chown(path, 0, grp.getgrnam("ywd-hotspot").gr_gid)
+    except Exception:
+        pass
+
+
 def _write_atomic(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text)
-    os.chmod(tmp, 0o640)
-    try:
-        import grp
-        os.chown(tmp, 0, grp.getgrnam("ywd-hotspot").gr_gid)
-    except Exception:
-        pass
+    _set_owner_mode(tmp)
     os.replace(tmp, path)
+
+
+def _write_index_atomic(rows):
+    """Build the indexed rich directory off to the side, then atomically replace it."""
+    INDEX_OUT.parent.mkdir(parents=True, exist_ok=True)
+    tmp = INDEX_OUT.with_name(INDEX_OUT.name + ".tmp")
+    try:
+        tmp.unlink()
+    except FileNotFoundError:
+        pass
+    conn = sqlite3.connect(tmp)
+    try:
+        conn.execute("PRAGMA journal_mode=OFF")
+        conn.execute("PRAGMA synchronous=OFF")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute(
+            "CREATE TABLE contacts ("
+            "dmr_id INTEGER PRIMARY KEY, callsign TEXT NOT NULL, name TEXT, city TEXT, state TEXT, country TEXT)"
+        )
+        conn.executemany(
+            "INSERT OR REPLACE INTO contacts (dmr_id, callsign, name, city, state, country) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                (int(parts[0]), parts[1], parts[2], parts[3], parts[4], parts[5])
+                for line in rows
+                for parts in [line.split("\t", 5)]
+                if len(parts) == 6 and parts[0].isdigit()
+            ),
+        )
+        conn.execute("CREATE INDEX contacts_callsign ON contacts(callsign)")
+        conn.execute("PRAGMA optimize")
+        conn.commit()
+    finally:
+        conn.close()
+    _set_owner_mode(tmp)
+    os.replace(tmp, INDEX_OUT)
 
 
 def main():
@@ -147,8 +188,10 @@ def main():
 
     _write_atomic(OUT, "\n".join(simple_rows) + "\n")
     _write_atomic(RICH_OUT, "\n".join(rich_rows) + "\n")
+    _write_index_atomic(rich_rows)
     print(f"Updated {OUT}: {len(simple_rows)} DMR IDs")
     print(f"Updated {RICH_OUT}: {len(rich_rows)} local contact records")
+    print(f"Updated {INDEX_OUT}: indexed DMR contact directory")
 
 
 if __name__ == "__main__":

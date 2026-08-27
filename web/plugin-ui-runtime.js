@@ -11,6 +11,7 @@
 
   function timeoutFor(op) {
     if (op === 'plugin.vocoderStatus' || op === 'plugin.vocoderReset' || op === 'plugin.startRxAudioStream') return 20000;
+    if (op === 'plugin.lookupDmrIds' || op === 'plugin.searchDmrDirectory') return 15000;
     if (op === 'plugin.vocoderDecode') return 1500;
     return 5000;
   }
@@ -100,9 +101,6 @@
           streamHandlers.delete(streamId);
           streamBacklog.delete(streamId);
         }
-        // If START has not resolved yet, leave the END event in the bounded
-        // backlog. startRxAudioStream() will deliver it immediately after the
-        // handler is registered instead of leaving the plugin stuck buffering.
         return;
       }
       if (response.type !== 'response' || !Number.isInteger(response.id)) return;

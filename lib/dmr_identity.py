@@ -7,6 +7,8 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
+import dmr_observations
+
 DB = Path(os.environ.get("YWD_DMRID_FILE", "/var/lib/ywd-hotspot/DMRIds.dat"))
 RICH_DB = Path(os.environ.get("YWD_DMR_CONTACTS_FILE", "/var/lib/ywd-hotspot/DMRContacts.tsv"))
 SOURCE = "RadioID.net"
@@ -90,6 +92,17 @@ def _diagnostics(started: float, scanned: int, cache_hit: bool = False) -> dict:
     }
 
 
+def _with_observations(result: dict) -> dict:
+    rows = result.get("results") if isinstance(result.get("results"), list) else []
+    ids = [row.get("dmr_id") for row in rows if isinstance(row, dict) and row.get("dmr_id") is not None]
+    calls = [row.get("callsign") for row in rows if isinstance(row, dict) and row.get("callsign")]
+    try:
+        result["observations"] = dmr_observations.lookup(ids, calls)
+    except Exception:
+        result["observations"] = {"ok": True, "database": dmr_observations.database_meta(), "results": []}
+    return result
+
+
 def database_meta() -> dict:
     stamp = _sync_cache()
     path = _active_db()
@@ -122,7 +135,7 @@ def lookup_ids(values) -> dict:
 
     meta = database_meta()
     if not ordered:
-        return {"ok": True, "database": meta, "results": [], "diagnostics": _diagnostics(started, scanned)}
+        return _with_observations({"ok": True, "database": meta, "results": [], "diagnostics": _diagnostics(started, scanned)})
 
     pending = set()
     found = {}
@@ -160,12 +173,12 @@ def lookup_ids(values) -> dict:
     for ident in ordered:
         row = found.get(ident)
         results.append(dict(row) if row else _row(ident, ""))
-    return {
+    return _with_observations({
         "ok": True,
         "database": database_meta(),
         "results": results,
         "diagnostics": _diagnostics(started, scanned, cache_hit=bool(cache_hits and cache_hits == len(ordered))),
-    }
+    })
 
 
 def search(query, limit=15) -> dict:
@@ -193,13 +206,13 @@ def search(query, limit=15) -> dict:
         if row and row.get("callsign") == q
     ][:lim]
     if cached:
-        return {
+        return _with_observations({
             "ok": True,
             "database": meta,
             "query": q,
             "results": cached,
             "diagnostics": _diagnostics(started, 0, cache_hit=True),
-        }
+        })
 
     rows = []
     exact = None
@@ -226,10 +239,10 @@ def search(query, limit=15) -> dict:
     results = ([exact] if exact else rows)[:lim]
     for row in results:
         _cache_put(int(row["dmr_id"]), dict(row))
-    return {
+    return _with_observations({
         "ok": True,
         "database": database_meta(),
         "query": q,
         "results": results,
         "diagnostics": _diagnostics(started, scanned),
-    }
+    })

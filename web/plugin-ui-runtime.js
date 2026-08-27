@@ -71,6 +71,8 @@
     getState: () => request('plugin.getState'),
     getConfig: () => request('plugin.getConfig'),
     ping: () => request('plugin.ping'),
+    getPreference: key => request('plugin.getPreference', {key:String(key || '')}),
+    setPreference: (key, value) => request('plugin.setPreference', {key:String(key || ''), value}),
     readDmrActivity: options => request('plugin.readDmrActivity', options || {}),
     lookupDmrIds: ids => request('plugin.lookupDmrIds', {ids:Array.isArray(ids) ? ids : []}),
     searchDmrDirectory: (query, options = {}) => request('plugin.searchDmrDirectory', {

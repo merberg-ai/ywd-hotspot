@@ -8,7 +8,7 @@ YWD-Hotspot keeps the application and appliance-image source in one repository. 
 
 ### 0.2.0-rc1
 
-RC1 established the current factory-image/runtime baseline:
+RC1 established the public factory-image/runtime baseline:
 
 ```text
 source
@@ -24,7 +24,7 @@ image SHA256
 
 ### 0.2.0-rc2
 
-RC2 intentionally retained RC1 RF/runtime behavior and proved both the fresh-image and updater paths:
+RC2 retained RC1 RF/runtime behavior and proved both fresh-image and RC1 -> RC2 updater paths:
 
 ```text
 source
@@ -41,9 +41,29 @@ image SHA256
   60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
 ```
 
-The exact RC2 image passed a fresh flash/test. A published RC1 appliance then updated to RC2 through the dashboard updater, rebooted cleanly, and reported zero failed systemd units.
+### 0.2.0-rc3
 
-The release tags/checkpoints remain immutable evidence of the tested artifacts.
+RC3 is the current physically accepted public-testing release and adds the proven DMR RX Monitor / Phase 3J path, current YWD Extended capability generation, final first-run/UI integration work and expanded updater/runtime hardening.
+
+```text
+source
+  v0.2.0-rc3
+  3823140b9fd4d6e73fe9066af4b2280628f62f5e
+
+release branch
+  release/0.2.0-rc3
+
+checkpoint
+  checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image
+
+published image
+  ywd-hotspot-0.2.0-rc3.img.xz
+
+image SHA256
+  5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
+```
+
+The exact RC3 image passed fresh-flash acceptance. The published RC2 -> RC3 application updater path also passed. Release tags/checkpoints/branches remain immutable evidence of the tested artifacts even when `main`/`dev` later receive documentation or development commits.
 
 ## Builder entry points
 
@@ -80,8 +100,8 @@ Normal builds may intentionally contain local Wi-Fi, station identity, credentia
 - exact pinned MMDVM-Host upstream commit;
 - exact hash-verified YWD extension patch;
 - extension API 2;
-- passive DMR voice/RX Monitor capability;
-- trusted local telemetry/voice path;
+- trusted passive DMR/RX Monitor capability set;
+- local telemetry/voice path;
 - foundation for plugins that declare matching requirements.
 
 ### `upstream`
@@ -90,7 +110,28 @@ Normal builds may intentionally contain local Wi-Fi, station identity, credentia
 - no YWD extension patch;
 - extension-dependent plugins unavailable.
 
-The two variants have separate compile-cache identities. DMRGateway remains the same pinned upstream build.
+Current RC3 YWD Extended identity:
+
+```text
+MMDVM-Host upstream
+  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+
+YWD patch SHA256
+  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
+
+Extension API
+  2
+
+Capabilities
+  slot_affinity_queued_work
+  dmr_pdu_route_metadata
+  dmr_rx_audio_events
+
+DMRGateway upstream
+  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
+The two variants have separate compile-cache identities. RC1/RC2 Extended is recognized as legacy-compatible rather than silently rebuilt.
 
 ## Public factory image
 
@@ -147,17 +188,9 @@ The LAN IP shown by the appliance is the authoritative setup target. `ywd-hotspo
 
 ## Public SSH lifecycle
 
-`openssh-server` is present in the appliance image so no package installation is required later, but first-boot staging disables `ssh.service` and ships no reusable server host identity.
+`openssh-server` is present in the appliance image so no package installation is required later, but first-boot staging disables SSH and ships no reusable server host identity.
 
-After setup, authenticated dashboard **SYSTEM -> SSH ACCESS** can:
-
-- create/download an Ed25519 client key for the `ywd` login user;
-- enable SSH and boot activation;
-- generate unique server host keys locally on first enable;
-- disable SSH while preserving authorized keys/server identity;
-- export server identity keys for advanced recovery.
-
-Password/root SSH login remains disabled. See **[SSH.md](SSH.md)**.
+After setup, authenticated dashboard **SYSTEM -> SSH ACCESS** can create/export a client key, enable/disable SSH, and manage the appliance's unique server identity. Password/root SSH login remains disabled. See **[SSH.md](SSH.md)**.
 
 ## Release artifacts
 
@@ -170,7 +203,16 @@ README-FIRST.txt
 
 Metadata records source commit, target architecture, factory-clean state, MMDVM variant/upstream/patch identity, DMRGateway pin, image filename/size, and image SHA-256.
 
-The exact tested compressed image is the release artifact. A publication-time filename cleanup is acceptable only when the copy remains byte-identical and SHA-256 is reverified.
+For RC3 the public release assets are:
+
+```text
+ywd-hotspot-0.2.0-rc3.img.xz
+SHA256SUMS
+BUILD-METADATA.json
+README-FIRST.txt
+```
+
+The exact tested compressed image is the release artifact. A publication-time filename cleanup is acceptable only when the bytes remain identical and SHA-256 is reverified.
 
 ## Physical acceptance checklist
 
@@ -202,7 +244,7 @@ For a release intended to exercise the updater, also test a supported prior publ
 
 ## Release freeze / promotion policy
 
-While releases are frozen, `main` stays at the exact accepted public commit so normal appliances do not see unpublished development as an available update. Ongoing docs/repository/development work goes to `dev`.
+Release tags, release branches and proven checkpoints are immutable acceptance evidence. `main` is the public/update line and may receive intentional post-release documentation commits; `dev` is the active integrated development line. A docs-only commit after publication does not change the source/image represented by an existing release tag.
 
 For a future release:
 
@@ -217,4 +259,4 @@ For a future release:
 9. upload the exact tested artifact set;
 10. never rebuild a different image under the same release identity.
 
-See **[REPOSITORY.md](REPOSITORY.md)** for immutable release-history policy and **[history/RELEASE-PLAN-0.2.0-rc1.md](history/RELEASE-PLAN-0.2.0-rc1.md)** for the completed RC1 acceptance record.
+See **[REPOSITORY.md](REPOSITORY.md)** and **[RC3 publication acceptance](history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md)**.

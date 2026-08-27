@@ -7,12 +7,14 @@ journalctl polling. State is written atomically for the dashboard/OLED.
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import time
 from pathlib import Path
 
 RUN = Path(os.environ.get("YWD_ACTIVITY_STATE", "/run/ywd-hotspot/activity.json"))
 HISTORY = Path(os.environ.get("YWD_ACTIVITY_HISTORY", "/var/lib/ywd-hotspot/lastheard.json"))
+OBS_DB = Path(os.environ.get("YWD_DMR_OBSERVATIONS", "/var/lib/ywd-hotspot/contact-observations.sqlite3"))
 MAX_HISTORY = 60
 
 START = re.compile(
@@ -67,6 +69,90 @@ def save(state, persist_history=False):
     atomic_json(RUN, state)
     if persist_history:
         atomic_json(HISTORY, state["lastheard"][:MAX_HISTORY])
+
+
+def init_observation_db():
+    """Create the tiny local station-history store without making activity startup fatal."""
+    try:
+        OBS_DB.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(OBS_DB, timeout=1.0) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS station_observations ("
+                "identity_key TEXT PRIMARY KEY, "
+                "dmr_id INTEGER, "
+                "callsign TEXT, "
+                "first_seen REAL NOT NULL, "
+                "last_seen REAL NOT NULL, "
+                "qso_count INTEGER NOT NULL DEFAULT 0, "
+                "rf_count INTEGER NOT NULL DEFAULT 0, "
+                "network_count INTEGER NOT NULL DEFAULT 0, "
+                "total_duration_s REAL NOT NULL DEFAULT 0, "
+                "last_destination INTEGER, "
+                "last_group INTEGER NOT NULL DEFAULT 0, "
+                "last_path TEXT, "
+                "last_slot INTEGER)"
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS station_observations_dmr_id ON station_observations(dmr_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS station_observations_callsign ON station_observations(callsign)")
+    except Exception:
+        pass
+
+
+def record_observation(event):
+    """Persist one completed DMR call. Failure never affects live activity/RF handling."""
+    try:
+        source = event.get("source") if isinstance(event.get("source"), dict) else {}
+        ident = source.get("dmr_id")
+        try:
+            ident = int(ident) if ident is not None else None
+        except Exception:
+            ident = None
+        if ident is not None and not (1 <= ident <= 16_777_215):
+            ident = None
+        callsign = str(source.get("callsign") or "").strip().upper()[:24] or None
+        if ident is None and callsign is None:
+            return
+        key = f"id:{ident}" if ident is not None else f"call:{callsign}"
+        seen = float(event.get("ended_at") or event.get("started_at") or now())
+        duration = max(0.0, float(event.get("duration_s") or 0.0))
+        path = str(event.get("path") or "").upper()[:12]
+        rf_inc = 1 if path == "RF" else 0
+        net_inc = 1 if path == "NETWORK" else 0
+        destination = event.get("destination") if isinstance(event.get("destination"), dict) else {}
+        dst = destination.get("id")
+        try:
+            dst = int(dst) if dst is not None else None
+        except Exception:
+            dst = None
+        group = 1 if destination.get("group") else 0
+        slot = event.get("slot")
+        try:
+            slot = int(slot) if slot is not None else None
+        except Exception:
+            slot = None
+
+        init_observation_db()
+        with sqlite3.connect(OBS_DB, timeout=1.0) as conn:
+            conn.execute(
+                "INSERT INTO station_observations (identity_key, dmr_id, callsign, first_seen, last_seen, "
+                "qso_count, rf_count, network_count, total_duration_s, last_destination, last_group, last_path, last_slot) "
+                "VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(identity_key) DO UPDATE SET "
+                "dmr_id=COALESCE(excluded.dmr_id, station_observations.dmr_id), "
+                "callsign=COALESCE(excluded.callsign, station_observations.callsign), "
+                "last_seen=MAX(station_observations.last_seen, excluded.last_seen), "
+                "qso_count=station_observations.qso_count+1, "
+                "rf_count=station_observations.rf_count+excluded.rf_count, "
+                "network_count=station_observations.network_count+excluded.network_count, "
+                "total_duration_s=station_observations.total_duration_s+excluded.total_duration_s, "
+                "last_destination=excluded.last_destination, last_group=excluded.last_group, "
+                "last_path=excluded.last_path, last_slot=excluded.last_slot",
+                (key, ident, callsign, seen, seen, rf_inc, net_inc, duration, dst, group, path, slot),
+            )
+    except Exception:
+        pass
 
 
 def make_party(token):
@@ -138,6 +224,7 @@ def finish_event(state, path, m, raw, lost=False):
     # Update current with the completed event, but mark it inactive.
     state["current"] = event.copy()
     save(state, True)
+    record_observation(event)
 
 
 def process_line(state, line):
@@ -180,6 +267,7 @@ def follow(state):
 def main():
     state = blank_state()
     state["lastheard"] = load_history()[:MAX_HISTORY]
+    init_observation_db()
     save(state)
     while True:
         try:

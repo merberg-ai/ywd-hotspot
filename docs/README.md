@@ -3,7 +3,7 @@
 [← Back to project README](../README.md)
 
 > [!IMPORTANT]
-> `0.2.0-rc3` is the current physically accepted public-testing release. The exact accepted source is tag `v0.2.0-rc3` at commit `3823140b9fd4d6e73fe9066af4b2280628f62f5e`. The exact published factory image passed fresh-flash acceptance, and the published RC2 -> RC3 application updater path also passed.
+> `0.2.0-rc3` is the current physically accepted public-testing release. Its exact factory image passed fresh-flash acceptance on the reference Pi Zero W + MMDVM appliance, and the published RC2 -> RC3 application update path also passed. The immutable release source remains `3823140b9fd4d6e73fe9066af4b2280628f62f5e`; moving channel branches may contain later documentation-only cleanup.
 
 ## Documentation map
 
@@ -28,11 +28,10 @@
 | 📡 Understand trusted MMDVM telemetry | **[Telemetry](TELEMETRY.md)** |
 | 📞 Understand normalized sessions | **[MMDVM Sessions](MMDVM-SESSIONS.md)** |
 | 🧱 Understand RF/runtime boundaries | **[Architecture](ARCHITECTURE.md)** |
-| 🌿 Understand branches/checkpoints/releases | **[Repository Policy](REPOSITORY.md)** |
+| 🌿 Understand branches/releases/ref cleanup | **[Repository Policy](REPOSITORY.md)** |
 | 🧰 Develop safely | **[GitHub / Development](GITHUB-SETUP.md)** |
-| 🧪 Review RC3 release details | **[0.2.0-rc3 Release Notes](RELEASE-NOTES-0.2.0-rc3.md)** |
-| ✅ Review final RC3 image/publication evidence | **[RC3 Factory Image / Publication Pass](history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md)** |
-| 🧪 Review accepted RC2 release notes | **[0.2.0-rc2 Release Notes](RELEASE-NOTES-0.2.0-rc2.md)** |
+| 🧪 Review the accepted RC3 release | **[0.2.0-rc3 Release Notes](RELEASE-NOTES-0.2.0-rc3.md)** |
+| 🧪 Review the accepted RC2 release | **[0.2.0-rc2 Release Notes](RELEASE-NOTES-0.2.0-rc2.md)** |
 | 📦 Review RC1 release notes | **[0.2.0-rc1 Release Notes](RELEASE-NOTES-0.2.0-rc1.md)** |
 | 🗄️ Browse completed plans / Alpha archaeology | **[Historical Documentation](history/README.md)** |
 | 🔐 Review security/exposure rules | **[Security](../SECURITY.md)** |
@@ -44,7 +43,7 @@
 Version
   0.2.0-rc3
 
-Tag / accepted source
+Tag / exact release source
   v0.2.0-rc3
   3823140b9fd4d6e73fe9066af4b2280628f62f5e
 
@@ -55,43 +54,19 @@ Image SHA256
   5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
 
 Acceptance
-  final fresh-image boot/test PASS
-  published RC2 -> RC3 updater PASS
-  duplex TS1/TS2 Parrot PASS
-  first-run setup / dashboard PASS
-  MODEM/MMDVM card + software-channel UI PASS
-  reboot persistence PASS
+  fresh-image boot/test PASS
+  RC2 -> RC3 application updater PASS
+  reboot/persistence PASS
   failed systemd units: 0
 ```
 
-Release page:
+Release page: **[YWD-Hotspot 0.2.0-rc3](https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc3)**.
 
-https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc3
+## Current repository shape
 
-The published image is the exact tested compressed artifact. Renaming for the public GitHub-facing filename did not change its bytes; the SHA-256 was reverified before publication and matches GitHub's uploaded asset digest.
+Normal software channels are `main`, `dev`, and `dev-plugins`. Published release source is retained by immutable `v...` tags plus frozen `release/<version>` branches. Intermediate checkpoint/test refs are temporary engineering evidence and should be pruned once a later published release supersedes them and their commits remain reachable from retained history.
 
-## Current RC3 runtime identity
-
-```text
-MMDVM-Host upstream
-  dea6e9b2c35857fe6f904c5092bebadb86cbf079
-
-YWD Extended patch SHA256
-  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
-
-Extension API
-  2
-
-Current capabilities
-  slot_affinity_queued_work
-  dmr_pdu_route_metadata
-  dmr_rx_audio_events
-
-DMRGateway upstream
-  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
-```
-
-RC1/RC2 YWD Extended remains recognized as a legacy-compatible runtime and is never silently rebuilt by an ordinary application update. See [Upgrading](UPGRADING.md).
+See [Repository Policy](REPOSITORY.md) for the cleanup/retention rules.
 
 ## Core operating rules
 
@@ -119,34 +94,12 @@ RC1/RC2 YWD Extended remains recognized as a legacy-compatible runtime and is ne
 
 Public images contain **no operator preconfiguration**: no Wi-Fi, callsign/DMR ID, BM credentials/API key, dashboard password, imported settings, RF autostart, builder SSH authorized key, or reusable SSH server host identity. They boot into the setup AP/OLED-code onboarding flow.
 
-## Current repository refs
-
-| Ref | Purpose |
-|---|---|
-| `main` | public/update line carrying RC3 code plus post-release documentation |
-| `dev` | active integrated development; aligned with `main` immediately after the RC3 documentation refresh |
-| `dev-plugins` | isolated plugin/framework experiment line; may intentionally diverge |
-| `v0.2.0-rc3` | immutable accepted RC3 tag at `3823140b9fd4d6e73fe9066af4b2280628f62f5e` |
-| `release/0.2.0-rc3` | frozen exact RC3 source branch |
-| `checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image` | immutable final RC3 pre-image checkpoint |
-| `v0.2.0-rc2` | immutable updater-proven RC2 tag |
-| `release/0.2.0-rc2` | frozen RC2 source branch |
-| `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for accepted RC2 image/updater test |
-| `v0.2.0-rc1` | immutable physically tested RC1 tag |
-| `release/0.2.0-rc1` | frozen RC1 source branch |
-| `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for accepted RC1 image |
-
-Release tags/branches/checkpoints remain immutable historical evidence even when `main`/`dev` later receive documentation or new development commits.
-
-See [Repository Policy](REPOSITORY.md) for the branch/ref rules.
-
 ## Useful commands
 
 ```bash
 ywd-hotspotctl status
 ywd-hotspotctl source
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
-sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
 systemctl --failed --no-pager
 ```
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded read-only lookup helpers for the local YWD-Hotspot DMR ID database."""
+"""Bounded read-only lookup helpers for the local YWD-Hotspot DMR directory."""
 from __future__ import annotations
 
 import os
@@ -8,23 +8,29 @@ from collections import OrderedDict
 from pathlib import Path
 
 DB = Path(os.environ.get("YWD_DMRID_FILE", "/var/lib/ywd-hotspot/DMRIds.dat"))
+RICH_DB = Path(os.environ.get("YWD_DMR_CONTACTS_FILE", "/var/lib/ywd-hotspot/DMRContacts.tsv"))
 SOURCE = "RadioID.net"
 MAX_BATCH = 64
 MAX_SEARCH = 25
 CACHE_LIMIT = 512
-_CACHE: OrderedDict[int, str | None] = OrderedDict()
-_CACHE_STAMP: tuple[int, int] | None = None
+_CACHE: OrderedDict[int, dict | None] = OrderedDict()
+_CACHE_STAMP: tuple[str, int, int] | None = None
 
 
-def _stamp() -> tuple[int, int] | None:
+def _active_db() -> Path:
+    return RICH_DB if RICH_DB.is_file() else DB
+
+
+def _stamp() -> tuple[str, int, int] | None:
+    path = _active_db()
     try:
-        stat = DB.stat()
-        return int(stat.st_mtime_ns), int(stat.st_size)
+        stat = path.stat()
+        return str(path), int(stat.st_mtime_ns), int(stat.st_size)
     except OSError:
         return None
 
 
-def _sync_cache() -> tuple[int, int] | None:
+def _sync_cache():
     global _CACHE_STAMP
     stamp = _stamp()
     if stamp != _CACHE_STAMP:
@@ -33,8 +39,8 @@ def _sync_cache() -> tuple[int, int] | None:
     return stamp
 
 
-def _cache_put(ident: int, callsign: str | None) -> None:
-    _CACHE[ident] = callsign
+def _cache_put(ident: int, row: dict | None) -> None:
+    _CACHE[ident] = row
     _CACHE.move_to_end(ident)
     while len(_CACHE) > CACHE_LIMIT:
         _CACHE.popitem(last=False)
@@ -48,6 +54,34 @@ def _dmr_id(value) -> int | None:
     return ident if 1 <= ident <= 16_777_215 else None
 
 
+def _clean(value, limit):
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _row(ident, callsign, name="", city="", state="", country=""):
+    call = _clean(callsign, 24).upper()
+    return {
+        "dmr_id": int(ident),
+        "callsign": call or None,
+        "name": _clean(name, 80) or None,
+        "city": _clean(city, 64) or None,
+        "state": _clean(state, 48) or None,
+        "country": _clean(country, 48) or None,
+        "found": bool(call),
+    }
+
+
+def _parse_line(line: str):
+    parts = line.rstrip("\r\n").split("\t")
+    if len(parts) < 2 or not parts[0].isdigit():
+        return None
+    ident = _dmr_id(parts[0])
+    if ident is None:
+        return None
+    padded = parts + [""] * max(0, 6 - len(parts))
+    return _row(ident, padded[1], padded[2], padded[3], padded[4], padded[5])
+
+
 def _diagnostics(started: float, scanned: int, cache_hit: bool = False) -> dict:
     return {
         "elapsed_ms": max(0, int(round((time.monotonic() - started) * 1000))),
@@ -58,25 +92,27 @@ def _diagnostics(started: float, scanned: int, cache_hit: bool = False) -> dict:
 
 def database_meta() -> dict:
     stamp = _sync_cache()
+    path = _active_db()
     if stamp is None:
-        return {"source": SOURCE, "present": False, "updated_at": None, "size_bytes": None}
+        return {"source": SOURCE, "present": False, "updated_at": None, "size_bytes": None, "rich_fields": False}
     try:
-        stat = DB.stat()
+        stat = path.stat()
         return {
             "source": SOURCE,
             "present": True,
             "updated_at": float(stat.st_mtime),
             "size_bytes": int(stat.st_size),
+            "rich_fields": path == RICH_DB,
         }
     except OSError:
-        return {"source": SOURCE, "present": False, "updated_at": None, "size_bytes": None}
+        return {"source": SOURCE, "present": False, "updated_at": None, "size_bytes": None, "rich_fields": False}
 
 
 def lookup_ids(values) -> dict:
     """Resolve at most MAX_BATCH DMR IDs with one bounded sequential file scan."""
     started = time.monotonic()
     scanned = 0
-    ordered: list[int] = []
+    ordered = []
     seen = set()
     for value in list(values or [])[:MAX_BATCH]:
         ident = _dmr_id(value)
@@ -89,7 +125,7 @@ def lookup_ids(values) -> dict:
         return {"ok": True, "database": meta, "results": [], "diagnostics": _diagnostics(started, scanned)}
 
     pending = set()
-    found: dict[int, str | None] = {}
+    found = {}
     cache_hits = 0
     for ident in ordered:
         if ident in _CACHE:
@@ -101,20 +137,17 @@ def lookup_ids(values) -> dict:
 
     if pending and meta["present"]:
         try:
-            with DB.open("r", encoding="utf-8", errors="replace") as handle:
+            with _active_db().open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
                     if not pending:
                         break
                     scanned += 1
-                    rid, sep, call = line.partition("\t")
-                    if not sep or not rid.isdigit():
+                    parsed = _parse_line(line)
+                    if not parsed or parsed["dmr_id"] not in pending:
                         continue
-                    ident = int(rid)
-                    if ident not in pending:
-                        continue
-                    callsign = call.strip().upper()[:24] or None
-                    found[ident] = callsign
-                    _cache_put(ident, callsign)
+                    ident = parsed["dmr_id"]
+                    found[ident] = parsed
+                    _cache_put(ident, parsed)
                     pending.discard(ident)
         except OSError:
             pass
@@ -123,13 +156,14 @@ def lookup_ids(values) -> dict:
         found[ident] = None
         _cache_put(ident, None)
 
+    results = []
+    for ident in ordered:
+        row = found.get(ident)
+        results.append(dict(row) if row else _row(ident, ""))
     return {
         "ok": True,
         "database": database_meta(),
-        "results": [
-            {"dmr_id": ident, "callsign": found.get(ident), "found": bool(found.get(ident))}
-            for ident in ordered
-        ],
+        "results": results,
         "diagnostics": _diagnostics(started, scanned, cache_hit=bool(cache_hits and cache_hits == len(ordered))),
     }
 
@@ -153,14 +187,10 @@ def search(query, limit=15) -> dict:
         raise ValueError("Enter at least 2 callsign characters")
 
     meta = database_meta()
-
-    # Activity enrichment already resolves DMR IDs through this module. Reuse
-    # those cached identities first so clicking/typing a just-heard callsign is
-    # instant instead of forcing another Pi Zero file scan.
     cached = [
-        {"dmr_id": ident, "callsign": callsign, "found": True}
-        for ident, callsign in reversed(_CACHE.items())
-        if callsign == q
+        dict(row)
+        for row in reversed(_CACHE.values())
+        if row and row.get("callsign") == q
     ][:lim]
     if cached:
         return {
@@ -175,20 +205,19 @@ def search(query, limit=15) -> dict:
     exact = None
     if meta["present"]:
         try:
-            with DB.open("r", encoding="utf-8", errors="replace") as handle:
+            with _active_db().open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
                     scanned += 1
-                    rid, sep, call = line.partition("\t")
-                    if not sep or not rid.isdigit():
+                    parsed = _parse_line(line)
+                    if not parsed:
                         continue
-                    callsign = call.strip().upper()[:24]
-                    if not callsign or not callsign.startswith(q):
+                    callsign = str(parsed.get("callsign") or "")
+                    if not callsign.startswith(q):
                         continue
-                    row = {"dmr_id": int(rid), "callsign": callsign, "found": True}
                     if callsign == q:
-                        exact = row
+                        exact = parsed
                         break
-                    rows.append(row)
+                    rows.append(parsed)
                     if len(rows) >= lim:
                         break
         except OSError:
@@ -196,7 +225,7 @@ def search(query, limit=15) -> dict:
 
     results = ([exact] if exact else rows)[:lim]
     for row in results:
-        _cache_put(int(row["dmr_id"]), str(row["callsign"]))
+        _cache_put(int(row["dmr_id"]), dict(row))
     return {
         "ok": True,
         "database": database_meta(),

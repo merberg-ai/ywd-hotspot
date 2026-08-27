@@ -9,18 +9,14 @@ YWD-Hotspot keeps public release history trustworthy by separating immutable rel
 | Ref | Role |
 |---|---|
 | `main` | public/update line carrying accepted RC3 code plus intentional post-release documentation |
-| `dev` | active integrated development; aligned with `main` immediately after the RC3 documentation refresh |
-| `dev-plugins` | specialized plugin/framework experiment line; may intentionally diverge |
+| `dev` | active integrated development; normally aligned with `main` immediately after a release cleanup |
+| `dev-plugins` | isolated plugin/framework experiment line; normally aligned after integration and allowed to diverge only for deliberate plugin work |
 | `v0.2.0-rc3` | immutable tag for the physically accepted RC3 source |
 | `release/0.2.0-rc3` | frozen exact RC3 source branch |
-| `checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image` | immutable final RC3 pre-image checkpoint |
 | `v0.2.0-rc2` | immutable updater-proven RC2 tag |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
-| `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for the accepted RC2 image/updater transition |
 | `v0.2.0-rc1` | immutable physically tested RC1 tag |
 | `release/0.2.0-rc1` | frozen RC1 source branch |
-| `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for the accepted RC1 factory image |
-| `checkpoint-builder-0.1.0-image-boot-proven` | earlier physically proven builder/appliance baseline |
 
 ## Accepted RC3 identity
 
@@ -29,9 +25,6 @@ v0.2.0-rc3
 3823140b9fd4d6e73fe9066af4b2280628f62f5e
 
 release/0.2.0-rc3
-3823140b9fd4d6e73fe9066af4b2280628f62f5e
-
-checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image
 3823140b9fd4d6e73fe9066af4b2280628f62f5e
 
 published image
@@ -43,19 +36,19 @@ image SHA256
 
 The exact RC3 factory image passed fresh-flash acceptance. The published RC2 -> RC3 application updater path also passed. The public image asset uploaded to GitHub reports the same SHA-256 as the exact physically accepted compressed artifact.
 
-Post-release documentation commits may move `main` and `dev` beyond the immutable tag without redefining the accepted RC3 source/image identity.
+Post-release documentation commits may move `main`, `dev`, and `dev-plugins` beyond the immutable release tag without redefining the accepted RC3 source/image identity.
 
 ## Release-history policy
 
 For an already-published release:
 
 - never move its tag;
-- never move its frozen release branch or proven checkpoint;
+- never move its frozen release branch;
 - never rebuild/recompress a different image under the same release identity;
 - keep exact tested source/image hashes in release notes and historical acceptance records;
-- ordinary documentation after publication may advance `main`/`dev`, provided it does not claim the new branch head is the tested release source.
+- ordinary documentation after publication may advance the moving channels, provided it does not claim the new branch head is the tested release source.
 
-This keeps the public/update branch useful while preserving exact release evidence.
+A release tag plus its frozen `release/<version>` branch are sufficient durable refs for a published release. Temporary/pre-image checkpoint branches may be deleted once the final release is published and their commits are reachable from retained history.
 
 ## Promotion policy
 
@@ -70,15 +63,13 @@ exact artifact build
   ↓
 physical acceptance of exact artifact
   ↓
-proven checkpoint
-  ↓
 main promotion
   ↓
 immutable release tag
   ↓
 publish exact tested artifact
   ↓
-optional post-release documentation on main/dev
+optional post-release documentation / channel realignment
 ```
 
 For updater-focused releases, also exercise the supported prior-release -> candidate transition before calling the updater path proven.
@@ -89,26 +80,25 @@ A GitHub release image is not a developer image. It must be built through the fa
 
 The exact artifact tested is the artifact published. Renaming a tested compressed artifact for a cleaner GitHub-facing filename is acceptable only when byte identity is verified by SHA-256; recompressing/rebuilding it after acceptance is not.
 
-## Checkpoint policy
+## Checkpoint / temporary-ref policy
 
-Create a checkpoint only when it carries real rollback or audit value. Checkpoints are evidence, not update channels.
+Create a checkpoint only when it carries real rollback or audit value during active development. Checkpoints are evidence, not update channels.
 
-Release/builder anchors intentionally retained include:
+After a release is published, prune intermediate checkpoint branches when all of the following are true:
 
-```text
-checkpoint-builder-0.1.0-image-boot-proven
-checkpoint-release-0.2.0-rc1-image-proven
-checkpoint-release-0.2.0-rc2-image-updater-proven
-checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image
-```
+1. the checkpoint commit is reachable from `main`/the published release history;
+2. a release tag or frozen release branch supersedes its acceptance role;
+3. any durable testing evidence is already recorded in `docs/history/` or release notes.
 
-Plugin/RX/vocoder anchors with durable architectural value may also remain. Intermediate `needs-testing`, failed, superseded and one-off observation labels should not accumulate once later evidence supersedes them; their commits remain in normal Git history.
+Duplicate checkpoint names pointing to the same commit should not be retained. Intentionally invalid/test branches such as one-off branch-management fixtures should be deleted after the refusal/behavior test is recorded.
+
+Older milestone tags may also be pruned when they are not public releases and their commits remain reachable from retained Git history. Public version tags (`v...`) are immutable and are never part of routine cleanup.
 
 ## Plugin branch separation
 
-`dev-plugins` exists for intentional plugin/framework experimentation and may diverge from `dev`. Integration from future `dev-plugins` work into `dev` should be explicit, scoped, reviewed against runtime capability boundaries, and hardware-tested where RF/passive-voice behavior is involved.
+`dev-plugins` exists for intentional plugin/framework experimentation. It should normally be realigned to `dev` after integrated work lands, then diverge again only when a new isolated plugin task begins.
 
-Do not silently force `dev-plugins` to follow ordinary core/docs changes when it is intentionally carrying isolated work.
+Integration from future `dev-plugins` work into `dev` should be explicit, scoped, reviewed against runtime capability boundaries, and hardware-tested where RF/passive-voice behavior is involved.
 
 ## Temporary branches
 
@@ -121,7 +111,7 @@ Normal lifecycle:
 5. hardware-test runtime changes;
 6. create a checkpoint only if the result has durable audit value;
 7. promote intentionally;
-8. delete temporary working branches after their commits are safely reachable from a retained ref.
+8. delete temporary working/checkpoint branches after their commits are safely reachable from retained refs.
 
 ## MMDVM runtime policy
 

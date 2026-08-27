@@ -6,7 +6,23 @@
 
 ## 0.2.0-rc3 — DMR RX Monitor / Runtime Hardening
 
-**Status:** final release candidate after physically accepted pre-image UI polish. Exact factory-image and published RC2 -> final RC3 updater acceptance remain pending before public promotion.
+**Status:** physically accepted and published prerelease.
+
+Accepted identity:
+
+```text
+v0.2.0-rc3
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
+
+checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
+
+published image
+ywd-hotspot-0.2.0-rc3.img.xz
+
+SHA256
+5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
+```
 
 RC3 integrates the physically proven Phase 3J DMR RX Monitor path and the hardening found during Raspberry Pi Zero validation:
 
@@ -20,14 +36,25 @@ RC3 integrates the physically proven Phase 3J DMR RX Monitor path and the harden
 - guarded plugin feature reconciliation that restores DMRGateway safely on Pi Zero transitions;
 - DMRGateway private MQTT corrected to the YWD loopback broker on `127.0.0.1:18883`;
 - encrypted settings restore fixed for uploaded UI-plugin package state and trusted feature-runtime reconciliation;
-- new runtime, telemetry, streamed-audio and settings-restore regression smokes;
-- pre-image WebUI polish adds a readiness-gated branded startup overlay with RF-style animation, a blocking stage-aware Save / Save & Apply transaction modal, and responsive cyber-style toggle switches for boolean settings on mobile and desktop.
+- new runtime, telemetry, streamed-audio, settings-restore and startup/UI regression smokes;
+- branded readiness-gated startup overlay, blocking Save / Save & Apply transaction modal and responsive toggle switches;
+- source-installer prompt fixes and first-boot `.ywdsettings` progress/processing feedback;
+- guarded `main` / `dev` / `dev-plugins` WebUI software-channel management;
+- System MODEM / MMDVM HAT/runtime inventory card;
+- final release-dashboard wiring correction with CSP-safe external CSS and fail-closed candidate validation.
 
-Physical development/candidate validation covered duplex TS1/TS2 Parrot, RF/network paths, RX Monitor lifecycle/audio cleanup, reboot persistence, application-update preservation, encrypted backup/restore including a real config delta, MQTT/BrandMeister recovery, zero failed systemd units, and the final UI polish batch on the running appliance.
+Acceptance covered duplex TS1/TS2 Parrot, RF/network paths, RX Monitor lifecycle/audio cleanup, reboot persistence, application-update preservation, encrypted backup/restore including a real config delta, MQTT/BrandMeister recovery, source-install/first-boot flows, MODEM/MMDVM and software-channel UI, and zero failed systemd units.
 
-Final exact-artifact acceptance still requires the published RC2 -> final RC3 updater test and the exact RC3 factory-image fresh-flash/first-boot/RF/plugin/vocoder/reboot test before promotion.
+Both release delivery paths passed:
 
-Full candidate notes: [`docs/RELEASE-NOTES-0.2.0-rc3.md`](docs/RELEASE-NOTES-0.2.0-rc3.md).
+```text
+published RC2 -> RC3 application updater -> PASS
+exact RC3 factory image -> fresh flash / first boot / RF / reboot -> PASS
+```
+
+Full notes: [`docs/RELEASE-NOTES-0.2.0-rc3.md`](docs/RELEASE-NOTES-0.2.0-rc3.md).
+
+Final publication evidence: [`docs/history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md`](docs/history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md).
 
 ## 0.2.0-rc2 — Documentation / Updater Validation
 
@@ -87,7 +114,7 @@ RC1 established the public-appliance baseline:
 - coherent backup/restore, update, plugin-state and release-image validation;
 - machine-readable release metadata and first-readme generation.
 
-Pinned radio identity:
+Pinned RF baseline:
 
 ```text
 MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079

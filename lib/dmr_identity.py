@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -11,6 +12,7 @@ import dmr_observations
 
 DB = Path(os.environ.get("YWD_DMRID_FILE", "/var/lib/ywd-hotspot/DMRIds.dat"))
 RICH_DB = Path(os.environ.get("YWD_DMR_CONTACTS_FILE", "/var/lib/ywd-hotspot/DMRContacts.tsv"))
+INDEX_DB = Path(os.environ.get("YWD_DMR_CONTACTS_DB", "/var/lib/ywd-hotspot/DMRContacts.sqlite3"))
 SOURCE = "RadioID.net"
 MAX_BATCH = 64
 MAX_SEARCH = 25
@@ -19,12 +21,16 @@ _CACHE: OrderedDict[int, dict | None] = OrderedDict()
 _CACHE_STAMP: tuple[str, int, int] | None = None
 
 
-def _active_db() -> Path:
+def _text_db() -> Path:
     return RICH_DB if RICH_DB.is_file() else DB
 
 
+def _active_stamp_path() -> Path:
+    return INDEX_DB if INDEX_DB.is_file() else _text_db()
+
+
 def _stamp() -> tuple[str, int, int] | None:
-    path = _active_db()
+    path = _active_stamp_path()
     try:
         stat = path.stat()
         return str(path), int(stat.st_mtime_ns), int(stat.st_size)
@@ -84,11 +90,12 @@ def _parse_line(line: str):
     return _row(ident, padded[1], padded[2], padded[3], padded[4], padded[5])
 
 
-def _diagnostics(started: float, scanned: int, cache_hit: bool = False) -> dict:
+def _diagnostics(started: float, scanned: int, cache_hit: bool = False, indexed: bool = False) -> dict:
     return {
         "elapsed_ms": max(0, int(round((time.monotonic() - started) * 1000))),
         "scanned_records": max(0, int(scanned)),
         "cache_hit": bool(cache_hit),
+        "indexed": bool(indexed),
     }
 
 
@@ -103,26 +110,65 @@ def _with_observations(result: dict) -> dict:
     return result
 
 
+def _sqlite_row(values):
+    return _row(values[0], values[1], values[2], values[3], values[4], values[5])
+
+
+def _indexed_lookup(ids):
+    placeholders = ",".join("?" for _ in ids)
+    with sqlite3.connect(f"file:{INDEX_DB}?mode=ro", uri=True, timeout=1.0) as conn:
+        rows = conn.execute(
+            f"SELECT dmr_id, callsign, name, city, state, country FROM contacts WHERE dmr_id IN ({placeholders})",
+            tuple(ids),
+        ).fetchall()
+    return {_sqlite_row(values)["dmr_id"]: _sqlite_row(values) for values in rows}
+
+
+def _indexed_search(q, limit):
+    with sqlite3.connect(f"file:{INDEX_DB}?mode=ro", uri=True, timeout=1.0) as conn:
+        exact = conn.execute(
+            "SELECT dmr_id, callsign, name, city, state, country FROM contacts WHERE callsign=? ORDER BY dmr_id LIMIT 1",
+            (q,),
+        ).fetchone()
+        if exact:
+            return [_sqlite_row(exact)]
+        rows = conn.execute(
+            "SELECT dmr_id, callsign, name, city, state, country FROM contacts "
+            "WHERE callsign>=? AND callsign<? ORDER BY callsign, dmr_id LIMIT ?",
+            (q, q + "\uffff", int(limit)),
+        ).fetchall()
+    return [_sqlite_row(values) for values in rows]
+
+
 def database_meta() -> dict:
     stamp = _sync_cache()
-    path = _active_db()
+    path = _text_db()
     if stamp is None:
-        return {"source": SOURCE, "present": False, "updated_at": None, "size_bytes": None, "rich_fields": False}
+        return {
+            "source": SOURCE, "present": False, "updated_at": None, "size_bytes": None,
+            "rich_fields": False, "indexed": False,
+        }
+    indexed = INDEX_DB.is_file()
     try:
-        stat = path.stat()
+        source_path = INDEX_DB if indexed else path
+        stat = source_path.stat()
         return {
             "source": SOURCE,
             "present": True,
             "updated_at": float(stat.st_mtime),
             "size_bytes": int(stat.st_size),
-            "rich_fields": path == RICH_DB,
+            "rich_fields": RICH_DB.is_file(),
+            "indexed": indexed,
         }
     except OSError:
-        return {"source": SOURCE, "present": False, "updated_at": None, "size_bytes": None, "rich_fields": False}
+        return {
+            "source": SOURCE, "present": False, "updated_at": None, "size_bytes": None,
+            "rich_fields": False, "indexed": False,
+        }
 
 
 def lookup_ids(values) -> dict:
-    """Resolve at most MAX_BATCH DMR IDs with one bounded sequential file scan."""
+    """Resolve at most MAX_BATCH DMR IDs, preferring the indexed local directory."""
     started = time.monotonic()
     scanned = 0
     ordered = []
@@ -135,7 +181,10 @@ def lookup_ids(values) -> dict:
 
     meta = database_meta()
     if not ordered:
-        return _with_observations({"ok": True, "database": meta, "results": [], "diagnostics": _diagnostics(started, scanned)})
+        return _with_observations({
+            "ok": True, "database": meta, "results": [],
+            "diagnostics": _diagnostics(started, scanned, indexed=meta.get("indexed", False)),
+        })
 
     pending = set()
     found = {}
@@ -148,9 +197,26 @@ def lookup_ids(values) -> dict:
         else:
             pending.add(ident)
 
+    indexed_ok = False
+    if pending and INDEX_DB.is_file():
+        try:
+            indexed_rows = _indexed_lookup(sorted(pending))
+            for ident, row in indexed_rows.items():
+                found[ident] = row
+                _cache_put(ident, row)
+                pending.discard(ident)
+            # A successful indexed query is authoritative for missing IDs too.
+            indexed_ok = True
+            for ident in list(pending):
+                found[ident] = None
+                _cache_put(ident, None)
+                pending.discard(ident)
+        except (OSError, sqlite3.Error):
+            indexed_ok = False
+
     if pending and meta["present"]:
         try:
-            with _active_db().open("r", encoding="utf-8", errors="replace") as handle:
+            with _text_db().open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
                     if not pending:
                         break
@@ -177,7 +243,11 @@ def lookup_ids(values) -> dict:
         "ok": True,
         "database": database_meta(),
         "results": results,
-        "diagnostics": _diagnostics(started, scanned, cache_hit=bool(cache_hits and cache_hits == len(ordered))),
+        "diagnostics": _diagnostics(
+            started, scanned,
+            cache_hit=bool(cache_hits and cache_hits == len(ordered)),
+            indexed=indexed_ok or bool(meta.get("indexed", False)),
+        ),
     })
 
 
@@ -211,14 +281,29 @@ def search(query, limit=15) -> dict:
             "database": meta,
             "query": q,
             "results": cached,
-            "diagnostics": _diagnostics(started, 0, cache_hit=True),
+            "diagnostics": _diagnostics(started, 0, cache_hit=True, indexed=meta.get("indexed", False)),
         })
+
+    if INDEX_DB.is_file():
+        try:
+            results = _indexed_search(q, lim)
+            for row in results:
+                _cache_put(int(row["dmr_id"]), dict(row))
+            return _with_observations({
+                "ok": True,
+                "database": database_meta(),
+                "query": q,
+                "results": results,
+                "diagnostics": _diagnostics(started, 0, indexed=True),
+            })
+        except (OSError, sqlite3.Error):
+            pass
 
     rows = []
     exact = None
     if meta["present"]:
         try:
-            with _active_db().open("r", encoding="utf-8", errors="replace") as handle:
+            with _text_db().open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
                     scanned += 1
                     parsed = _parse_line(line)

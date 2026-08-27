@@ -22,15 +22,14 @@
 Persistent first-party channels are:
 
 ```text
-main   promoted public/release line
-dev    development/preview line
+main         promoted public/release line
+dev          active integrated development
+dev-plugins  plugin/runtime integration development
 ```
 
-`main` is the normal public channel. While releases are frozen it stays at the exact accepted public commit so stable testers do not receive unpublished development work.
+`main` is the normal public channel. `dev` and `dev-plugins` are development channels and may contain changes that have not completed a release-image acceptance cycle.
 
-`dev` may move ahead of `main` and should be treated as a development channel; a `dev` commit is not automatically hardware-accepted merely because it exists.
-
-Temporary release/checkpoint/feature refs are explicit test targets, not persistent channels.
+The dashboard's **CHANGE CHANNEL** UI exposes only the approved first-party channels above. Release/checkpoint refs remain engineering targets through the explicit CLI updater path.
 
 ```bash
 ywd-hotspotctl update-channel
@@ -38,26 +37,33 @@ sudo ywd-hotspotctl update-channel main
 sudo ywd-hotspotctl update-channel dev
 ```
 
-## Current proven transition
+## Current proven release transitions
 
-`0.2.0-rc2` established the first published-image updater proof:
+Published updater acceptance now includes:
 
 ```text
 0.2.0-rc1
-  -> normal dashboard update on main
+  -> normal dashboard update
   -> 0.2.0-rc2
-  -> clean managed source
   -> reboot
   -> zero failed systemd units
+
+0.2.0-rc2
+  -> exact 0.2.0-rc3 application candidate
+  -> protected normal updater
+  -> no silent MMDVM/DMRGateway rebuild
+  -> current/legacy runtime classification preserved correctly
+  -> services healthy / zero failed units
 ```
 
-Accepted RC2 source:
+Accepted RC3 source:
 
 ```text
-5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+v0.2.0-rc3
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
 ```
 
-RC3 acceptance will separately prove both the fresh-image path and the published RC2 -> RC3 application-update path.
+The separately built RC3 factory image also passed fresh-flash acceptance before publication.
 
 ## Check / dry-run / apply
 
@@ -73,7 +79,7 @@ The dashboard provides the same saved-channel update workflow when WebUI control
 
 Before live replacement, the updater verifies canonical origin, refuses dirty managed source, stages the target outside the live app, and runs capability-based validation/syntax checks.
 
-A candidate containing plugin, passive-voice, telemetry, streamed RX audio, vocoder, or MMDVM-runtime-variant pieces must contain the complete matching trusted runtime set. Branch name is not used as a substitute for runtime coherence.
+A candidate containing plugin, passive-voice, telemetry, streamed RX audio, vocoder, software-channel, MODEM/MMDVM, startup-theme or MMDVM-runtime-variant pieces must contain the complete matching trusted runtime/UI set. Branch name is not used as a substitute for runtime coherence.
 
 ## MMDVM runtime preservation
 
@@ -88,26 +94,23 @@ The runtime choice is not inferred from the incoming application branch. Moving 
 
 Changing or refreshing MMDVM runtime is a separate explicit full/recovery/runtime-build action with its own verification and RF-safety handling.
 
-### RC2 Extended runtime on RC3 application code
+## RC1/RC2 Extended runtime on RC3 application code
 
-RC1/RC2 and current RC3 development use the same pinned upstream MMDVM-Host commit and YWD extension API 2, but the YWD patch generation changed.
+RC1/RC2 and RC3 use the same pinned upstream MMDVM-Host commit and YWD extension API 2, but the YWD patch generation changed.
 
-The accepted RC1/RC2 Extended patch publishes the same passive `DMRVoice` envelope used by current core, but it predates the `YWD_DMR_VOICE_TAP=1` demand gate. Current RC3 development therefore recognizes that exact historical patch as **legacy-compatible YWD Extended** instead of reporting an unknown runtime.
-
-A legacy RC2 Extended runtime retains its older capabilities:
+Historical RC1/RC2 Extended patch:
 
 ```text
-passive-dmr-voice
-plugin-rx-monitor
+f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
 ```
 
-It intentionally does **not** receive:
+Current RC3 Extended patch:
 
 ```text
-demand-gated-dmr-voice
+77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
 ```
 
-A plugin requiring the demand-gated capability, including the current streamed-audio RX Monitor candidate, remains blocked until the operator explicitly refreshes YWD Extended.
+The historical patch is explicitly recognized as **legacy-compatible YWD Extended** instead of being reported as unknown or silently rebuilt. It keeps its historical feature set but does not gain RC3-only demand-gated/current capability identity merely because the application code was updated.
 
 Inspect exact runtime identity:
 
@@ -115,9 +118,9 @@ Inspect exact runtime identity:
 sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
 ```
 
-A recognized RC1/RC2 Extended binary reports `runtime_generation: legacy`, `upgrade_required: true`, and the explicit refresh command rather than being misclassified as unknown.
+A recognized legacy Extended runtime reports its legacy generation plus `upgrade_required: true` when the current capability set is needed.
 
-Refresh YWD Extended when desired:
+Refresh YWD Extended explicitly when desired:
 
 ```bash
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py \
@@ -128,20 +131,27 @@ sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py refresh
 
 That rebuild/activation is an explicit operator action; the normal application updater never performs it silently.
 
+Current RC3 release identity:
+
+```text
+MMDVM-Host upstream
+  dea6e9b2c35857fe6f904c5092bebadb86cbf079
+
+YWD patch SHA256
+  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
+
+Extension API
+  2
+
+DMRGateway upstream
+  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
+```
+
 ## Plugin behavior across updates
 
 Uploaded package source, config/data and trusted publisher public keys live outside the deployed app. Before replacement, service plugins are made inert. After replacement, only packages that still validate and satisfy current requirements are eligible for restoration.
 
-MMDVM requirement tokens include:
-
-```text
-mmdvm-ywd-extended
-mmdvm-extension-api-2
-mmdvm-cap-passive-dmr-voice
-mmdvm-cap-demand-gated-dmr-voice
-```
-
-Control-plane plugin mutations verify the exact installed MMDVM binary/patch identity. A recognized legacy Extended runtime therefore receives a specific runtime-refresh requirement instead of accidentally satisfying the newer capability or failing as an unidentified binary.
+Requirement checks resolve against the exact installed MMDVM runtime metadata. A recognized legacy Extended runtime receives a specific runtime-refresh requirement instead of accidentally satisfying the current capability generation or failing as an unidentified binary.
 
 A previously enabled extension-dependent plugin also does not get blindly restarted on an incompatible Stock runtime.
 
@@ -205,4 +215,4 @@ sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
 
 Application provenance and MMDVM runtime provenance are deliberately separate, so an application update cannot disguise a radio-runtime change.
 
-See **[REPOSITORY.md](REPOSITORY.md)** for the current release-freeze and branch-promotion policy.
+See **[REPOSITORY.md](REPOSITORY.md)** for current branch/release policy and **[history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md](history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md)** for final RC3 acceptance evidence.

@@ -7,6 +7,7 @@
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const pluginSelector = id => String(id || ''); // plugin IDs are already restricted to [a-z0-9-]
+  const preferenceKeyRe = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,47}$/;
 
   async function jsonFetch(url) {
     const response = await fetch(url, {credentials:'same-origin', cache:'no-store'});
@@ -35,6 +36,37 @@
   }
 
   function pageId(id) { return `plugin-ui-${id}`; }
+
+  function preferenceKey(value) {
+    const key = String(value || '').trim();
+    if (!preferenceKeyRe.test(key)) throw new Error('Plugin preference key is invalid');
+    return key;
+  }
+
+  function preferenceStorageKey(plugin, key) {
+    return `ywd-plugin-pref:${plugin.id}:${preferenceKey(key)}`;
+  }
+
+  function readPreference(plugin, key) {
+    try {
+      const raw = localStorage.getItem(preferenceStorageKey(plugin, key));
+      if (raw === null) return {found:false, value:null};
+      return {found:true, value:JSON.parse(raw)};
+    } catch (error) {
+      if (error instanceof SyntaxError) return {found:false, value:null};
+      throw new Error('Browser preference storage is unavailable');
+    }
+  }
+
+  function writePreference(plugin, key, value) {
+    let raw;
+    try { raw = JSON.stringify(value); }
+    catch (_) { throw new Error('Plugin preference value is not JSON serializable'); }
+    if (raw === undefined || raw.length > 1024) throw new Error('Plugin preference value is too large');
+    try { localStorage.setItem(preferenceStorageKey(plugin, key), raw); }
+    catch (_) { throw new Error('Browser preference storage is unavailable'); }
+    return {ok:true, value};
+  }
 
   function stopAudioStream(session, streamId = '') {
     const active = session?.audioStream;
@@ -156,6 +188,8 @@
   async function bridgeResult(plugin, op, args = {}) {
     if (!eligible(plugin)) throw new Error('Plugin UI is no longer enabled');
     if (op === 'plugin.ping') return {ok:true, api:1, id:plugin.id};
+    if (op === 'plugin.getPreference') return readPreference(plugin, args?.key);
+    if (op === 'plugin.setPreference') return writePreference(plugin, args?.key, args?.value);
     if (op === 'plugin.getConfig') return plugin.config && typeof plugin.config === 'object' ? plugin.config : {};
     if (op === 'plugin.getState') {
       return {

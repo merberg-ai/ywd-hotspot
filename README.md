@@ -19,25 +19,33 @@
 ---
 
 > [!IMPORTANT]
-> **Current public-testing release:** `0.2.0-rc2`. The exact RC2 source is `5f0d2967ce0ed728169f7819d2bc227687d6a9b2`. Its factory image passed a fresh flash/test, and a published RC1 appliance successfully updated to RC2 through the normal dashboard updater and rebooted with zero failed systemd units.
+> **Current public-testing release: `0.2.0-rc3`.** The exact accepted source is tag [`v0.2.0-rc3`](https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc3) at commit `3823140b9fd4d6e73fe9066af4b2280628f62f5e`. The exact published factory image passed fresh-flash acceptance on the reference Raspberry Pi Zero W + MMDVM hotspot, and the published RC2 -> RC3 application updater path also passed.
 
 > [!WARNING]
 > The normal YWD-Hotspot dashboard is plain HTTP for a trusted LAN. Do **not** forward the dashboard port directly to the public Internet.
 
 ## Recommended for testers: prebuilt image
 
-The easiest way to test YWD-Hotspot is the prebuilt Raspberry Pi image attached to the `v0.2.0-rc2` GitHub prerelease:
+The easiest way to test YWD-Hotspot is the prebuilt Raspberry Pi image attached to the `v0.2.0-rc3` GitHub prerelease:
 
-**[YWD-Hotspot 0.2.0-rc2 release](https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc2)**
+**[YWD-Hotspot 0.2.0-rc3 release](https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc3)**
 
-Published image:
+Direct image download:
+
+**[ywd-hotspot-0.2.0-rc3.img.xz](https://github.com/merberg-ai/ywd-hotspot/releases/download/v0.2.0-rc3/ywd-hotspot-0.2.0-rc3.img.xz)**
+
+Checksum / metadata:
+
+**[SHA256SUMS](https://github.com/merberg-ai/ywd-hotspot/releases/download/v0.2.0-rc3/SHA256SUMS)** · **[BUILD-METADATA.json](https://github.com/merberg-ai/ywd-hotspot/releases/download/v0.2.0-rc3/BUILD-METADATA.json)** · **[README-FIRST.txt](https://github.com/merberg-ai/ywd-hotspot/releases/download/v0.2.0-rc3/README-FIRST.txt)**
+
+Published image identity:
 
 ```text
-ywd-hotspot-0.2.0-rc2.img.xz
-SHA256 60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+ywd-hotspot-0.2.0-rc3.img.xz
+SHA256 5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
 ```
 
-The downloadable release image is deliberately a **factory image**. It contains:
+The downloadable image is deliberately a **factory image**. It contains:
 
 - no Wi-Fi SSID or password;
 - no callsign, DMR ID, or hotspot ID belonging to the builder;
@@ -65,19 +73,17 @@ The public release builder fails closed if forbidden personalization is present.
 9. The wizard hands off to the configured dashboard when setup succeeds.
 10. RF stays off unless you explicitly enable it.
 
-Release assets include SHA-256 checksums, `BUILD-METADATA.json`, and `README-FIRST.txt` so the exact source/runtime identity can be audited.
-
 ## What YWD-Hotspot is
 
 YWD-Hotspot is a purpose-built DMR hotspot stack for small Raspberry Pi systems—especially the original **Raspberry Pi Zero W**. MMDVM-Host remains the sole modem/RF owner while YWD-Hotspot adds a lightweight WebUI, CLI, BrandMeister controls, diagnostics, calibration, OLED presentation, passive telemetry/voice observation, safe GitHub-managed updates, RadioID maintenance, appliance-image tooling, and a sandboxed plugin framework.
 
-The design rule is simple: **the Pi owns radio plus bounded trusted processing; optional expensive work must be isolated, demand-driven, and unable to take down RF.** Browser presentation stays client-side, while Phase 3J RX speech synthesis is delegated through a narrow local protocol to a separately installed external vocoder backend. Dashboard, OLED, telemetry, plugin, or decoder failures must not take down normal DMR operation.
+The design rule is simple: **the Pi owns radio plus bounded trusted processing; optional expensive work must be isolated, demand-driven, and unable to take down RF.** Browser presentation stays client-side, while RC3 RX speech synthesis is delegated through a narrow local protocol to a separately installed external vocoder backend.
 
 | Area | YWD-Hotspot adds |
 |---|---|
 | RF | simplex or duplex, TS1/TS2-aware config, live RX/TX state, Last Heard, BER and optional modem-reported RSSI context |
 | BrandMeister | static/dynamic TG controls, duplex-aware slot routing, Drop QSO, saved TG sets |
-| WebUI | responsive dark UI, authenticated write controls, live DMR instrumentation, themed confirmation/progress dialogs |
+| WebUI | responsive dark UI, authenticated write controls, live DMR instrumentation, software-channel management, modem/runtime inventory |
 | OLED | one authoritative renderer with boot/network/setup/runtime presentation |
 | Plugins | signed sandboxed UI/service packages with explicit capabilities and transactional updates |
 | RX Monitor | passive DMR diagnostics plus trusted streamed PCM audio through a separately installed local vocoder backend; the sandbox receives PCM only |
@@ -102,39 +108,41 @@ Primary development/test budget:
 Other Pi models may work, but the original Zero W remains the performance target.
 
 > [!NOTE]
-> RSSI/dBm reporting is optional at the MMDVM HAT firmware layer. YWD displays RSSI only when the modem supplies a usable value; it does not estimate dBm from BER. The reference duplex HAT used for RC1/RC2 testing reported valid BER but no usable RSSI, so the WebUI automatically hides RSSI-only instrumentation on that hardware.
+> RSSI/dBm reporting is optional at the MMDVM HAT firmware layer. YWD displays RSSI only when the modem supplies a usable value; it does not estimate dBm from BER.
 
 ## MMDVM runtime variants
 
-The accepted RC1/RC2 line supports an explicit MMDVM runtime choice:
+RC3 supports an explicit MMDVM runtime choice:
 
 | Variant | Default | Description |
 |---|---:|---|
-| **YWD Extended** (`ywd-extended`) | ✅ | exact pinned upstream MMDVM-Host plus the hash-verified YWD extension patch; enables passive DMR voice/RX Monitor and compatible plugin capabilities |
+| **YWD Extended** (`ywd-extended`) | ✅ | exact pinned upstream MMDVM-Host plus the hash-verified RC3 YWD extension patch; enables current trusted passive DMR/RX Monitor capabilities |
 | **Stock Upstream** (`upstream`) |  | exact pinned stock upstream with no YWD MMDVM extensions; extension-dependent plugins remain unavailable |
 
-Fresh/full GitHub installs display this choice before compiling. **YWD Extended is recommended and selected by default.** Recovery installs preserve the already-installed variant unless the operator explicitly changes it. Normal application updates do not silently switch variants.
+Fresh/full GitHub installs display this choice before compiling. **YWD Extended is recommended and selected by default.** Recovery installs preserve the already-installed variant unless the operator explicitly changes it. Normal application updates do not silently switch variants or rebuild radio binaries.
 
-Pinned YWD Extended identity:
+Pinned RC3 identity:
 
 ```text
 MMDVM-Host upstream
   dea6e9b2c35857fe6f904c5092bebadb86cbf079
 
-YWD extension patch
-  lib/mmdvm_patches/0001-ywd-dmr-voice-mqtt.patch
+YWD extension patch SHA256
+  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
 
 Extension API
   2
 
-Patch SHA256
-  f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
+Current capabilities
+  slot_affinity_queued_work
+  dmr_pdu_route_metadata
+  dmr_rx_audio_events
 
-DMRGateway
+DMRGateway upstream
   2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
 
-MMDVM-Host remains the sole modem serial/RF owner in both variants. Plugins never receive RF TX authority.
+RC1/RC2 YWD Extended is recognized as a legacy-compatible runtime. Operators who need RC3's current capability set use the explicit refresh path documented in **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 
 Details: **[Passive DMR Voice](docs/DMR-VOICE.md)** · **[External Vocoder](docs/VOCODER.md)** · **[Plugins](docs/PLUGINS.md)**
 
@@ -153,11 +161,7 @@ unlock dashboard controls
   -> ssh -i <private-key> ywd@<hotspot-ip>
 ```
 
-YWD enforces public-key-only authentication, disables SSH passwords/root login, and generates unique server host keys on the appliance the first time SSH is enabled. The downloaded client private key is not retained by the hotspot.
-
-On YWD-Hotspot OS, `ywd` has passwordless sudo, so its SSH client key is effectively an administrator credential. Keep it private and prefer LAN/VPN access rather than directly forwarding port 22 to the Internet.
-
-Full instructions: **[docs/SSH.md](docs/SSH.md)**.
+YWD enforces public-key-only authentication, disables SSH passwords/root login, and generates unique server host keys on the appliance the first time SSH is enabled. See **[docs/SSH.md](docs/SSH.md)**.
 
 ## Fresh install from GitHub
 
@@ -174,10 +178,7 @@ sudo ./INSTALL.sh
 
 The installer validates hardware/source, asks which MMDVM runtime variant to build, installs the exact pinned radio components, deploys YWD-Hotspot, and leaves RF startup behind an explicit confirmation.
 
-Full walkthrough: **[docs/INSTALL.md](docs/INSTALL.md)**.
-
-> [!NOTE]
-> RX Monitor live speech on the active `dev` line additionally requires a separately installed YWD Vocoder Protocol v1 backend. Core/plugin packages do not bundle mbelib. See **[docs/VOCODER.md](docs/VOCODER.md)** for the quick setup and verification flow.
+RX Monitor live speech requires a separately installed YWD Vocoder Protocol v1 backend. Core/plugin packages do not bundle mbelib. See **[docs/VOCODER.md](docs/VOCODER.md)**.
 
 ## Building images
 
@@ -215,7 +216,12 @@ sudo ywd-hotspotctl update
 
 The updater stages and validates the complete candidate before touching the live stack, preserves RF/service policy, creates protected backups, keeps the privileged admin bridge coherent, quiesces/restores plugin intent, and advances managed source only after successful deployment.
 
-`0.2.0-rc2` was successfully installed over a published RC1 appliance using the normal dashboard updater path.
+Published updater acceptance includes:
+
+```text
+0.2.0-rc1 -> 0.2.0-rc2  PASS
+0.2.0-rc2 -> 0.2.0-rc3  PASS
+```
 
 See **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 
@@ -223,19 +229,17 @@ See **[docs/UPGRADING.md](docs/UPGRADING.md)**.
 
 | Ref | Purpose |
 |---|---|
-| `main` | frozen public/update line at accepted RC2 while releases are frozen |
-| `dev` | active integrated development and RC3 preparation; includes the proven Phase 3J plugin/RX/vocoder work |
-| `dev-plugins` | isolated plugin/framework experiment line; currently aligned with `dev` |
+| `main` | public/update line; RC3 code plus post-release documentation |
+| `dev` | active integrated development; aligned with `main` immediately after RC3 publication before new development begins |
+| `dev-plugins` | isolated plugin/framework experiment line; may intentionally diverge |
+| `v0.2.0-rc3` | immutable physically accepted RC3 tag at `3823140b9fd4d6e73fe9066af4b2280628f62f5e` |
+| `release/0.2.0-rc3` | frozen exact RC3 source branch |
+| `checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image` | immutable final RC3 pre-image checkpoint |
 | `v0.2.0-rc2` | immutable updater-proven RC2 tag |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
-| `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for RC2 image/update acceptance |
 | `v0.2.0-rc1` | immutable physically tested RC1 tag |
-| `release/0.2.0-rc1` | frozen RC1 source branch |
-| `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for RC1 image acceptance |
-| `checkpoint-builder-0.1.0-image-boot-proven` | earlier immutable builder/appliance baseline |
-| `checkpoint-dev-plugins-phase3j-stream-core-proven` | cleaned physically proven Phase 3J core baseline |
 
-Historical release evidence is not rewritten. While releases are frozen, ordinary cleanup/development stays on `dev` so `main`-channel appliances do not see unpublished work as an available update.
+Release tags/branches/checkpoints preserve exact tested source. Post-release documentation commits on `main`/`dev` do not redefine the RC3 artifact.
 
 See **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 
@@ -262,4 +266,8 @@ Guides: **[Plugins](docs/PLUGINS.md)** · **[Plugin Packages](docs/PLUGIN-PACKAG
 
 Start with **[docs/README.md](docs/README.md)**.
 
-Current operating/development guides stay directly under `docs/`. Completed release plans and Alpha implementation archaeology are kept under **[docs/history/](docs/history/README.md)** so historical state is preserved without being mistaken for current instructions.
+Detailed RC3 notes: **[docs/RELEASE-NOTES-0.2.0-rc3.md](docs/RELEASE-NOTES-0.2.0-rc3.md)**.
+
+Final RC3 publication evidence: **[docs/history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md](docs/history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md)**.
+
+Current operating/development guides stay directly under `docs/`. Completed release plans and implementation archaeology are kept under **[docs/history/](docs/history/README.md)** so historical state is preserved without being mistaken for current instructions.

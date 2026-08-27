@@ -8,27 +8,34 @@ Canonical repository:
 https://github.com/merberg-ai/ywd-hotspot
 ```
 
-## Current refs after 0.2.0-rc2 acceptance
+## Current refs after 0.2.0-rc3 publication
 
 | Ref | Purpose |
 |---|---|
-| `main` | frozen public/update line at the accepted RC2 source while releases are frozen |
-| `dev` | active integrated development and repository housekeeping |
-| `dev-plugins` | specialized plugin/framework development kept independent unless intentionally integrated |
+| `main` | public/update line carrying RC3 code plus post-release documentation |
+| `dev` | active integrated development; aligned with `main` immediately after RC3 documentation refresh |
+| `dev-plugins` | specialized plugin/framework development; may intentionally diverge |
+| `v0.2.0-rc3` | immutable physically accepted RC3 tag |
+| `release/0.2.0-rc3` | frozen exact RC3 source branch |
+| `checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image` | immutable final RC3 pre-image checkpoint |
 | `v0.2.0-rc2` | immutable updater-proven RC2 tag |
 | `release/0.2.0-rc2` | frozen RC2 source branch |
 | `checkpoint-release-0.2.0-rc2-image-updater-proven` | exact source checkpoint for accepted RC2 image/updater test |
 | `v0.2.0-rc1` | immutable physically tested RC1 tag |
 | `release/0.2.0-rc1` | frozen RC1 source branch |
 | `checkpoint-release-0.2.0-rc1-image-proven` | exact source checkpoint for accepted RC1 image |
-| `checkpoint-builder-0.1.0-image-boot-proven` | earlier immutable physically proven builder/appliance baseline |
 
-Plugin-development checkpoints related to `dev-plugins` are intentionally preserved. Checkpoint/tag/release refs are audit/rollback references, not persistent update channels.
-
-Exact accepted RC2 source:
+Exact accepted RC3 source:
 
 ```text
-5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
+```
+
+Accepted public image:
+
+```text
+ywd-hotspot-0.2.0-rc3.img.xz
+SHA256 5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
 ```
 
 ## Clone
@@ -40,18 +47,18 @@ git clone https://github.com/merberg-ai/ywd-hotspot.git
 cd ywd-hotspot
 ```
 
-Exact RC2 source reproduction:
+Exact RC3 source reproduction:
 
 ```bash
-git clone --branch v0.2.0-rc2 https://github.com/merberg-ai/ywd-hotspot.git ywd-hotspot-0.2.0-rc2
-cd ywd-hotspot-0.2.0-rc2
+git clone --branch v0.2.0-rc3 https://github.com/merberg-ai/ywd-hotspot.git ywd-hotspot-0.2.0-rc3
+cd ywd-hotspot-0.2.0-rc3
 git rev-parse HEAD
 ```
 
 Expected tagged commit:
 
 ```text
-5f0d2967ce0ed728169f7819d2bc227687d6a9b2
+3823140b9fd4d6e73fe9066af4b2280628f62f5e
 ```
 
 Frozen release branches can be inspected explicitly, but new development should not be committed onto them merely because they still exist.
@@ -64,11 +71,11 @@ cd ywd-hotspot
 git switch dev
 ```
 
-## Release freeze rule
+## Post-release documentation rule
 
-While releases are frozen, keep `main` at the exact accepted public commit. Put normal docs/repository/development work on `dev` so appliances following the `main` update channel do not see unpublished work as an available update.
+Release tags, release branches and proven checkpoints stay immutable. `main` and `dev` may move beyond an accepted release tag for intentional documentation or future development commits, provided release documentation continues to identify the exact tested source/image separately.
 
-`main` should advance only as part of an intentional future release/update event.
+A docs-only commit after publication is not a new factory-image acceptance event and does not redefine the source represented by `v0.2.0-rc3`.
 
 ## Source vs deployed runtime
 
@@ -130,16 +137,16 @@ bash os/builder/DOCTOR.sh
 
 Runtime/systemd/sudoers/updater/plugin/OLED/SSH/RF/image changes still require real hardware acceptance.
 
-## Pinned radio/runtime identity
+## Pinned RC3 radio/runtime identity
 
 ```text
 MMDVM-Host  dea6e9b2c35857fe6f904c5092bebadb86cbf079
 DMRGateway  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
-YWD patch   f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
+YWD patch   77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
 Patch API   2
 ```
 
-`ywd-extended` is default/recommended; `upstream` is the explicit stock opt-out. Do not combine a pin/patch move with unrelated release cleanup.
+`ywd-extended` is default/recommended; `upstream` is the explicit stock opt-out. RC1/RC2 Extended is recognized as a legacy-compatible generation and ordinary application updates do not silently rebuild it.
 
 ## Public image workflow
 
@@ -153,35 +160,37 @@ for an artifact intended for GitHub Releases. The wrapper enforces factory state
 
 Never publish a personalized development image.
 
-## Accepted RC2 workflow
+## Accepted RC3 workflow
 
 ```text
-accepted RC1 baseline
+proven RC3 integrated dev baseline
   ↓
-post-RC1 documentation candidate
+release/0.2.0-rc3
+  ↓ exact source/static/factory validation
+published RC2 -> exact RC3 updater acceptance
   ↓
-release/0.2.0-rc2
-  ↓ source/static/factory validation
-exact RC2 factory image
-  ↓ fresh-image physical test
-main/dev at exact candidate source
+final UI wiring physical acceptance
   ↓
-published RC1 appliance dashboard update
+checkpoint-release-0.2.0-rc3-final-ui-wiring-proven-pre-image
   ↓
-0.2.0-rc2 / clean main source
-  ↓ reboot / zero failed units
-checkpoint-release-0.2.0-rc2-image-updater-proven
+exact RC3 public factory image build
+  ↓ fresh-image physical acceptance
+main promotion to exact accepted source
   ↓
-tag v0.2.0-rc2
+tag v0.2.0-rc3
   ↓
 publish exact tested image bytes
+  ↓
+post-release docs may advance main/dev without moving immutable release refs
 ```
 
 Accepted image SHA256:
 
 ```text
-60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
 ```
+
+Final evidence: **[history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md](history/RC3-FACTORY-IMAGE-PUBLICATION-PASS.md)**.
 
 ## Plugin-line handling
 
@@ -193,4 +202,4 @@ Integration from that line must be explicit and scoped.
 
 Keep canonical origin, dirty-tree refusal, staged candidate validation, protected backup, RF/service preservation, coherent privileged bridge, plugin quiesce/restore, and post-deploy managed-source advancement. Normal application updates also preserve the selected MMDVM runtime instead of silently rebuilding/switching it.
 
-See **[SSH.md](SSH.md)** for the dashboard-managed maintenance-access model, **[UPGRADING.md](UPGRADING.md)** for update channels, and **[REPOSITORY.md](REPOSITORY.md)** for immutable release/checkpoint policy.
+See **[SSH.md](SSH.md)** for maintenance access, **[UPGRADING.md](UPGRADING.md)** for update channels, and **[REPOSITORY.md](REPOSITORY.md)** for immutable release/checkpoint policy.

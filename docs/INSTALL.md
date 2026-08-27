@@ -8,20 +8,28 @@
 > YWD-Hotspot can control a radio transmitter. Attach a suitable antenna and verify the configured frequencies before enabling RF.
 
 > [!IMPORTANT]
-> `0.2.0-rc2` is the current public-testing release. Its exact factory image was physically tested on the reference Pi Zero W + duplex MMDVM appliance, and a published RC1 appliance successfully updated to RC2 through the normal dashboard updater before rebooting cleanly with zero failed systemd units.
+> `0.2.0-rc3` is the current public-testing release. Its exact factory image was physically tested on the reference Pi Zero W + MMDVM appliance, and the published RC2 -> RC3 application updater path also passed.
 
 ## Recommended tester install: prebuilt factory image
 
-The prerelease image is attached to:
+Release page:
 
-**https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc2**
+**https://github.com/merberg-ai/ywd-hotspot/releases/tag/v0.2.0-rc3**
 
 Current published image:
 
 ```text
-ywd-hotspot-0.2.0-rc2.img.xz
-SHA256 60f74d4c6d25d6a7d9ec35aea24b97bae7a50d35f103a21dc50ee1cbe80f1649
+ywd-hotspot-0.2.0-rc3.img.xz
+SHA256 5c3151b2a39f5a800b703d8925c53cddcf7bf49d8fcb59eda6bed30afc4413cc
 ```
+
+Direct image download:
+
+https://github.com/merberg-ai/ywd-hotspot/releases/download/v0.2.0-rc3/ywd-hotspot-0.2.0-rc3.img.xz
+
+Checksum:
+
+https://github.com/merberg-ai/ywd-hotspot/releases/download/v0.2.0-rc3/SHA256SUMS
 
 The release `.img.xz` is intentionally not personalized. It contains no:
 
@@ -35,11 +43,11 @@ The release `.img.xz` is intentionally not personalized. It contains no:
 - reusable SSH server host identity;
 - RF autostart state.
 
-SSH and RF both ship disabled. Only application defaults and first-boot onboarding state are included. The public release builder refuses to create release metadata if forbidden personalization is detected.
+SSH and RF both ship disabled. Only application defaults and first-boot onboarding state are included. The public release builder refuses release metadata if forbidden personalization is detected.
 
 ### Flash
 
-1. Download `ywd-hotspot-0.2.0-rc2.img.xz`, `SHA256SUMS`, and optionally `BUILD-METADATA.json` from the RC2 release.
+1. Download `ywd-hotspot-0.2.0-rc3.img.xz` and `SHA256SUMS` from the RC3 release.
 2. Verify the SHA-256 checksum.
 3. Write the `.img.xz` directly with Raspberry Pi Imager.
 4. Do **not** apply Raspberry Pi Imager OS customization settings over the YWD appliance image.
@@ -70,7 +78,7 @@ After Wi-Fi connects:
 6. review and finish setup;
 7. the wizard shows apply progress/errors inline and hands off to the configured dashboard on success.
 
-If you choose **RESTORE FROM .YWDSETTINGS BACKUP** instead, the first-boot restore page now shows real upload progress for the encrypted backup, a busy spinner/status while the server decrypts and verifies it, and a second progress/status phase while the verified settings are uploaded and applied. The restore button remains disabled while the apply transaction is running so an impatient double-click cannot start a duplicate restore.
+If you choose **RESTORE FROM .YWDSETTINGS BACKUP**, the first-boot restore page shows upload progress, verify/decrypt processing state, and apply progress. The restore action remains disabled while the transaction is running.
 
 RF remains off unless explicitly enabled.
 
@@ -96,9 +104,9 @@ ssh -i ./ywd_hotspot_client_ed25519 ywd@HOTSPOT-IP
 
 SFTP uses the same key/user/port 22. Password SSH and root SSH login remain disabled. The first time SSH is enabled, unique server host keys are generated on that appliance.
 
-On the YWD-Hotspot OS image, `ywd` has passwordless sudo, so protect the client private key as an administrator credential.
+On YWD-Hotspot OS, `ywd` has passwordless sudo, so protect the client private key as an administrator credential.
 
-Full Windows/Linux/macOS/SFTP/recovery instructions: **[SSH.md](SSH.md)**.
+Full instructions: **[SSH.md](SSH.md)**.
 
 ## Supported hardware baseline
 
@@ -112,7 +120,7 @@ Full Windows/Linux/macOS/SFTP/recovery instructions: **[SSH.md](SSH.md)**.
 | OLED | I2C bus 1, normally `0x3C` |
 | Network | BrandMeister DMR |
 
-RSSI/dBm support depends on the MMDVM HAT firmware. Some otherwise compatible MMDVM_HS builds report BER but not RSSI. YWD-Hotspot does not synthesize dBm from BER and hides RSSI-only dashboard instrumentation when no usable RSSI is supplied.
+RSSI/dBm support depends on the MMDVM HAT firmware. Some compatible MMDVM_HS builds report BER but not RSSI. YWD-Hotspot does not synthesize dBm from BER and hides RSSI-only instrumentation when no usable RSSI is supplied.
 
 ## Fresh install from GitHub source
 
@@ -127,19 +135,15 @@ cd ywd-hotspot
 sudo ./INSTALL.sh
 ```
 
-A normal Git clone preserves executable bits. If source came through a ZIP/Windows copy and modes were lost:
+A normal Git clone preserves executable bits. If source came through a ZIP/Windows copy and modes were lost, invoke the installer explicitly with `sudo bash ./INSTALL.sh`.
 
-```bash
-sudo bash ./INSTALL.sh
-```
-
-The source installer is interactive. Its configuration phase is deliberately kept attached directly to the controlling terminal rather than being piped through the installer's output colorizer. This keeps typed characters, `[default]` values and validation messages visible on SSH and local-console sessions. A required value with no usable default, such as a fresh Base DMR Radio ID, is shown as `[required]` rather than as a blank-looking prompt.
+The source installer keeps its configuration phase attached directly to the controlling terminal so typed characters, defaults and validation messages remain visible over SSH/local console.
 
 ### SSH note for source-installed systems
 
 The source installer does not turn a general-purpose Raspberry Pi into the exact YWD appliance user/SSH layout. It creates the restricted `ywd-hotspot` service account, but it does not create the appliance login user `ywd` or install OpenSSH solely for remote shell access.
 
-The dashboard SSH helper can enroll a client key for an **existing** normal local Linux user (UID 1000+, interactive shell, home directly under `/home`). Enter that account name in the SSH client-key field. OpenSSH server must already be installed.
+The dashboard SSH helper can enroll a client key for an existing normal local Linux user. OpenSSH server must already be installed.
 
 ## MMDVM runtime choice
 
@@ -148,9 +152,9 @@ A fresh/full installation makes the MMDVM runtime explicit before compiling.
 ### 1. YWD Extended — recommended/default
 
 - exact pinned upstream MMDVM-Host source;
-- verified YWD extension patch;
+- verified RC3 YWD extension patch;
 - extension API and patch SHA recorded in provenance;
-- passive DMR voice/RX Monitor capability;
+- current trusted passive DMR/RX Monitor capability set;
 - foundation for plugins that explicitly require YWD MMDVM capabilities.
 
 ### 2. Stock Upstream
@@ -169,9 +173,7 @@ The selected state is recorded in:
 /etc/ywd-hotspot/mmdvm-build.json
 ```
 
-Stock and Extended MMDVM binaries have separate runtime cache identities; a stock build cannot consume a patched cache entry and vice versa.
-
-Current YWD Extended identity:
+Current RC3 YWD Extended identity:
 
 ```text
 MMDVM-Host commit
@@ -184,10 +186,18 @@ Extension API
   2
 
 Patch SHA256
-  f3542c80d6b854552f8affea933e6cd306908eb1ebc32c0cc55f6161e0ba362a
+  77c712fae4a02c59ded8bfa777e796041cc081ba445817b2f0c07c3456a40994
+
+Capabilities
+  slot_affinity_queued_work
+  dmr_pdu_route_metadata
+  dmr_rx_audio_events
+
+DMRGateway commit
+  2a3306de313cf4c094c2031c9ced5a6858bbbfcc
 ```
 
-See **[DMR-VOICE.md](DMR-VOICE.md)**.
+See **[DMR-VOICE.md](DMR-VOICE.md)** and **[UPGRADING.md](UPGRADING.md)** for legacy RC1/RC2 Extended recognition and explicit refresh behavior.
 
 ## What a fresh source install does
 
@@ -243,7 +253,7 @@ cd ~/ywd-hotspot
 sudo ./lab/mmdvm-diag.sh
 ```
 
-On the original Pi Zero W, expected mapping after the recommended UART setup/reboot is:
+On the original Pi Zero W, expected mapping is:
 
 ```text
 /dev/serial0 -> /dev/ttyAMA0
@@ -305,18 +315,9 @@ These are separate from the BrandMeister Hotspot Security password.
 ywd-hotspotctl status
 ywd-hotspotctl source
 sudo python3 /opt/ywd-hotspot/app/lib/runtime_build.py status
+sudo python3 /opt/ywd-hotspot/app/lib/mmdvm_runtime_state.py status
 systemctl --failed --no-pager
 ```
-
-The runtime status reports the installed MMDVM variant/provenance plus DMRGateway identity.
-
-## Open the dashboard
-
-```bash
-hostname -I
-```
-
-Browse to the configured WebUI port on the trusted LAN. Do not expose the plain-HTTP dashboard directly to the public Internet.
 
 ## Next steps
 

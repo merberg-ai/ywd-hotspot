@@ -115,11 +115,11 @@ read:dmr-directory
 
 `read:dmr-activity` exposes a bounded sanitized snapshot derived from the trusted activity collector. It includes current/recent DMR session fields such as source identity, destination, RF/network path, slot, duration and bounded RF/network quality metrics. Raw MMDVM journal text is deliberately excluded.
 
-`read:dmr-directory` exposes bounded lookup/search against the hotspot's local RadioID-derived directory. The compatibility file `/var/lib/ywd-hotspot/DMRIds.dat` remains ID + callsign for MMDVM. The same scheduled RadioID CSV download may also produce `/var/lib/ywd-hotspot/DMRContacts.tsv` with additive name/city/state/country fields for trusted directory responses. No second download or live external lookup is required.
+`read:dmr-directory` exposes bounded lookup/search against the hotspot's local RadioID-derived directory. The compatibility file `/var/lib/ywd-hotspot/DMRIds.dat` remains ID + callsign for MMDVM. The same scheduled RadioID CSV download also produces `/var/lib/ywd-hotspot/DMRContacts.tsv` with additive name/city/state/country fields and an indexed `/var/lib/ywd-hotspot/DMRContacts.sqlite3` lookup database. Exact ID/callsign and callsign-prefix requests prefer the indexed database so richer lookups remain fast on Pi Zero hardware. The TSV and legacy ID file remain fallbacks; no second download or live external lookup is required.
 
 Directory responses may also contain a separate `observations` enrichment object derived from `/var/lib/ywd-hotspot/contact-observations.sqlite3`. The activity collector writes one best-effort record per completed DMR call, tracking only local first/last-seen and aggregate QSO/path metadata. Directory data and local observations remain separate at rest. Failure to write/read observation history must not affect RF, MMDVMHost, or the normal activity feed.
 
-Browser plugins do not receive either backing database file, a filesystem path, bulk-export endpoint, or arbitrary external-network access.
+Browser plugins do not receive any backing database file, a filesystem path, bulk-export endpoint, or arbitrary external-network access.
 
 Both capabilities are checked against the installed signed manifest and current plugin enable state on every request. Disabling or uninstalling a plugin revokes access immediately. Expensive signed-manifest validation may be cached until the installed manifest changes so frequent read-only activity polling remains practical on a Pi Zero.
 
@@ -167,7 +167,7 @@ A UI-only plugin has no background Pi service. With no plugin section open, brow
 
 The iframe and plugin JavaScript execute on the browser device. This is intentional for the original Pi Zero W performance budget.
 
-The local observation store adds at most one small SQLite write when a DMR call completes; it is not on the modem transport hot path and failures are ignored by the activity collector.
+The local observation store adds at most one small SQLite write when a DMR call completes; it is not on the modem transport hot path and failures are ignored by the activity collector. The indexed contact directory is rebuilt only during the configured RadioID maintenance update and keeps user-triggered lookups off the expensive whole-file scan path.
 
 ## Safety contract for future capabilities
 
@@ -192,4 +192,4 @@ UPLOAD -> verify/review
   -> ordinary DMR operation remains unchanged
 ```
 
-For shared Plugin UI changes, also verify an existing RX Monitor package can still start/stop audio normally. For Contact Intelligence richer-directory testing, force one DMR ID update after installing matching core so `DMRContacts.tsv` exists, then complete at least one DMR call before checking first/last-seen history.
+For shared Plugin UI changes, also verify an existing RX Monitor package can still start/stop audio normally. For Contact Intelligence richer-directory testing, force one DMR ID update after installing matching core so `DMRContacts.tsv` and `DMRContacts.sqlite3` exist, then complete at least one DMR call before checking first/last-seen history.

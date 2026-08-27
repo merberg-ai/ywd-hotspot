@@ -100,6 +100,31 @@ plugin.getConfig
 
 There is no generic arbitrary fetch, filesystem, shell, service-control, serial, device or arbitrary-YWD-API bridge.
 
+## Read-only DMR activity and directory capabilities
+
+RC3-era Plugin UI v1 also defines two generic read-only contracts for identity/activity plugins:
+
+```text
+read:dmr-activity
+read:dmr-directory
+```
+
+`read:dmr-activity` exposes a bounded sanitized snapshot derived from the trusted activity collector. It includes current/recent DMR session fields such as source identity, destination, RF/network path, slot, duration and bounded RF/network quality metrics. Raw MMDVM journal text is deliberately excluded.
+
+`read:dmr-directory` exposes bounded lookup/search against the hotspot's local RadioID-derived DMR ID database. The initial database schema resolves DMR ID to callsign only. Browser plugins do not receive the database file, filesystem path, an export endpoint, or arbitrary external-network access.
+
+Both capabilities are checked against the installed signed manifest and current plugin enable state on every request. Disabling or uninstalling a plugin revokes access immediately. Expensive signed-manifest validation may be cached until the installed manifest changes so frequent read-only activity polling remains practical on a Pi Zero.
+
+The browser runtime convenience methods are:
+
+```text
+plugin.readDmrActivity({limit})
+plugin.lookupDmrIds([id, ...])
+plugin.searchDmrDirectory(query, {limit})
+```
+
+These contracts are intentionally generic. Contact Intelligence can use them today; later traffic/scanner plugins can reuse them without gaining unrelated dashboard or RF privileges.
+
 ## Passive DMR voice capability
 
 Current YWD Extended builds support an explicit passive DMR voice observation contract used by RX Monitor.

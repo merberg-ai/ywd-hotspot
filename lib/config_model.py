@@ -9,7 +9,7 @@ import json
 import re
 from pathlib import Path
 
-SCHEMA = 6
+SCHEMA = 7
 CALL_RE = re.compile(r"^[A-Z0-9]{3,10}(?:-[A-Z0-9]{1,2})?$")
 HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$")
 
@@ -52,6 +52,12 @@ def defaults() -> dict:
         "brandmeister": {
             "enabled": True,
             "master": "3103.master.brandmeister.network",
+            "port": 62031,
+            "password": "",
+        },
+        "tgif": {
+            "enabled": False,
+            "master": "tgif.network",
             "port": 62031,
             "password": "",
         },
@@ -168,7 +174,7 @@ def _text(v, name, maxlen=160, allow_empty=True):
 
 
 def normalize(raw: dict, preserve_password: str | None = None) -> dict:
-    """Migrate old schemas, fill defaults, validate, and return canonical schema 6."""
+    """Migrate old schemas, fill defaults, validate, and return canonical schema 7."""
     if not isinstance(raw, dict):
         raise ValueError("configuration must be a JSON object")
     try:
@@ -201,8 +207,8 @@ def normalize(raw: dict, preserve_password: str | None = None) -> dict:
     st["url"] = _text(st.get("url"), "station URL", 124)
 
     r = c["radio"]
-    # Schema 6 introduces explicit simplex/duplex HAT mode and separate duplex
-    # RX/TX frequencies. Existing appliances must remain simplex after update.
+    # Schema 6 introduced explicit simplex/duplex HAT mode and separate duplex
+    # RX/TX frequencies. Existing pre-schema-6 appliances must remain simplex.
     if source_schema < 6:
         legacy_frequency = r.get("frequency_hz", 446525000)
         r["mode"] = "simplex"
@@ -242,6 +248,21 @@ def normalize(raw: dict, preserve_password: str | None = None) -> dict:
     if len(pw) > 20:
         raise ValueError("BrandMeister Hotspot Security password must be 20 characters or fewer")
     bm["password"] = pw
+
+    tg = c["tgif"]
+    tg["enabled"] = bool(tg.get("enabled", False))
+    tg["master"] = _text(tg.get("master", "tgif.network"), "TGIF master", 128, False)
+    if not HOST_RE.fullmatch(tg["master"]):
+        raise ValueError("TGIF master hostname is invalid")
+    tg["port"] = _int(tg.get("port", 62031), "TGIF port", 1, 65535)
+    tgif_pw = str(tg.get("password", "") or "")
+    if any(ch in tgif_pw for ch in ('"', "\n", "\r")):
+        raise ValueError("TGIF security password contains an unsupported character")
+    if len(tgif_pw) > 128:
+        raise ValueError("TGIF security password must be 128 characters or fewer")
+    if tg["enabled"] and not tgif_pw:
+        raise ValueError("TGIF security password is required when TGIF is enabled")
+    tg["password"] = tgif_pw
 
     d = c["display"]
     d["enabled"] = bool(d.get("enabled", True))
@@ -344,7 +365,7 @@ def normalize(raw: dict, preserve_password: str | None = None) -> dict:
     # smuggle unvalidated data into the canonical appliance configuration.
     template = defaults()
     out = {"schema": SCHEMA}
-    for sec in ("station", "radio", "brandmeister", "display", "web", "maintenance"):
+    for sec in ("station", "radio", "brandmeister", "tgif", "display", "web", "maintenance"):
         out[sec] = {}
         for key, default in template[sec].items():
             if isinstance(default, dict):
@@ -358,6 +379,8 @@ def public(c: dict) -> dict:
     out = copy.deepcopy(c)
     out.setdefault("brandmeister", {})["password"] = None
     out["brandmeister"]["password_configured"] = bool(c.get("brandmeister", {}).get("password"))
+    out.setdefault("tgif", {})["password"] = None
+    out["tgif"]["password_configured"] = bool(c.get("tgif", {}).get("password"))
     return out
 
 
@@ -365,6 +388,7 @@ def hash_config(c: dict, include_secrets=True) -> str:
     obj = copy.deepcopy(c)
     if not include_secrets:
         obj.setdefault("brandmeister", {})["password"] = "***"
+        obj.setdefault("tgif", {})["password"] = "***"
     blob = json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(blob).hexdigest()
 
@@ -390,7 +414,7 @@ def diff_paths(a, b, prefix=""):
 def classify_changes(paths):
     """Return service/apply hints for changed config paths."""
     p = set(paths)
-    rf = any(x.startswith(("station.", "radio.", "brandmeister.")) for x in p)
+    rf = any(x.startswith(("station.", "radio.", "brandmeister.", "tgif.")) for x in p)
     oled = any(x.startswith("display.") and not x.startswith("display.instrumentation.") for x in p)
     dashboard = any(x in {"web.bind", "web.port"} or x.startswith("display.instrumentation.") for x in p)
     journald = any(x in {"maintenance.persistent_journal", "maintenance.journal_max_mb"} for x in p)

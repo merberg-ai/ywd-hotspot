@@ -12,6 +12,9 @@ CFG = Path(os.environ.get("YWD_CONFIG", "/etc/ywd-hotspot/config.json"))
 OUT = Path(os.environ.get("YWD_CONFIG_DIR", "/etc/ywd-hotspot"))
 DMRIDS = Path(os.environ.get("YWD_DMRID_FILE", "/var/lib/ywd-hotspot/DMRIds.dat"))
 RSSI_MAP = Path(os.environ.get("YWD_RSSI_MAPPING_FILE", str(OUT / "mmdvm-hs-rssi.dat")))
+TGIF_RF_BASE = 5_000_000
+TGIF_RF_RANGE = 999_999
+DMR_ID_MAX = 16_777_215
 
 RSSI_MAPPING_TEXT = """# YWD-Hotspot MMDVM_HS RSSI mapping
 # MMDVM_HS ADF7021 firmware with SEND_RSSI_DATA reports the positive
@@ -38,7 +41,7 @@ def write_secure(path: Path, text: str):
 
 
 def render(c):
-    s, r, b = c["station"], c["radio"], c["brandmeister"]
+    s, r, b, t = c["station"], c["radio"], c["brandmeister"], c["tgif"]
     hid = int(s["hotspot_id"])
     callsign = clean(s["callsign"])
     simplex_freq = int(r["frequency_hz"])
@@ -52,7 +55,9 @@ def render(c):
     master = clean(b["master"])
     name = "BM_" + re.sub(r"[^A-Za-z0-9_-]+", "_", master.split(".")[0])
     pw = clean(b.get("password", ""))
-    if '"' in pw:
+    tgif_master = clean(t["master"])
+    tgif_pw = clean(t.get("password", ""))
+    if '"' in pw or '"' in tgif_pw:
         raise ValueError("Password contains unsupported double quote")
     lat = float(s.get("latitude", 0.0)); lon = float(s.get("longitude", 0.0))
     location_data = 0 if abs(lat) < 1e-9 and abs(lon) < 1e-9 else 1
@@ -178,8 +183,35 @@ Enable=0
 Enable=0
 """
 
-    pass_tg = "PassAllTG=1\nPassAllTG=2" if duplex else "PassAllTG=2"
+    # With TGIF disabled, preserve the historical BrandMeister pass-all behavior.
+    # With TGIF enabled, reserve the complete 5xxxxxx destination namespace by
+    # replacing BM group pass-all with identity rewrites on either side of it.
+    # This prevents inbound or outbound BM group traffic from colliding with TGIF.
+    if t.get("enabled", False):
+        low_count = TGIF_RF_BASE - 1
+        high_start = TGIF_RF_BASE + TGIF_RF_RANGE + 1
+        high_count = DMR_ID_MAX - high_start + 1
+        if duplex:
+            pass_tg = (
+                f"TGRewrite0=1,1,1,1,{low_count}\n"
+                f"TGRewrite1=1,{high_start},1,{high_start},{high_count}\n"
+                f"TGRewrite2=2,1,2,1,{low_count}\n"
+                f"TGRewrite3=2,{high_start},2,{high_start},{high_count}"
+            )
+        else:
+            pass_tg = (
+                f"TGRewrite0=2,1,2,1,{low_count}\n"
+                f"TGRewrite1=2,{high_start},2,{high_start},{high_count}"
+            )
+    else:
+        pass_tg = "PassAllTG=1\nPassAllTG=2" if duplex else "PassAllTG=2"
     pass_pc = "PassAllPC=1\nPassAllPC=2" if duplex else "PassAllPC=2"
+    tgif_rewrites = (
+        f"TGRewrite0=1,{TGIF_RF_BASE + 1},1,1,{TGIF_RF_RANGE}\n"
+        f"TGRewrite1=2,{TGIF_RF_BASE + 1},2,1,{TGIF_RF_RANGE}"
+        if duplex
+        else f"TGRewrite=2,{TGIF_RF_BASE + 1},2,1,{TGIF_RF_RANGE}"
+    )
     dmrgw = f"""[General]
 Id={hid}
 Timeout=10
@@ -231,7 +263,15 @@ Location={location_data}
 Debug=0
 
 [DMR Network 2]
-Enabled=0
+Enabled={1 if t.get('enabled', False) else 0}
+Name=TGIF_Network
+Id={hid}
+Address={tgif_master}
+Port={int(t.get('port',62031))}
+{tgif_rewrites}
+Password="{tgif_pw}"
+Location=0
+Debug=0
 
 [DMR Network 3]
 Enabled=0

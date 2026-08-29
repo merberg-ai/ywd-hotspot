@@ -8,6 +8,9 @@ case "${1:-}" in
   update-check|update-start|set-hotspot-password|config-apply|config-revert|service-restart)
     exec /usr/local/libexec/ywd-hotspot-update-admin "$@"
     ;;
+  tgif-configure|set-tgif-password)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/tgif_admin.py "$@"
+    ;;
   update-branches|update-branch-check|update-branch-switch)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/branch_update_admin.py "$@"
     ;;

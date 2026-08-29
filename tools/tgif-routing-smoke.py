@@ -5,11 +5,12 @@ import importlib.util
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent
+LIB = ROOT / "lib"
+sys.path.insert(0, str(LIB))
 import config_model
 
-spec = importlib.util.spec_from_file_location("generate_config", ROOT / "generate-config.py")
+spec = importlib.util.spec_from_file_location("generate_config", LIB / "generate-config.py")
 generate_config = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
 spec.loader.exec_module(generate_config)

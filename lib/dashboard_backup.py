@@ -70,6 +70,8 @@ def wrap_handler(base):
                 "/api/ssh/password": ("ssh-password-set", 30),
                 "/api/ssh-keys/export": ("ssh-keys-export", 30),
                 "/api/ssh-client-key/create": ("ssh-client-key-create", 30),
+                "/api/tgif/configure": ("tgif-configure", 60),
+                "/api/tgif/password": ("set-tgif-password", 60),
                 "/api/diagnostics/create": ("diagnostics", 150),
                 "/api/update/branches": ("update-branches", 120),
                 "/api/update/branch/check": ("update-branch-check", 260),

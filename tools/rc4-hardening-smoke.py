@@ -16,7 +16,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 PY_SOURCES = (
+    "lib/config_model.py",
     "lib/generate-config.py",
+    "lib/settings_backup.py",
+    "lib/setup_server.py",
+    "lib/setup_restore_server.py",
+    "lib/setup_admin.py",
     "lib/oled.py",
     "lib/health.py",
     "tools/telemetry-config-smoke.py",
@@ -24,6 +29,7 @@ PY_SOURCES = (
     "tools/oled-health-smoke.py",
     "tools/ssh-policy-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
+    "tools/rc4-ui-setup-smoke.py",
     "tools/tgif-routing-smoke.py",
     "tools/tgif-ui-smoke.py",
     "tools/tgif-status-smoke.py",
@@ -39,6 +45,7 @@ SHELL_SOURCES = (
     "UPDATE-core.sh",
     "GITHUB-UPDATE.sh",
     "GITHUB-UPDATE-core.sh",
+    "lib/system_branding.sh",
     "lib/oled_owner.sh",
 )
 
@@ -48,6 +55,7 @@ SMOKES = (
     "tools/oled-health-smoke.py",
     "tools/ssh-policy-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
+    "tools/rc4-ui-setup-smoke.py",
     "tools/tgif-routing-smoke.py",
     "tools/tgif-ui-smoke.py",
     "tools/tgif-status-smoke.py",
@@ -99,7 +107,8 @@ def main() -> int:
     print("[OK] source-install I2C/OLED policy")
     print("[OK] truthful OLED device health projection")
     print("[OK] SSH key-only/password-or-key policy contract")
-    print("[OK] encrypted TGIF/BrandMeister backup round trip")
+    print("[OK] encrypted TGIF/BrandMeister backup round trip + redacted preview")
+    print("[OK] RC4 HTTP setup/TGIF presentation/default-waterfall policy")
     print("[OK] TGIF routing/UI/status/directory regressions")
     print("[OK] plugin settings/runtime regressions")
     return 0

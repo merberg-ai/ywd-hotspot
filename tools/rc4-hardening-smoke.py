@@ -2,12 +2,13 @@
 """Run the offline/source-only RC4 hardening regression set.
 
 This intentionally performs no RF transmission, network mutation, service
-restart, package installation, or live configuration write. It is suitable for
-a source checkout on the Pi or a development host.
+restart, package installation, live configuration write, or source-tree
+bytecode write. It is safe to run against the root-owned managed checkout as a
+normal user.
 """
 from __future__ import annotations
 
-import py_compile
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -52,9 +53,20 @@ SMOKES = (
 )
 
 
+def child_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
+
+
 def run(args: list[str]) -> None:
     print("+", " ".join(args), flush=True)
-    subprocess.run(args, cwd=ROOT, check=True)
+    subprocess.run(args, cwd=ROOT, env=child_env(), check=True)
+
+
+def syntax_check(path: Path) -> None:
+    source = path.read_text(encoding="utf-8")
+    compile(source, str(path), "exec", dont_inherit=True)
 
 
 def main() -> int:
@@ -63,7 +75,7 @@ def main() -> int:
         path = ROOT / rel
         if not path.is_file():
             raise AssertionError(f"missing source: {rel}")
-        py_compile.compile(str(path), doraise=True)
+        syntax_check(path)
         print(f"[OK] {rel}")
 
     print("\n===== RC4 HARDENING: SHELL SYNTAX =====", flush=True)

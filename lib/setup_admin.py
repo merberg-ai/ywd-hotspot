@@ -68,6 +68,9 @@ def validate(data):
     hotspot_password = str(data.get("hotspot_password", ""))
     if any(ch in hotspot_password for ch in ('"', "\n", "\r")) or len(hotspot_password) > 128:
         raise ValueError("Hotspot Security password format is invalid")
+    tgif_password = str(data.get("tgif_password", ""))
+    if any(ch in tgif_password for ch in ('"', "\n", "\r")) or len(tgif_password) > 128:
+        raise ValueError("TGIF security password format is invalid")
     api_key = str(data.get("bm_api_key", "")).strip()
     if api_key and (len(api_key) < 12 or len(api_key) > 4096 or "\n" in api_key or "\r" in api_key):
         raise ValueError("BrandMeister API key format is invalid")
@@ -75,12 +78,15 @@ def validate(data):
 
     candidate = json.loads(json.dumps(raw_cfg))
     candidate.setdefault("brandmeister", {})["password"] = hotspot_password
+    candidate.setdefault("tgif", {})["password"] = tgif_password
     candidate.setdefault("maintenance", {})["rf_autostart"] = enable_rf
     candidate = config_model.normalize(candidate)
     if candidate["station"]["callsign"] == "NOCALL" or candidate["station"]["base_dmr_id"] == "00000":
         raise ValueError("real callsign and DMR ID are required")
     if candidate["brandmeister"].get("enabled") and not hotspot_password:
         raise ValueError("Hotspot Security password is required when BrandMeister is enabled")
+    if candidate["tgif"].get("enabled") and not tgif_password:
+        raise ValueError("TGIF security password is required when TGIF is enabled")
     return candidate, web_password, api_key, enable_rf
 
 

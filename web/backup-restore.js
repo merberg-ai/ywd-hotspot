@@ -40,8 +40,9 @@
       `Source:  ${source.version || 'unknown'} · ${source.branch || 'unknown'} @ ${String(source.commit || 'unknown').slice(0,12)}`,
       `Station: ${p.callsign || '?'} · DMR ${p.dmr_id || '?'}`,
       `Radio:   ${p.frequency_mhz ?? '?'} MHz · CC${p.color_code ?? '?'}`,
-      `BM:      ${p.brandmeister_master || 'unknown'}`,
-      `Secrets: Hotspot ${p.hotspot_password_configured ? 'yes' : 'no'} · API ${p.bm_api_key_configured ? 'yes' : 'no'} · Web ${p.web_password_configured ? 'yes' : 'no'}`,
+      `BM:      ${p.brandmeister_master || 'unknown'} · Password ${p.hotspot_password_configured ? 'yes' : 'no'}`,
+      `TGIF:    ${p.tgif_enabled ? 'enabled' : 'disabled'} · ${p.tgif_master || 'unknown'}:${p.tgif_port ?? '?'} · Password ${p.tgif_password_configured ? 'yes' : 'no'}`,
+      `Secrets: BM API ${p.bm_api_key_configured ? 'yes' : 'no'} · Web ${p.web_password_configured ? 'yes' : 'no'}`,
       `Plugins: ${p.plugins_installed || 0} installed · ${p.plugins_enabled || 0} enabled · ${p.plugin_configs || 0} configs · ${p.trust_keys || 0} trust keys`,
       `Wi-Fi:   ${p.wifi_included ? `included (${p.wifi_ssid || 'unknown'})` : 'not included'}`,
       `RF intent from backup: ${p.rf_autostart ? 'enabled at boot' : 'disabled at boot'}`,
@@ -100,7 +101,7 @@
     card.className = 'card backup-card';
     card.innerHTML = `
       <div class="card-title">BACKUP / RESTORE</div>
-      <p class="hint">Create an encrypted portable appliance backup for a fresh YWD-Hotspot OS install, or restore one here. The file can contain RF, BrandMeister, WebUI credentials, calibration, plugin configuration/state and optional Wi-Fi credentials.</p>
+      <p class="hint">Create an encrypted portable appliance backup for a fresh YWD-Hotspot OS install, or restore one here. The file can contain RF, BrandMeister, TGIF, WebUI credentials, calibration, plugin configuration/state and optional Wi-Fi credentials.</p>
       <div class="backup-summary"><div><span>Format</span><b>.ywdsettings v1</b></div><div><span>Protection</span><b>scrypt + AES-256 + HMAC</b></div><div><span>Restore</span><b>validated + transactional</b></div></div>
       <div class="backup-actions"><button class="btn primary" id="backupExport">EXPORT SETTINGS</button><button class="btn" id="backupImport">IMPORT SETTINGS</button></div>
       <input class="backup-file" id="backupFile" type="file" accept=".ywdsettings,application/octet-stream">

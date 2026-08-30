@@ -58,7 +58,7 @@ def main() -> int:
     )
     require(
         "lib/dashboard_update.py",
-        "'/tgif-ui.js?v=dev-tgif1'",
+        "'/tgif-ui.js?v=dev-tgif2'",
         '"/tgif-ui.js": ("tgif-ui.js"',
     )
     require(
@@ -68,6 +68,11 @@ def main() -> int:
         "/api/tgif/password",
         "5031665",
         "password_configured",
+        "let formDirty = false",
+        "function setFormDirty(value)",
+        "if (!formDirty)",
+        "setFormDirty(false)",
+        "node.addEventListener('change', () => setFormDirty(true))",
     )
     require(
         "lib/update_admin.py",

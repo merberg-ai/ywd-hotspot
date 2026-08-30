@@ -3,7 +3,6 @@
   const RF_PREFIX = 5_000_000;
   let installed = false;
   let passwordModal = null;
-  let formDirty = false;
 
   const el = id => document.getElementById(id);
   const safe = value => String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -40,12 +39,12 @@
     return !!(typeof state !== 'undefined' && state?.controls?.authenticated);
   }
 
-  function setFormDirty(value) {
-    formDirty = !!value;
-    const card = el('tgifSettingsCard');
-    if (card) card.classList.toggle('tgif-unsaved', formDirty);
-    const badge = el('tgifRuntimeIntent');
-    if (badge && formDirty) badge.textContent = 'UNSAVED';
+  function settingsDirty() {
+    return !!(typeof dirty !== 'undefined' && dirty);
+  }
+
+  function markSettingsDirty() {
+    if (typeof setDirty === 'function') setDirty(true);
   }
 
   function linkDot(linkState, enabled = true) {
@@ -185,33 +184,6 @@
     }
   }
 
-  async function saveSettings() {
-    if (!authenticated()) return notify('Unlock WebUI controls first', true);
-    const master = el('tgifMaster').value.trim();
-    const port = Number(el('tgifPort').value);
-    const enabled = el('tgifEnabled').checked;
-    if (!master) return notify('TGIF master hostname is required', true);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return notify('TGIF UDP port must be 1-65535', true);
-    if (enabled && !currentConfig()?.password_configured) return notify('Set the TGIF security password before enabling the network', true);
-
-    const button = el('tgifSaveApply');
-    button.disabled = true;
-    try {
-      const result = await apiPost('/api/tgif/configure', {enabled, master, port, apply: true});
-      const count = Array.isArray(result.changed) ? result.changed.length : 0;
-      setFormDirty(false);
-      notify(count ? `TGIF settings applied (${count} change${count === 1 ? '' : 's'})` : 'No TGIF changes');
-      if (typeof getStatus === 'function') await getStatus();
-      if (typeof loadConfig === 'function') await loadConfig(true);
-      sync();
-    } catch (err) {
-      notify(err.message, true);
-      sync();
-    } finally {
-      button.disabled = false;
-    }
-  }
-
   function updateHelper() {
     const input = el('tgifTalkgroupHelper');
     const output = el('tgifRadioDestination');
@@ -227,21 +199,19 @@
   function sync() {
     const cfg = currentConfig();
     if (!cfg || !el('tgifSettingsCard')) return;
-    if (!formDirty) {
+    if (!settingsDirty()) {
       el('tgifMaster').value = cfg.master || 'tgif.network';
       el('tgifPort').value = cfg.port || 62031;
       el('tgifEnabled').checked = !!cfg.enabled;
     }
     el('tgifPasswordStatus').textContent = cfg.password_configured ? 'configured' : 'missing';
-    if (!formDirty) {
-      const runtime = (typeof state !== 'undefined' && state?.tgif) ? state.tgif : null;
-      el('tgifRuntimeIntent').textContent = cfg.enabled
-        ? stateText(runtime?.state || 'connecting', true)
-        : 'DISABLED';
-      el('tgifRuntimeIntent').title = runtime?.detail || '';
-    }
+    const runtime = (typeof state !== 'undefined' && state?.tgif) ? state.tgif : null;
+    el('tgifRuntimeIntent').textContent = cfg.enabled
+      ? stateText(runtime?.state || 'connecting', true)
+      : 'DISABLED';
+    el('tgifRuntimeIntent').title = runtime?.detail || '';
     const locked = !authenticated();
-    ['tgifEnabled','tgifMaster','tgifPort','tgifSaveApply','tgifChangePassword'].forEach(id => {
+    ['tgifEnabled','tgifMaster','tgifPort','tgifChangePassword'].forEach(id => {
       const node = el(id); if (node) node.disabled = locked;
     });
   }
@@ -260,24 +230,23 @@
       <div class="card-title title-row"><span>TGIF NETWORK — EXPERIMENTAL</span><span id="tgifRuntimeIntent" class="badge">DISABLED</span></div>
       <p class="hint">Runs alongside BrandMeister through DMRGateway. TGIF group calls use the reserved 5xxxxxx RF namespace; normal talkgroup numbers continue to go to BrandMeister.</p>
       <div class="formgrid four">
-        <div class="field span2"><label>MASTER HOSTNAME</label><input id="tgifMaster" value="tgif.network" maxlength="128"></div>
-        <div class="field"><label>UDP PORT</label><input id="tgifPort" type="number" min="1" max="65535" value="62031"></div>
-        <div class="field check"><label><input id="tgifEnabled" type="checkbox"> NETWORK ENABLED</label></div>
+        <div class="field span2"><label>MASTER HOSTNAME</label><input id="tgifMaster" data-cfg="tgif.master" value="tgif.network" maxlength="128"></div>
+        <div class="field"><label>UDP PORT</label><input id="tgifPort" data-cfg="tgif.port" type="number" min="1" max="65535" value="62031"></div>
+        <div class="field check"><label><input id="tgifEnabled" data-cfg="tgif.enabled" type="checkbox"> NETWORK ENABLED</label></div>
       </div>
       <div class="secretrow"><span>TGIF security password: <b id="tgifPasswordStatus">—</b></span><button class="btn ctl" id="tgifChangePassword" type="button">CHANGE</button></div>
-      <div class="buttonrow wrap"><button class="btn primary ctl" id="tgifSaveApply" type="button">SAVE &amp; APPLY TGIF</button></div>
+      <p class="hint">TGIF enable/master/port are saved with the normal Settings SAVE / SAVE &amp; APPLY controls. The security password remains a separate protected credential.</p>
       <hr>
       <div class="field inline"><label>TGIF TG HELPER</label><input id="tgifTalkgroupHelper" inputmode="numeric" placeholder="31665" maxlength="6"><span id="tgifRadioDestination" class="hint">Example: TGIF 31665 → radio TG 5031665</span></div>
       <p class="hint">The prefix exists only on RF. DMRGateway removes the leading 5 before sending to TGIF and restores it on TGIF traffic sent back to the hotspot.</p>`;
     firstGrid.insertAdjacentElement('afterend', card);
 
     el('tgifChangePassword').onclick = openPassword;
-    el('tgifSaveApply').onclick = saveSettings;
     el('tgifTalkgroupHelper').addEventListener('input', updateHelper);
     ['tgifEnabled','tgifMaster','tgifPort'].forEach(id => {
       const node = el(id);
-      node.addEventListener('input', () => setFormDirty(true));
-      node.addEventListener('change', () => setFormDirty(true));
+      node.addEventListener('input', markSettingsDirty);
+      node.addEventListener('change', markSettingsDirty);
     });
 
     if (typeof render === 'function' && !render.__ywdTgifWrapped) {

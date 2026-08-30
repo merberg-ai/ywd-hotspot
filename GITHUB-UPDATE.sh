@@ -21,6 +21,7 @@ fi
 
 if declare -F ywd_banner >/dev/null; then
   ywd_banner "GITHUB UPDATE" "$VERSION"
+  ywd_info "Integrated networks: BrandMeister + TGIF."
   ywd_info "Fetch + validation happen before the live RF stack is touched."
 fi
 CORE="$SELF/GITHUB-UPDATE-core.sh"

@@ -53,7 +53,13 @@ authenticationmethods any
 
 `authenticationmethods any` is expected for password-or-key mode: no extra multi-factor method chain is imposed, while the explicitly enabled password and public-key mechanisms remain available and keyboard-interactive/root login remain disabled.
 
-The source-only SSH smoke also verifies the separate key-only contract. A final client-side acceptance can exercise one fresh password login and one fresh key login from a second terminal while preserving the current administrative session.
+Client-side physical acceptance is complete:
+
+- a fresh forced password-authentication SSH login to `ywd` succeeded;
+- a fresh forced public-key SSH login to `ywd` succeeded;
+- the existing administrative session remained usable throughout testing.
+
+The source-only SSH smoke separately verifies the key-only contract. Live password-or-key SSH acceptance is therefore closed for RC4 unless a later regression is observed.
 
 ## RC4 hardening implemented
 
@@ -114,12 +120,11 @@ The smoke is intentionally read-only with respect to the managed source checkout
 
 Before RC4 freeze:
 
-1. optionally complete client-side SSH acceptance with one fresh password login and one fresh public-key login from a second terminal;
-2. perform a real encrypted settings export/preview/restore preservation test covering TGIF, BrandMeister, and installed plugin intent;
-3. verify normal update preserves SSH/config/plugin/network state;
-4. complete the additional planned RC4 feature/UI work;
-5. freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
-6. test the published RC3 -> frozen RC4 updater path;
-7. build and physically accept the exact RC4 factory image before publication.
+1. perform a real encrypted settings export/preview/restore preservation test covering TGIF, BrandMeister, and installed plugin intent;
+2. verify normal update preserves SSH/config/plugin/network state;
+3. complete the additional planned RC4 feature/UI work;
+4. freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
+5. test the published RC3 -> frozen RC4 updater path;
+6. build and physically accept the exact RC4 factory image before publication.
 
 Do not expand TGIF routing semantics, rebuild MMDVM-Host/DMRGateway, or modify the proven RF routing path merely as part of this hardening checkpoint.

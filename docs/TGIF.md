@@ -16,6 +16,8 @@ Real-hardware acceptance passed on the Pi 5 simplex test hotspot using the share
 
 This checkpoint proves the core routing architecture before adding richer dashboard presentation. Routing behavior below this checkpoint should remain unchanged unless a later change explicitly revises the network model.
 
+Checkpoint commit: `bed1a521e345de0b9e6c931b202f4fbda771ac84`.
+
 ## Design goals
 
 - MMDVM-Host remains the only modem/RF owner.
@@ -128,7 +130,32 @@ The TGIF password change is snapshotted and audited without recording the passwo
 
 TGIF master/port/enable controls maintain a browser-local unsaved state. Once one of those fields is edited, normal dashboard status polling must not overwrite the in-progress values with the last saved configuration. The card shows `UNSAVED` until `SAVE & APPLY TGIF` succeeds, at which point it resumes synchronization with canonical configuration.
 
-The shared Save & Apply reconciler now keeps DMRGateway running whenever **either** BrandMeister or TGIF is enabled. It still does not start a stopped MMDVM/RF stack just because a network was enabled in configuration.
+The shared Save & Apply reconciler keeps DMRGateway running whenever **either** BrandMeister or TGIF is enabled. It still does not start a stopped MMDVM/RF stack just because a network was enabled in configuration.
+
+## Dashboard network presentation
+
+The dashboard presentation layer now treats BM and TGIF as separate runtime links without changing DMRGateway routing or the activity collector.
+
+`lib/dashboard_tgif.py` projects the existing journal/config/activity state into dashboard-only metadata:
+
+- BrandMeister and TGIF login state are parsed independently by DMRGateway network name, so a TGIF authentication error cannot make BM appear down and vice versa.
+- The status strip displays separate `BM` and `TGIF` indicators.
+- Group destinations in the reserved `5000001..5999999` RF namespace are identified as TGIF and translated back to the real TGIF talkgroup for presentation.
+- Ordinary group destinations remain identified as BrandMeister.
+- The raw RF destination is preserved as `rf_id`; presentation never destroys the modem-facing value used for diagnostics.
+
+For example, an RF-side TGIF Parrot call is represented as:
+
+```text
+raw RF destination: 5009990
+network:             TGIF
+network talkgroup:   9990
+friendly label:      TGIF · TG 9990 · Parrot
+```
+
+Live DMR and Last Heard use the friendly network-aware label. Last Heard also includes the raw RF destination for TGIF calls, for example `TGIF · TG 9990 · Parrot · RF 5009990`.
+
+This interpretation happens only when the dashboard reads activity state. `ywd-activity.service` continues recording the modem's original destination exactly as received.
 
 ## First test sequence
 
@@ -149,13 +176,14 @@ Use a non-production hotspot for this experimental branch.
 
 `tools/tgif-routing-smoke.py` covers schema migration, credential redaction/validation, simplex/duplex generated rules, namespace isolation, and TGIF-off compatibility without requiring RF or network access.
 
-`tools/tgif-ui-smoke.py` checks the experimental UI bootstrap, authenticated API routes, exact sudo allowlist, privileged helper wiring, credential redaction markers, the BM-or-TGIF DMRGateway reconciliation rule, and the polling guard that preserves unsaved TGIF controls.
+`tools/tgif-ui-smoke.py` checks the experimental UI bootstrap, authenticated API routes, exact sudo allowlist, privileged helper wiring, credential redaction markers, the BM-or-TGIF DMRGateway reconciliation rule, polling guard, and dashboard presentation wiring.
+
+`tools/tgif-status-smoke.py` exercises independent BM/TGIF journal-state parsing and verifies that RF `5009990` projects to `TGIF · TG 9990 · Parrot` while ordinary RF `9990` remains `BM · TG 9990 · Parrot`.
 
 ## Next slices
 
-With core routing and safe Settings controls in place, follow-on work can add:
+With core routing, safe Settings controls, and network-aware dashboard presentation in place, follow-on work can add:
 
-- per-network connection state in the dashboard;
-- TGIF-aware activity labels that display the real TGIF talkgroup instead of only the prefixed RF destination;
+- richer TGIF talkgroup directory/search support rather than only numeric translation;
 - a signed TGIF UI plugin for richer TGIF-specific features without giving plugin code direct modem or arbitrary network access;
 - a deliberate solution for seven-digit TGIF talkgroups rather than silently creating ambiguous routing.

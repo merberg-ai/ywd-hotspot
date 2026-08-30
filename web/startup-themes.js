@@ -1,12 +1,12 @@
 'use strict';
 (() => {
   const STORAGE_KEY = 'ywd.loadingAnimation';
-  const DEFAULT_THEME = 'rf_sweep';
+  const DEFAULT_THEME = 'digital_waterfall';
   const THEMES = [
     ['rf_sweep','RF Sweep','Oscilloscope-style RF trace and scan.'],
     ['radar_scan','Radar Scan','Circular RF scan with transient signal blips.'],
     ['packet_burst','Packet Burst','Digital packets move RADIO → MMDVM → GATEWAY → NET.'],
-    ['digital_waterfall','Digital Waterfall','Compact scrolling spectrum/waterfall display.'],
+    ['digital_waterfall','Digital Waterfall','SDR-style waterfall with a strong centered RF signal.'],
     ['rf_orbit','RF Orbit','RF, DMR, NET and UI nodes orbit the YWD core.'],
     ['boot_telemetry','Boot Telemetry','Retro subsystem status terminal.'],
     ['signal_lock','Signal Lock','Noisy signal bars converge toward system lock.'],
@@ -40,7 +40,7 @@
     switch (safeTheme(theme)) {
       case 'radar_scan': return `<div class="ywd-radar"><div class="ywd-radar-sweep"></div><i class="ywd-radar-blip b1"></i><i class="ywd-radar-blip b2"></i><i class="ywd-radar-blip b3"></i></div><div class="theme-caption">RADAR // SPECTRUM SCAN</div>`;
       case 'packet_burst': return `<div class="ywd-packet-chain"><span class="ywd-packet"></span><span class="ywd-packet p2"></span><b class="ywd-packet-node">RADIO</b><b class="ywd-packet-node">MMDVM</b><b class="ywd-packet-node">GATE</b><b class="ywd-packet-node">NET</b></div><div class="theme-caption">DIGITAL TRANSPORT // SYNCHRONIZING</div>`;
-      case 'digital_waterfall': return `<div class="ywd-waterfall"></div><div class="theme-caption">DIGITAL WATERFALL // RF ACTIVITY MAP</div>`;
+      case 'digital_waterfall': return `<div class="ywd-waterfall"><div class="ywd-waterfall-spectrum"><svg viewBox="0 0 300 30" preserveAspectRatio="none" aria-hidden="true"><path class="ywd-waterfall-spectrum-fill" d="M0 30 L0 25 L18 24 L34 25 L48 23 L61 24 L73 22 L85 24 L102 23 L118 24 L132 22 L139 19 L144 11 L148 3 L150 0 L152 3 L156 11 L161 19 L168 22 L184 23 L201 22 L218 24 L236 23 L251 25 L267 23 L284 25 L300 24 L300 30 Z"></path><polyline points="0,25 18,24 34,25 48,23 61,24 73,22 85,24 102,23 118,24 132,22 139,19 144,11 148,3 150,0 152,3 156,11 161,19 168,22 184,23 201,22 218,24 236,23 251,25 267,23 284,25 300,24"></polyline></svg><span class="ywd-waterfall-vfo"></span></div><div class="ywd-waterfall-history"><span class="ywd-waterfall-signal side left"></span><span class="ywd-waterfall-signal main"></span><span class="ywd-waterfall-signal side right"></span><span class="ywd-waterfall-vfo history"></span></div></div><div class="theme-caption">DIGITAL WATERFALL // STRONG SIGNAL LOCK</div>`;
       case 'rf_orbit': return `<div class="ywd-orbit"><div class="ywd-orbit-ring"><span class="ywd-orbit-node">RF</span></div><div class="ywd-orbit-ring r2"><span class="ywd-orbit-node">NET</span></div><div class="ywd-orbit-core">YWD</div></div><div class="theme-caption" id="ywdOrbitCaption">RF · DMR · NET · UI</div>`;
       case 'boot_telemetry': return `<div class="ywd-boot-lines"><div class="ywd-boot-line" data-boot="ui"><span>UI CORE</span><b>WAIT</b></div><div class="ywd-boot-line" data-boot="config"><span>CONFIG</span><b>WAIT</b></div><div class="ywd-boot-line" data-boot="rf"><span>RF STACK</span><b>WAIT</b></div><div class="ywd-boot-line" data-boot="gateway"><span>DMRGATEWAY</span><b>WAIT</b></div></div><div class="theme-caption">BOOT TELEMETRY // READINESS GATE</div>`;
       case 'signal_lock': return `<div class="ywd-lock-bars">${Array.from({length:18},()=>'<i></i>').join('')}</div><div class="theme-caption" id="ywdLockCaption">SIGNAL SEARCH // ACQUIRING LOCK</div>`;

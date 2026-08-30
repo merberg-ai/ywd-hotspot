@@ -6,6 +6,9 @@ import json
 from urllib.parse import urlparse
 
 import dashboard_core as core
+import dashboard_tgif
+
+dashboard_tgif.install(core)
 
 
 def wrap_handler(base):

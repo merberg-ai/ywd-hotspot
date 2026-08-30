@@ -128,6 +128,64 @@ failed systemd units  0
 
 This closes the real encrypted settings preservation gate for canonical configuration, BrandMeister, TGIF, plugin intent/config, RF policy, and the intentionally independent SSH state.
 
+## Normal GitHub update preservation acceptance
+
+A real normal GitHub update was exercised on the same mature Pi Zero after the restore acceptance. This was not an `up to date` no-op: the installed source advanced from:
+
+```text
+bed5123ef5dcf6a68ef9aa7ab685ca32e5265acf
+```
+
+to:
+
+```text
+0aca740cba6b89b8b9a69d29d8738c43d7b861a6
+```
+
+Before the update the appliance recorded fingerprints/state for canonical config, BrandMeister/TGIF passwords, plugin state/configuration, SSH managed policy, `authorized_keys`, SSH host public identities, Linux password state, and RF active/boot policy.
+
+Post-update comparison passed every preservation check:
+
+```text
+[OK] canonical config
+[OK] BM enabled
+[OK] BM master
+[OK] BM password
+[OK] TGIF enabled
+[OK] TGIF master
+[OK] TGIF port
+[OK] TGIF password
+[OK] plugin master
+[OK] enabled plugins
+[OK] installed plugins
+[OK] plugin configs
+[OK] SSH managed policy
+[OK] SSH authorized keys
+[OK] SSH host identity
+[OK] SSH password state
+[OK] SSH active
+[OK] SSH boot enabled
+[OK] MMDVM active
+[OK] DMRGateway active
+[OK] MMDVM boot policy
+[OK] DMRGateway boot policy
+```
+
+Runtime after the update remained healthy:
+
+```text
+BrandMeister  connected
+TGIF          connected
+MMDVMHost     active
+DMRGateway    active
+OLED          active
+OLED owner    ywd-headless-oled.service
+SSH           password+key; ywd only; root/interactive/empty-password disabled
+failed units  0
+```
+
+This closes the normal GitHub updater state-preservation gate for RC4. It does not replace the later published `0.2.0-rc3` -> frozen `0.2.0-rc4` release-updater acceptance, which must use the final frozen candidate.
+
 ## RC4 hardening implemented
 
 ### Persistent RSSI mapping
@@ -185,12 +243,11 @@ The smoke is intentionally read-only with respect to the managed source checkout
 
 ## Next RC4 gates
 
-Before RC4 freeze:
+Before RC4 freeze/publication:
 
-1. verify a normal GitHub update preserves SSH/config/plugin/network state;
-2. complete the additional planned RC4 feature/UI work;
-3. freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
-4. test the published RC3 -> frozen RC4 updater path;
-5. build and physically accept the exact RC4 factory image before publication.
+1. complete the additional planned RC4 feature/UI work;
+2. freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
+3. test the published RC3 -> frozen RC4 updater path;
+4. build and physically accept the exact RC4 factory image before publication.
 
 Do not expand TGIF routing semantics, rebuild MMDVM-Host/DMRGateway, or modify the proven RF routing path merely as part of this hardening checkpoint.

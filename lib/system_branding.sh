@@ -62,7 +62,7 @@ YWD-Hotspot quick commands
   ywd-logs              follow YWD logs
   ywd-logs network      network manager only
   ywd-logs web          dashboard only
-  ywd-logs setup        secure first-boot wizard only
+  ywd-logs setup        first-boot wizard only
   ywd-logs rf           MMDVM-Host + DMRGateway
   ywd-logs oled         OLED service(s)
 

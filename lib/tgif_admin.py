@@ -2,9 +2,9 @@
 """Privileged TGIF configuration helper for the experimental dev-tgif branch.
 
 The dashboard never receives or writes the stored TGIF password through the
-ordinary public configuration document. This helper owns the small set of
-TGIF-specific mutations and delegates canonical validation, snapshots, INI
-generation, and service restarts to the existing YWD core administration code.
+ordinary public configuration document. This helper owns TGIF-specific secret
+mutations and intercepts the normal config-save action so non-secret TGIF
+settings participate in the same Settings transaction as the rest of YWD.
 """
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ import admin as core_admin
 import config_model
 
 MAX_INPUT = 131072
+TGIF_BROWSER_KEYS = {"enabled", "master", "port"}
+TGIF_SECRET_KEYS = {"password", "password_configured"}
 
 
 def payload() -> dict:
@@ -61,7 +63,52 @@ def _apply_and_reconcile() -> dict:
     return out
 
 
+def config_save(data: dict) -> dict:
+    """Merge browser TGIF fields into the ordinary Settings save transaction.
+
+    The core merger remains authoritative for every pre-existing settings
+    section. TGIF gets only enabled/master/port here; browser-visible secret
+    placeholders are ignored so the stored TGIF credential is preserved.
+    """
+    incoming = data.get("config", data)
+    if not isinstance(incoming, dict):
+        raise ValueError("config must be an object")
+
+    old, candidate = core_admin.merge_browser_config(data)
+    tg_in = incoming.get("tgif")
+    if tg_in is not None:
+        if not isinstance(tg_in, dict):
+            raise ValueError("tgif must be an object")
+        for key, value in tg_in.items():
+            if key in TGIF_SECRET_KEYS:
+                continue
+            if key not in TGIF_BROWSER_KEYS:
+                raise ValueError(f"unsupported TGIF browser setting: {key}")
+            candidate.setdefault("tgif", {})[key] = value
+
+    new = config_model.normalize(candidate)
+    changed = config_model.diff_paths(old, new)
+    if not changed:
+        return {
+            "ok": True,
+            "changed": [],
+            "hints": config_model.classify_changes([]),
+            "message": "No changes",
+        }
+
+    snap = core_admin.backup_config("pre-save", changed)
+    core_admin.write_config(new)
+    core_admin.audit("config-save", {"changed": changed, "snapshot": snap})
+    return {
+        "ok": True,
+        "changed": changed,
+        "hints": config_model.classify_changes(changed),
+        "snapshot": snap,
+    }
+
+
 def configure(data: dict) -> dict:
+    """Compatibility endpoint for older dev-tgif dashboard revisions."""
     old = core_admin.current()
     candidate = json.loads(json.dumps(old))
     tg = candidate.setdefault("tgif", {})
@@ -137,7 +184,9 @@ def main() -> int:
         raise SystemExit("usage: tgif_admin.py ACTION")
     action = sys.argv[1]
     data = payload()
-    if action == "tgif-configure":
+    if action == "config-save":
+        out = config_save(data)
+    elif action == "tgif-configure":
         out = configure(data)
     elif action == "set-tgif-password":
         out = set_password(data)

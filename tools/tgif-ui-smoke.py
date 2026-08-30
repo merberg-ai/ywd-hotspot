@@ -81,7 +81,6 @@ def functional_config_save_check() -> None:
 
 
 def main() -> int:
-    # Python syntax for every changed privileged/backend module.
     for rel in (
         "lib/tgif_admin.py",
         "lib/dashboard_tgif.py",
@@ -120,6 +119,9 @@ def main() -> int:
         "lib/dashboard_backup.py",
         "import dashboard_tgif",
         "dashboard_tgif.install(core)",
+        'path == "/api/tgif/talkgroups/search"',
+        "search_tgif_talkgroups",
+        "Unlock control mode before forcing a TGIF directory refresh",
         '"/api/tgif/configure": ("tgif-configure", 60)',
         '"/api/tgif/password": ("set-tgif-password", 60)',
         "require_control",
@@ -127,6 +129,13 @@ def main() -> int:
     require(
         "lib/dashboard_tgif.py",
         "TGIF_RF_FIRST",
+        "TGIF_DIRECTORY_URL",
+        "https://api.tgif.network/dmr/talkgroups/json",
+        "normalize_tgif_talkgroups",
+        "search_tgif_talkgroups",
+        '"rf_talkgroup"',
+        '"supported"',
+        "_directory_names",
         "_network_state_from_lines",
         '"TGIF_Network"',
         'network="tgif"',
@@ -139,13 +148,22 @@ def main() -> int:
     )
     require(
         "lib/dashboard_update.py",
-        "'/tgif-ui.js?v=dev-tgif3'",
+        "'/tgif-ui.js?v=dev-tgif4'",
         '"/tgif-ui.js": ("tgif-ui.js"',
+        '"/control-theme.css": ("control-theme.css"',
+        'control_css = _asset_bytes("control-theme.css")',
+        "dashboard-wide interactive control theme",
     )
     require(
         "web/tgif-ui.js",
         "TGIF NETWORK — EXPERIMENTAL",
         "/api/tgif/password",
+        "/api/tgif/talkgroups/search",
+        "SEARCH TGIF DIRECTORY",
+        "TGIF FAVORITES",
+        "TGIF does not use BrandMeister-style static talkgroups",
+        "COPY RF TG",
+        "ywd.tgifFavorites.v1",
         "5031665",
         "password_configured",
         'data-cfg="tgif.master"',
@@ -171,6 +189,16 @@ def main() -> int:
         "/api/tgif/configure",
     )
     require(
+        "web/control-theme.css",
+        "color-scheme:dark",
+        ":focus-visible",
+        "background-color:#06141b!important",
+        "input:-webkit-autofill",
+        "-webkit-text-fill-color:var(--text)!important",
+        "select option",
+        "file-selector-button",
+    )
+    require(
         "lib/update_admin.py",
         'cfg.get("brandmeister"',
         'cfg.get("tgif"',
@@ -178,7 +206,6 @@ def main() -> int:
         'out["dmr_network_reconciled"]',
     )
 
-    # The browser must never receive the stored TGIF secret.
     require(
         "lib/config_model.py",
         'out.setdefault("tgif", {})["password"] = None',

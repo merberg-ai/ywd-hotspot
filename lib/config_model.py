@@ -115,7 +115,7 @@ def defaults() -> dict:
         "web": {
             "bind": "0.0.0.0",
             "port": 8080,
-            "loading_animation": "rf_sweep",
+            "loading_animation": "digital_waterfall",
         },
         "maintenance": {
             "rf_autostart": False,
@@ -349,7 +349,7 @@ def normalize(raw: dict, preserve_password: str | None = None) -> dict:
         raise ValueError("dashboard bind must be an IP address such as 0.0.0.0 or 127.0.0.1")
     w["port"] = _int(w.get("port", 8080), "dashboard port", 1024, 65535)
     w["loading_animation"] = _choice(
-        w.get("loading_animation", "rf_sweep"),
+        w.get("loading_animation", "digital_waterfall"),
         "loading animation",
         {"rf_sweep", "radar_scan", "packet_burst", "digital_waterfall", "rf_orbit", "boot_telemetry", "signal_lock", "vfo_tuning", "dmr_frame"},
     )

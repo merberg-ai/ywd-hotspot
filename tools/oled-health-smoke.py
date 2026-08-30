@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "lib"
 sys.path.insert(0, str(LIB))
 
+import dashboard_core
 import health
 
 OLED_SOURCE = (LIB / "oled.py").read_text(encoding="utf-8")
@@ -72,6 +73,21 @@ with tempfile.TemporaryDirectory(prefix="ywd-oled-health-") as td:
     finally:
         health.run = original_run
 
+# The dashboard status API must not permanently cache the legacy OLED owner.
+# Ownership can change during an image/app update while the dashboard process
+# remains alive; a later status refresh must follow the authoritative headless
+# unit without requiring another dashboard restart.
+original_unit_exists = dashboard_core.unit_exists
+try:
+    headless = {"present": False}
+    dashboard_core.unit_exists = lambda unit: bool(headless["present"]) if unit == "ywd-headless-oled.service" else True
+    assert dashboard_core.oled_unit() == "ywd-oled.service"
+    headless["present"] = True
+    assert dashboard_core.oled_unit() == "ywd-headless-oled.service"
+finally:
+    dashboard_core.unit_exists = original_unit_exists
+
 print("[OK] OLED owner publishes explicit hardware/device-open states")
 print("[OK] health projection distinguishes open, waiting, service-down, and disabled")
+print("[OK] dashboard status follows OLED ownership changes without a process restart")
 print("[OK] OLED hardware health remains presentation-only and independent of RF state")

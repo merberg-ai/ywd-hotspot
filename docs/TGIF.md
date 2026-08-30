@@ -43,9 +43,13 @@ The unified Settings transaction was then validated on the same Pi 5 test hotspo
 - TGIF Parrot passed after the disable/re-enable/apply cycle;
 - the separate BM and TGIF status indicators continued to report correctly throughout the cycle.
 
-This is the preferred hardware-proven baseline for the current `dev-tgif` implementation.
+This is the preferred hardware-proven baseline for the complete dual-network + unified-Settings implementation.
 
-Unified Settings checkpoint commit: `9aad248932927bdc7b847e0ddbdcf8662f9ac6a3`.
+Unified Settings implementation checkpoint: `9aad248932927bdc7b847e0ddbdcf8662f9ac6a3`.
+
+A separate checkpoint marker was committed immediately before beginning TGIF directory/control-theme work:
+
+`12605fd27571e65c6b3d40efa9bd209d9ae9214f`.
 
 ## Design goals
 
@@ -82,7 +86,9 @@ The reverse rewrite also means TGIF network traffic for talkgroup `31665` is pre
 
 ### Current limitation
 
-This first slice supports TGIF group talkgroups `1..999999`. A seven-digit TGIF talkgroup cannot be represented inside the fixed seven-digit prefixed RF namespace and is therefore not supported by this routing mode yet. Private-call rewriting is also deliberately not enabled in the first slice.
+This routing slice supports TGIF group talkgroups `1..999999`. A seven-digit TGIF talkgroup cannot be represented inside the fixed seven-digit prefixed RF namespace and is therefore not supported by this routing mode yet. Private-call rewriting is also deliberately not enabled.
+
+The TGIF directory UI does not hide larger/legacy IDs. It labels them as unsupported by the current prefix scheme and does not generate a false RF destination.
 
 ## BrandMeister isolation
 
@@ -190,34 +196,74 @@ Live DMR and Last Heard use the friendly network-aware label. Last Heard also in
 
 This interpretation happens only when the dashboard reads activity state. `ywd-activity.service` continues recording the modem's original destination exactly as received.
 
-## First test sequence
+## TGIF talkgroup directory
+
+The Talkgroups page now includes a TGIF directory section alongside the existing BrandMeister manager.
+
+The source is TGIF Network's public JSON talkgroup export:
+
+```text
+https://api.tgif.network/dmr/talkgroups/json
+```
+
+YWD fetches that list server-side, normalizes it to small id/name metadata rows, and stores a local cache in `/var/lib/ywd-hotspot/tgif-talkgroup-directory.json`. The normal cache lifetime is 24 hours, matching the low-churn behavior already used by the BrandMeister directory. If refresh fails and a previous cache exists, YWD serves the stale cache with an error/stale indication instead of making the Talkgroups page unusable.
+
+Dashboard endpoint:
+
+```text
+GET /api/tgif/talkgroups/search?q=<id-or-name>&limit=50
+GET /api/tgif/talkgroups/search?ids=9990,31665
+```
+
+A forced remote refresh uses `refresh=1` and requires unlocked control mode. Ordinary cached searches remain read-only.
+
+The UI intentionally mirrors the useful parts of the BrandMeister directory workflow:
+
+- search by TG number or name;
+- directory cache age/count display;
+- explicit refresh control;
+- browser-local favorites;
+- real TGIF number and radio-side `5xxxxxx` destination shown together;
+- one-click copy of the RF destination when the current routing model supports it.
+
+TGIF does **not** currently expose BrandMeister-style static talkgroups, so YWD does not show `APPLY PLAN`, static-set, or static-route mutation controls for TGIF. Favorites are local browser conveniences only and never change hotspot/network state.
+
+The same cache is used by dashboard presentation to resolve TGIF talkgroup names when available, while retaining the original raw RF destination for diagnostics.
+
+`tools/tgif-directory-smoke.py` tests JSON normalization, name/ID search, `5xxxxxx` RF math, and the guard that refuses to fabricate an RF destination for TGIF IDs above the current `999999` routing ceiling.
+
+## Dashboard control focus/active theme
+
+`web/control-theme.css` adds a dashboard-wide guard for interactive controls. Text inputs, textareas, selects, buttons, file selectors, focused fields, active controls, and Chrome/WebKit autofill states stay in the dark YWD theme instead of falling back to bright native white/yellow UI.
+
+Custom toggle switches remain owned by the existing checkbox/toggle styling; the global rules deliberately exclude checkbox/radio/range/color chrome so this polish cannot damage the existing mobile/desktop switch design.
+
+The control-theme stylesheet is bundled into the normal `/style.css` response so it is present on first paint across every dashboard section, including dynamically injected Talkgroups, plugin, update, SSH, modem, and TGIF controls.
+
+## Hardware / acceptance sequence
 
 Use a non-production hotspot for this experimental branch.
 
-1. Update/install `dev-tgif` with TGIF still disabled.
-2. Verify ordinary BrandMeister operation and Parrot are unchanged.
-3. Unlock WebUI controls and open Settings.
-4. Set the TGIF security password while TGIF remains disabled.
-5. Verify BrandMeister remains connected after the password save.
-6. Toggle TGIF enabled; verify the normal Settings unsaved indicator appears and the toggle remains stable during status polling.
-7. Use the ordinary Settings `SAVE & APPLY` control.
-8. Verify DMRGateway reports successful connections to both BrandMeister and TGIF.
-9. Verify a normal BrandMeister destination still reaches BrandMeister.
-10. Key radio destination `5031665` and verify DMRGateway sends TGIF destination `31665` only to TGIF.
-11. Verify an inbound TGIF call to `31665` is emitted to RF as `5031665`.
-12. Verify no TGIF call is forwarded to BrandMeister and no BrandMeister group call in the reserved `5xxxxxx` namespace is emitted to RF.
-13. Disable TGIF using the same normal Settings Save & Apply flow; verify BrandMeister returns to its original pass-all group behavior.
+1. Update/install `dev-tgif` and confirm BM + TGIF remain enabled as expected.
+2. Verify all four TGIF smokes: routing, UI/admin, dashboard status, and directory.
+3. Verify BrandMeister Parrot and TGIF Parrot still pass.
+4. Open Talkgroups and search the TGIF directory by a known ID/name such as `31665`.
+5. Verify the result reports TGIF `31665` and RF `5031665`.
+6. Add/remove a TGIF favorite and confirm no network/config apply occurs.
+7. Force-refresh the TGIF directory while controls are unlocked and verify cache metadata updates.
+8. Focus/type in the BM search box, TGIF search box, Settings fields, dialogs, and other visible controls; none should turn bright white/yellow.
+9. Disable/re-enable TGIF with the ordinary Settings Save & Apply flow and repeat both Parrot tests if any regression is suspected.
 
 `tools/tgif-routing-smoke.py` covers schema migration, credential redaction/validation, simplex/duplex generated rules, namespace isolation, and TGIF-off compatibility without requiring RF or network access.
 
-`tools/tgif-ui-smoke.py` checks the unified Settings transaction, TGIF credential separation, dispatcher/sudo wiring, polling guard, and dashboard presentation wiring. It also fails if a TGIF-specific Save & Apply control or browser call to `/api/tgif/configure` is reintroduced.
+`tools/tgif-ui-smoke.py` checks the unified Settings transaction, TGIF credential separation, directory route/UI wiring, control-theme bundling, dispatcher/sudo wiring, polling guard, and dashboard presentation wiring. It also fails if a TGIF-specific Save & Apply control or browser call to `/api/tgif/configure` is reintroduced.
 
 `tools/tgif-status-smoke.py` exercises independent BM/TGIF journal-state parsing and verifies that RF `5009990` projects to `TGIF · TG 9990 · Parrot` while ordinary RF `9990` remains `BM · TG 9990 · Parrot`.
 
 ## Next slices
 
-With core routing, unified Settings controls, and network-aware dashboard presentation in place, follow-on work can add:
+With core routing, unified Settings controls, network-aware dashboard presentation, and TGIF directory intelligence in place, follow-on work can add:
 
-- richer TGIF talkgroup directory/search support rather than only numeric translation;
+- richer activity hydration/metadata from the TGIF cache where useful;
 - a signed TGIF UI plugin for richer TGIF-specific features without giving plugin code direct modem or arbitrary network access;
 - a deliberate solution for seven-digit TGIF talkgroups rather than silently creating ambiguous routing.

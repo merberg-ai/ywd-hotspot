@@ -4,6 +4,18 @@ This document describes the `dev-tgif` core foundation for running BrandMeister 
 
 This is experimental development work. TGIF is **off by default**, and upgrading an existing schema-6 hotspot to schema 7 does not enable a second network or change its normal BrandMeister routing.
 
+## Proven dual-network checkpoint
+
+Real-hardware acceptance passed on the Pi 5 simplex test hotspot using the shared MMDVM-Host + DMRGateway stack:
+
+- BrandMeister and TGIF authenticated simultaneously.
+- RF group destination `9990` reached BrandMeister Parrot and returned audio successfully.
+- RF group destination `5009990` was rewritten to TGIF `9990`, reached TGIF Parrot, and returned audio successfully through the reverse rewrite.
+- BrandMeister Parrot remained functional after TGIF was enabled.
+- TGIF password/config UI and polling guard were functional.
+
+This checkpoint proves the core routing architecture before adding richer dashboard presentation. Routing behavior below this checkpoint should remain unchanged unless a later change explicitly revises the network model.
+
 ## Design goals
 
 - MMDVM-Host remains the only modem/RF owner.

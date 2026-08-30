@@ -2,6 +2,7 @@
                      YWD-HOTSPOT
              Raspberry Pi DMR Hotspot Appliance
 ===============================================================
+Networks: BrandMeister + TGIF
 WebUI:    http://ywd-hotspot.local:8080/
 Status:   ywd-hotspotctl status
 Control:  sudo ywd-hotspotctl

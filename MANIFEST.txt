@@ -181,6 +181,7 @@ tools/mmdvm-runtime-marker-transport-smoke.py
 tools/oled-health-smoke.py
 tools/phase3j-stream-smoke.py
 tools/plugin-feature-runtime-smoke.py
+tools/rc4-hardening-smoke.py
 tools/settings-restore-plugin-smoke.py
 tools/source-oled-install-smoke.py
 tools/startup-theme-config-smoke.py

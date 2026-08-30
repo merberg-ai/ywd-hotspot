@@ -1,5 +1,5 @@
 [Unit]
-Description=YWD-Hotspot secure first-boot setup wizard
+Description=YWD-Hotspot first-boot setup wizard
 After=network-online.target ywd-network-manager.service ywd-dashboard.service
 Wants=network-online.target ywd-network-manager.service
 ConditionPathExists=!/var/lib/ywd-hotspot/setup-state.json

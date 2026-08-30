@@ -30,6 +30,23 @@ After the network-aware dashboard slice was installed on real hardware:
 
 Dashboard-aware checkpoint commit: `0a0c910da05e1a4edc77076a9925fb81e1dc3ea3`.
 
+## Proven unified Settings checkpoint
+
+The unified Settings transaction was then validated on the same Pi 5 test hotspot:
+
+- all TGIF routing, UI/admin, and dashboard-status smoke tests passed;
+- TGIF enable/master/port used the normal global Settings dirty state rather than a TGIF-specific apply control;
+- disabling TGIF with the ordinary `SAVE & APPLY` flow completed successfully while BrandMeister remained usable;
+- re-enabling TGIF with the same ordinary `SAVE & APPLY` flow completed successfully;
+- the stored TGIF security credential survived normal Settings saves and did not need to be re-entered;
+- BrandMeister Parrot passed after the disable/re-enable/apply cycle;
+- TGIF Parrot passed after the disable/re-enable/apply cycle;
+- the separate BM and TGIF status indicators continued to report correctly throughout the cycle.
+
+This is the preferred hardware-proven baseline for the current `dev-tgif` implementation.
+
+Unified Settings checkpoint commit: `9aad248932927bdc7b847e0ddbdcf8662f9ac6a3`.
+
 ## Design goals
 
 - MMDVM-Host remains the only modem/RF owner.

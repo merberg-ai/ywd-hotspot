@@ -30,13 +30,24 @@ def forbid(rel: str, *markers: str) -> None:
         assert marker not in data, f"{rel}: forbidden marker still present {marker!r}"
 
 
+def load_candidate_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def functional_config_save_check() -> None:
     """Prove redacted browser config cannot erase the stored TGIF credential."""
     sys.path.insert(0, str(LIB))
-    spec = importlib.util.spec_from_file_location("tgif_admin_smoke", LIB / "tgif_admin.py")
-    assert spec and spec.loader
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    # Preload the candidate modules under their production import names. This
+    # prevents tgif_admin.py's /opt production path from making a /tmp smoke run
+    # accidentally exercise the already-installed appliance copies instead.
+    load_candidate_module("config_model", LIB / "config_model.py")
+    load_candidate_module("admin", LIB / "admin.py")
+    mod = load_candidate_module("tgif_admin_smoke", LIB / "tgif_admin.py")
 
     base = mod.config_model.defaults()
     base["station"].update({"callsign": "KJ6YWD", "base_dmr_id": "3196104", "essid": "02"})

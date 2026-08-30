@@ -35,7 +35,7 @@ _RELEASE_UI_BOOTSTRAP = b"""
   };
   loadReleaseUi('/update-branch.js?v=rc3-wire1');
   loadReleaseUi('/modem-ui.js?v=rc3-wire1');
-  loadReleaseUi('/tgif-ui.js?v=dev-tgif3');
+  loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
 })();
 """
 
@@ -124,6 +124,7 @@ def wrap_handler(base):
                 "/update-branch.js": ("update-branch.js", "application/javascript; charset=utf-8"),
                 "/modem-ui.js": ("modem-ui.js", "application/javascript; charset=utf-8"),
                 "/tgif-ui.js": ("tgif-ui.js", "application/javascript; charset=utf-8"),
+                "/control-theme.css": ("control-theme.css", "text/css; charset=utf-8"),
                 "/update.css": ("update.css", "text/css; charset=utf-8"),
                 "/update-branch.css": ("update-branch.css", "text/css; charset=utf-8"),
                 "/modem-ui.css": ("modem-ui.css", "text/css; charset=utf-8"),

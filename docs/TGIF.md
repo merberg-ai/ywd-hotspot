@@ -114,6 +114,8 @@ Both require an unlocked WebUI control session. Sudo access is limited to the ex
 
 The TGIF password change is snapshotted and audited without recording the password. If TGIF is disabled, changing the password does not bounce the active BrandMeister connection. If TGIF is already enabled, changing the password reapplies the DMR network stack so TGIF reconnects with the new credential.
 
+TGIF master/port/enable controls maintain a browser-local unsaved state. Once one of those fields is edited, normal dashboard status polling must not overwrite the in-progress values with the last saved configuration. The card shows `UNSAVED` until `SAVE & APPLY TGIF` succeeds, at which point it resumes synchronization with canonical configuration.
+
 The shared Save & Apply reconciler now keeps DMRGateway running whenever **either** BrandMeister or TGIF is enabled. It still does not start a stopped MMDVM/RF stack just because a network was enabled in configuration.
 
 ## First test sequence
@@ -135,7 +137,7 @@ Use a non-production hotspot for this experimental branch.
 
 `tools/tgif-routing-smoke.py` covers schema migration, credential redaction/validation, simplex/duplex generated rules, namespace isolation, and TGIF-off compatibility without requiring RF or network access.
 
-`tools/tgif-ui-smoke.py` checks the experimental UI bootstrap, authenticated API routes, exact sudo allowlist, privileged helper wiring, credential redaction markers, and the BM-or-TGIF DMRGateway reconciliation rule.
+`tools/tgif-ui-smoke.py` checks the experimental UI bootstrap, authenticated API routes, exact sudo allowlist, privileged helper wiring, credential redaction markers, the BM-or-TGIF DMRGateway reconciliation rule, and the polling guard that preserves unsaved TGIF controls.
 
 ## Next slices
 

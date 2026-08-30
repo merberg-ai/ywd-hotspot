@@ -95,7 +95,8 @@ def wrap_handler(base):
                 theme_css = _asset_bytes("startup-themes.css")
                 branch_css = _asset_bytes("update-branch.css")
                 modem_css = _asset_bytes("modem-ui.css")
-                if not base_css or not branch_css or not modem_css:
+                control_css = _asset_bytes("control-theme.css")
+                if not base_css or not branch_css or not modem_css or not control_css:
                     self.send_json({"error": "style asset unavailable"}, 404)
                     return
                 body = base_css
@@ -103,6 +104,7 @@ def wrap_handler(base):
                     body += b"\n\n/* startup themes: first-paint bundle */\n" + theme_css
                 body += b"\n\n/* software channel UI */\n" + branch_css
                 body += b"\n\n/* MMDVM inventory UI */\n" + modem_css
+                body += b"\n\n/* dashboard-wide interactive control theme */\n" + control_css
                 self.send_bytes(200, body, "text/css; charset=utf-8", cache="no-cache")
                 return
             if path == "/app.js":

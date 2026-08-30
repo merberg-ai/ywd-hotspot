@@ -1,8 +1,13 @@
 'use strict';
 (() => {
   const RF_PREFIX = 5_000_000;
+  const TGIF_FAVORITES_KEY = 'ywd.tgifFavorites.v1';
   let installed = false;
   let passwordModal = null;
+  let directoryInstalled = false;
+  let directoryMeta = null;
+  let searchTimer = null;
+  let lastSearchRows = [];
 
   const el = id => document.getElementById(id);
   const safe = value => String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -196,6 +201,211 @@
     output.textContent = `Radio group-call destination: ${RF_PREFIX + tg}`;
   }
 
+  function favorites() {
+    try {
+      const rows = JSON.parse(localStorage.getItem(TGIF_FAVORITES_KEY) || '[]');
+      return Array.isArray(rows)
+        ? rows.filter(row => Number.isInteger(Number(row?.id))).map(row => ({
+            id: Number(row.id),
+            name: String(row.name || ''),
+            rf_talkgroup: row.rf_talkgroup == null ? null : Number(row.rf_talkgroup),
+            supported: row.supported !== false,
+          }))
+        : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveFavorites(rows) {
+    localStorage.setItem(TGIF_FAVORITES_KEY, JSON.stringify(rows.slice(0, 100)));
+  }
+
+  function favoriteIds() {
+    return new Set(favorites().map(row => Number(row.id)));
+  }
+
+  function toggleFavorite(row) {
+    const rows = favorites();
+    const id = Number(row.id);
+    const index = rows.findIndex(item => Number(item.id) === id);
+    if (index >= 0) rows.splice(index, 1);
+    else rows.push({
+      id,
+      name: String(row.name || ''),
+      rf_talkgroup: row.rf_talkgroup == null ? null : Number(row.rf_talkgroup),
+      supported: row.supported !== false,
+    });
+    saveFavorites(rows);
+    renderSearch(lastSearchRows);
+    renderFavorites();
+  }
+
+  async function directoryApi(params) {
+    const url = new URL('/api/tgif/talkgroups/search', location.origin);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== '' && value != null) url.searchParams.set(key, String(value));
+    });
+    const response = await fetch(url, {cache:'no-store', credentials:'same-origin'});
+    const data = await response.json().catch(() => ({error:`HTTP ${response.status}`}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    directoryMeta = data;
+    return data;
+  }
+
+  function directoryMetaText() {
+    if (!directoryMeta) return 'directory not loaded';
+    const count = Number(directoryMeta.directory_count || 0);
+    const cached = directoryMeta.cached_at && typeof ago === 'function' ? ago(directoryMeta.cached_at) : 'cached';
+    return `${count} TGs · ${directoryMeta.stale ? 'stale cache' : 'cached'} · ${cached}`;
+  }
+
+  async function copyRadioTalkgroup(row) {
+    if (!row?.supported || row.rf_talkgroup == null) {
+      notify('This TGIF talkgroup is outside the current 5xxxxxx routing range', true);
+      return;
+    }
+    const text = String(row.rf_talkgroup);
+    try {
+      if (typeof copyText === 'function') await copyText(text);
+      else if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+      else throw new Error('Clipboard helper unavailable');
+      notify(`Copied RF TG ${text}`);
+    } catch (_) {
+      notify(`Radio destination: ${text}`);
+    }
+  }
+
+  function renderSearch(rows) {
+    lastSearchRows = Array.isArray(rows) ? rows : [];
+    const body = el('tgifSearchRows');
+    if (!body) return;
+    const fav = favoriteIds();
+    body.innerHTML = lastSearchRows.length ? lastSearchRows.map((row, index) => {
+      const supported = row.supported !== false && row.rf_talkgroup != null;
+      const rf = supported ? row.rf_talkgroup : 'unsupported';
+      const note = supported ? '' : '<small class="hint">current routing supports TGIF 1–999999</small>';
+      return `<tr>
+        <td class="tg-id">${safe(row.id)}</td>
+        <td>${safe(row.name || '')}</td>
+        <td><span class="tg-id">${safe(rf)}</span>${note}</td>
+        <td><button class="btn tiny tgif-star" type="button" data-tgif-fav="${index}" title="${fav.has(Number(row.id)) ? 'Remove favorite' : 'Add favorite'}">${fav.has(Number(row.id)) ? '★' : '☆'}</button></td>
+        <td>${supported ? `<button class="btn tiny" type="button" data-tgif-copy="${index}">COPY RF TG</button>` : '<span class="hint">—</span>'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="5">No matching TGIF talkgroups.</td></tr>';
+    body.querySelectorAll('[data-tgif-fav]').forEach(button => {
+      button.onclick = () => toggleFavorite(lastSearchRows[Number(button.dataset.tgifFav)]);
+    });
+    body.querySelectorAll('[data-tgif-copy]').forEach(button => {
+      button.onclick = () => copyRadioTalkgroup(lastSearchRows[Number(button.dataset.tgifCopy)]);
+    });
+    if (el('tgifDirectoryMeta')) el('tgifDirectoryMeta').textContent = directoryMetaText();
+  }
+
+  function renderFavorites() {
+    const host = el('tgifFavoriteRows');
+    if (!host) return;
+    const rows = favorites().sort((a, b) => a.id - b.id);
+    host.innerHTML = rows.length ? rows.map((row, index) => {
+      const supported = row.supported !== false && row.rf_talkgroup != null;
+      return `<div class="row">
+        <span><b>${safe(row.id)}</b>${row.name ? `<br><small>${safe(row.name)}</small>` : ''}</span>
+        <span class="tg-row-actions">${supported ? `<button class="btn tiny" type="button" data-tgif-fav-copy="${index}">RF ${safe(row.rf_talkgroup)}</button>` : '<span class="hint">routing limit</span>'}<button class="btn tiny danger" type="button" data-tgif-fav-remove="${index}">×</button></span>
+      </div>`;
+    }).join('') : '<div class="hint">No TGIF favorites saved in this browser.</div>';
+    host.querySelectorAll('[data-tgif-fav-copy]').forEach(button => {
+      button.onclick = () => copyRadioTalkgroup(rows[Number(button.dataset.tgifFavCopy)]);
+    });
+    host.querySelectorAll('[data-tgif-fav-remove]').forEach(button => {
+      button.onclick = () => toggleFavorite(rows[Number(button.dataset.tgifFavRemove)]);
+    });
+  }
+
+  async function hydrateFavorites() {
+    const ids = favorites().map(row => row.id).filter(Number.isInteger);
+    if (!ids.length) return renderFavorites();
+    try {
+      const data = await directoryApi({ids:ids.join(','), limit:100});
+      const byId = new Map((data.results || []).map(row => [Number(row.id), row]));
+      const hydrated = favorites().map(row => byId.get(Number(row.id)) || row);
+      saveFavorites(hydrated);
+    } catch (_) {}
+    renderFavorites();
+  }
+
+  async function searchDirectory(refresh=false) {
+    const input = el('tgifDirectorySearch');
+    const body = el('tgifSearchRows');
+    const q = input?.value.trim() || '';
+    if (!q) {
+      if (body) body.innerHTML = '<tr><td colspan="5">Search by TGIF talkgroup number or name.</td></tr>';
+      return;
+    }
+    if (body) body.innerHTML = '<tr><td colspan="5">Searching TGIF directory…</td></tr>';
+    try {
+      const data = await directoryApi({q, limit:50, refresh:refresh ? 1 : 0});
+      renderSearch(data.results || []);
+      if (refresh) notify(`TGIF directory refreshed · ${data.directory_count || 0} talkgroups`);
+    } catch (err) {
+      if (body) body.innerHTML = `<tr><td colspan="5">${safe(err.message)}</td></tr>`;
+      notify(err.message, true);
+    }
+  }
+
+  function installDirectoryTools() {
+    if (directoryInstalled) return true;
+    const page = el('talkgroups');
+    if (!page) return false;
+    const bmSearch = Array.from(page.querySelectorAll('article.card')).find(card =>
+      card.querySelector(':scope > .card-title')?.textContent?.includes('SEARCH BRANDMEISTER DIRECTORY')
+    );
+    if (!bmSearch) return false;
+
+    const searchCard = document.createElement('article');
+    searchCard.className = 'card';
+    searchCard.id = 'tgifDirectoryCard';
+    searchCard.innerHTML = `
+      <div class="card-title title-row"><span>SEARCH TGIF DIRECTORY</span><span id="tgifDirectoryMeta" class="hint">directory not loaded</span></div>
+      <p class="hint">TGIF does not use BrandMeister-style static talkgroups. Search the TGIF directory here, then program/use the shown RF destination. YWD removes the RF 5-prefix before sending the call to TGIF.</p>
+      <div class="field inline tgif-directory-search"><label>SEARCH TG ID OR NAME</label><input id="tgifDirectorySearch" placeholder="TGIF, DX, 31665…" maxlength="80"><button class="btn" id="tgifDirectorySearchBtn" type="button">SEARCH</button><button class="btn ctl" id="tgifDirectoryRefresh" type="button">REFRESH DIRECTORY</button></div>
+      <div class="tablewrap"><table><thead><tr><th>TGIF TG</th><th>NAME</th><th>RADIO TG</th><th>FAVORITE</th><th>ACTION</th></tr></thead><tbody id="tgifSearchRows"><tr><td colspan="5">Search by TGIF talkgroup number or name.</td></tr></tbody></table></div>`;
+    bmSearch.insertAdjacentElement('afterend', searchCard);
+
+    const favoriteCard = document.createElement('article');
+    favoriteCard.className = 'card';
+    favoriteCard.id = 'tgifFavoritesCard';
+    favoriteCard.innerHTML = `
+      <div class="card-title">TGIF FAVORITES</div>
+      <p class="hint">Favorites are saved in this browser. They do not change network routing or hotspot configuration.</p>
+      <div id="tgifFavoriteRows"></div>`;
+    searchCard.insertAdjacentElement('afterend', favoriteCard);
+
+    el('tgifDirectorySearchBtn').onclick = () => searchDirectory(false);
+    el('tgifDirectoryRefresh').onclick = () => searchDirectory(true);
+    el('tgifDirectorySearch').oninput = () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => searchDirectory(false), 280);
+    };
+    el('tgifDirectorySearch').onkeydown = event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        searchDirectory(false);
+      }
+    };
+
+    const talkgroupTab = document.querySelector('.tabs [data-tab="talkgroups"]');
+    if (talkgroupTab) talkgroupTab.addEventListener('click', () => {
+      renderFavorites();
+      hydrateFavorites();
+      setTimeout(() => el('tgifDirectorySearch')?.focus(), 80);
+    });
+
+    directoryInstalled = true;
+    renderFavorites();
+    hydrateFavorites();
+    return true;
+  }
+
   function sync() {
     const cfg = currentConfig();
     if (!cfg || !el('tgifSettingsCard')) return;
@@ -214,6 +424,7 @@
     ['tgifEnabled','tgifMaster','tgifPort','tgifChangePassword'].forEach(id => {
       const node = el(id); if (node) node.disabled = locked;
     });
+    if (el('tgifDirectoryRefresh')) el('tgifDirectoryRefresh').disabled = locked;
   }
 
   function install() {
@@ -262,16 +473,17 @@
     }
 
     installed = true;
+    installDirectoryTools();
     sync();
     if (typeof state !== 'undefined' && state) renderNetworkPresentation(state);
     return true;
   }
 
-  const timer = setInterval(() => {
-    if (install()) {
-      sync();
-      clearInterval(timer);
-    }
+  const settingsTimer = setInterval(() => {
+    if (install()) clearInterval(settingsTimer);
   }, 100);
-  setTimeout(() => clearInterval(timer), 15000);
+  const directoryTimer = setInterval(() => {
+    if (installDirectoryTools()) clearInterval(directoryTimer);
+  }, 120);
+  setTimeout(() => { clearInterval(settingsTimer); clearInterval(directoryTimer); }, 15000);
 })();

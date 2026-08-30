@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "lib"
 sys.path.insert(0, str(LIB))
+
+# Exercise the production default rather than inheriting a developer override.
+os.environ.pop("YWD_RSSI_MAPPING_FILE", None)
 
 spec = importlib.util.spec_from_file_location("ywd_generate_config", LIB / "generate-config.py")
 if spec is None or spec.loader is None:
@@ -31,6 +35,12 @@ config = {
         "master": "3103.master.brandmeister.network",
         "enabled": True,
     },
+    "tgif": {
+        "master": "tgif.network",
+        "port": 62031,
+        "enabled": False,
+        "password": "",
+    },
 }
 
 mmdvm, gateway, _ = mod.render(config)
@@ -52,12 +62,16 @@ def section(text: str, name: str) -> dict[str, str]:
 
 mmdvm_mqtt = section(mmdvm, "MQTT")
 gateway_mqtt = section(gateway, "MQTT")
+modem = section(mmdvm, "Modem")
 
 assert mmdvm_mqtt.get("Host") == "127.0.0.1", mmdvm_mqtt
 assert gateway_mqtt.get("Address") == "127.0.0.1", gateway_mqtt
 assert mmdvm_mqtt.get("Port") == "18883", mmdvm_mqtt
 assert gateway_mqtt.get("Port") == "18883", gateway_mqtt
+assert modem.get("RSSIMappingFile") == "/etc/ywd-hotspot/mmdvm-hs-rssi.dat", modem
+assert "/tmp/ywd-config-" not in modem.get("RSSIMappingFile", ""), modem
 
 print("[OK] MMDVM-Host uses private MQTT 127.0.0.1:18883")
 print("[OK] DMRGateway uses private MQTT 127.0.0.1:18883")
 print("[OK] telemetry publishers share the YWD loopback broker")
+print("[OK] RSSI mapping always references persistent /etc/ywd-hotspot state")

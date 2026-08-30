@@ -397,7 +397,6 @@
     if (talkgroupTab) talkgroupTab.addEventListener('click', () => {
       renderFavorites();
       hydrateFavorites();
-      setTimeout(() => el('tgifDirectorySearch')?.focus(), 80);
     });
 
     directoryInstalled = true;

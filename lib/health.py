@@ -16,6 +16,8 @@ UNITS = [
     "ywd-headless-oled.service", "ywd-oled.service", "ywd-activity.service",
     "ywd-mqtt.service", "ssh.service", "ywd-dmrid-update.timer",
 ]
+CFG = Path(os.environ.get("YWD_CONFIG", "/etc/ywd-hotspot/config.json"))
+OLED_HEALTH = Path(os.environ.get("YWD_OLED_HEALTH", "/var/lib/ywd-hotspot/oled-health.json"))
 
 
 def run(args, timeout=2):
@@ -30,6 +32,14 @@ def run(args, timeout=2):
 def _read(path, default=""):
     try:
         return Path(path).read_text().strip()
+    except Exception:
+        return default
+
+
+def _json(path, default=None):
+    try:
+        obj = json.loads(Path(path).read_text())
+        return obj
     except Exception:
         return default
 
@@ -154,6 +164,48 @@ def services():
     return result
 
 
+def oled_runtime(service_rows=None):
+    """Combine systemd state with the OLED owner's own device-open report."""
+    service_rows = service_rows if isinstance(service_rows, dict) else services()
+    owner = "ywd-headless-oled.service" if run(["systemctl", "cat", "ywd-headless-oled.service"], 1) else "ywd-oled.service"
+    svc = service_rows.get(owner, {}) if isinstance(service_rows, dict) else {}
+    cfg = _json(CFG, {})
+    display = cfg.get("display", {}) if isinstance(cfg, dict) else {}
+    configured = bool(display.get("enabled", True))
+    try: bus = int(display.get("i2c_bus", 1))
+    except Exception: bus = 1
+    address = str(display.get("address", "0x3c")).lower()
+    report = _json(OLED_HEALTH, {})
+    report = report if isinstance(report, dict) else {}
+    updated = report.get("updated_at")
+    try: age_s = max(0.0, time.time() - float(updated)) if updated is not None else None
+    except Exception: age_s = None
+
+    active = str(svc.get("active") or "unknown")
+    if not configured:
+        state = "disabled"
+    elif active != "active":
+        state = "service-down"
+    elif report.get("state"):
+        state = str(report.get("state"))
+    else:
+        state = "unknown"
+
+    return {
+        "configured": configured,
+        "owner": owner,
+        "service_active": active,
+        "service_enabled": str(svc.get("enabled") or "unknown"),
+        "state": state,
+        "device_open": bool(report.get("device_open")) if active == "active" else False,
+        "bus": int(report.get("bus", bus)) if str(report.get("bus", bus)).isdigit() else bus,
+        "address": str(report.get("address") or address).lower(),
+        "updated_at": updated,
+        "age_s": round(age_s, 1) if age_s is not None else None,
+        "error": str(report.get("error") or "")[:240] or None,
+    }
+
+
 def kernel_warnings():
     txt = run(["journalctl", "-k", "-p", "warning..alert", "--since", "-6 hours", "--no-pager", "-o", "cat"], 3)
     lines = [x for x in txt.splitlines() if x.strip()]
@@ -174,11 +226,12 @@ def collect(include_previous=True):
     except Exception: load = [0,0,0]
     try: uptime = float(_read("/proc/uptime", "0").split()[0])
     except Exception: uptime = 0
+    svc = services()
     return {
         "hostname": socket.gethostname(), "boot_id": boot_id(), "boot_time": boot_time_epoch(),
         "uptime_s": uptime, "temperature_c": temp_c(), "load": load,
         "memory": memory(), "disk": disk("/"), "wifi": wifi(), "throttled": throttled(),
-        "services": services(), "journal_disk": journal_disk(), "kernel_warnings": kernel_warnings(),
+        "services": svc, "oled": oled_runtime(svc), "journal_disk": journal_disk(), "kernel_warnings": kernel_warnings(),
         "previous_boot": previous_boot() if include_previous else None,
     }
 

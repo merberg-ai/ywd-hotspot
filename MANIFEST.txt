@@ -46,6 +46,7 @@ docs/RC3-STARTUP-ANIMATION-THEMES.md
 docs/RC3-TESTING.md
 docs/RC3-UI-CSP-STYLING.md
 docs/RC3-UI-POLISH.md
+docs/RC4-CHANGE-LIST.md
 docs/RC4-DEV-CHECKPOINT-2026-08-30.md
 docs/RELEASE-NOTES-0.2.0-rc1.md
 docs/RELEASE-NOTES-0.2.0-rc2.md
@@ -183,6 +184,7 @@ tools/oled-health-smoke.py
 tools/phase3j-stream-smoke.py
 tools/plugin-feature-runtime-smoke.py
 tools/rc4-hardening-smoke.py
+tools/rc4-ui-setup-smoke.py
 tools/settings-backup-tgif-smoke.py
 tools/settings-restore-plugin-smoke.py
 tools/source-oled-install-smoke.py

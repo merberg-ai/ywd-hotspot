@@ -47,7 +47,6 @@ CACHE = {"services_at": 0.0, "services": {}, "gw_at": 0.0, "gw": [], "bm_at": 0.
          "bm_profile": None, "bm_error": None, "health_at": 0.0, "health": None, "brief_at": 0.0, "brief": None}
 UNITS = ["ywd-mmdvmhost.service", "ywd-dmrgateway.service", "ywd-dashboard.service", "ywd-activity.service"]
 KNOWN_TG = {91:"Worldwide", 93:"North America", 3100:"USA Nationwide", 9990:"Parrot"}
-OLED_UNIT = None
 
 
 def run(args, timeout=3):
@@ -62,10 +61,11 @@ def unit_exists(unit):
 
 
 def oled_unit():
-    global OLED_UNIT
-    if OLED_UNIT is None:
-        OLED_UNIT = "ywd-headless-oled.service" if unit_exists("ywd-headless-oled.service") else "ywd-oled.service"
-    return OLED_UNIT
+    # Do not cache OLED ownership permanently. Factory-image updates can
+    # reconcile ywd-oled.service -> ywd-headless-oled.service while the
+    # dashboard process remains alive, so each service-cache refresh must
+    # resolve the authoritative owner from current systemd state.
+    return "ywd-headless-oled.service" if unit_exists("ywd-headless-oled.service") else "ywd-oled.service"
 
 
 def raw_cfg():

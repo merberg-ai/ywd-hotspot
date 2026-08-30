@@ -42,13 +42,16 @@ def ok(name, cond):
 
 def main():
     default = config_model.normalize(candidate())
-    ok("RF Sweep is the canonical default", default["web"]["loading_animation"] == "rf_sweep")
+    ok("Digital Waterfall is the canonical fresh default", default["web"]["loading_animation"] == "digital_waterfall")
 
     for theme in sorted(THEMES):
         normalized = config_model.normalize(candidate(theme))
         ok(f"accepted theme {theme}", normalized["web"]["loading_animation"] == theme)
         public = config_model.public(normalized)
         ok(f"public config preserves {theme}", public["web"]["loading_animation"] == theme)
+
+    existing = config_model.normalize(candidate("rf_sweep"))
+    ok("existing explicit RF Sweep choice is preserved", existing["web"]["loading_animation"] == "rf_sweep")
 
     try:
         config_model.normalize(candidate("not-a-real-theme"))

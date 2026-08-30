@@ -18,6 +18,18 @@ This checkpoint proves the core routing architecture before adding richer dashbo
 
 Checkpoint commit: `bed1a521e345de0b9e6c931b202f4fbda771ac84`.
 
+## Proven dashboard-aware checkpoint
+
+After the network-aware dashboard slice was installed on real hardware:
+
+- separate BM and TGIF status-strip indicators reported their links independently;
+- disabling and re-enabling TGIF updated the TGIF indicator correctly without disturbing BrandMeister;
+- BrandMeister Parrot passed after the disable/re-enable cycle;
+- TGIF Parrot passed after the disable/re-enable cycle;
+- the underlying routing rules remained unchanged from the routing checkpoint.
+
+Dashboard-aware checkpoint commit: `0a0c910da05e1a4edc77076a9925fb81e1dc3ea3`.
+
 ## Design goals
 
 - MMDVM-Host remains the only modem/RF owner.
@@ -112,29 +124,33 @@ The experimental branch adds a `TGIF NETWORK — EXPERIMENTAL` card to Settings.
 - UDP port;
 - network enable/disable toggle;
 - TGIF security-password status and a separate password-change dialog;
-- an explicit `SAVE & APPLY TGIF` action;
 - a talkgroup helper that converts a real TGIF talkgroup to the radio-side `5xxxxxx` destination.
 
-TGIF settings do not borrow the BrandMeister secret controls. Browser-visible configuration contains only `password_configured`; the actual TGIF password is never returned to JavaScript.
+TGIF enable/master/port are ordinary Settings fields. Editing any of them marks the same global Settings form as unsaved, participates in the normal leave-page warning, and is saved through the existing `SAVE` or `SAVE & APPLY` controls. There is no separate TGIF Save & Apply button.
 
-The dashboard talks to two authenticated endpoints:
+The normal browser configuration remains redacted. `config-save` on `dev-tgif` is routed through `lib/tgif_admin.py`, which delegates the existing sections to the core merger and accepts only TGIF `enabled`, `master`, and `port`. Browser-visible `password` and `password_configured` placeholders are explicitly ignored, preserving the stored TGIF credential during ordinary Settings saves.
+
+The TGIF security password remains a separate privileged action. The current dashboard uses:
 
 ```text
-POST /api/tgif/configure
 POST /api/tgif/password
 ```
 
-Both require an unlocked WebUI control session. Sudo access is limited to the exact `tgif-configure` and `set-tgif-password` dispatcher actions, which are handled by `lib/tgif_admin.py`.
+The older experimental endpoint below remains available temporarily for compatibility with prior `dev-tgif` dashboard revisions, but the current UI does not call it:
 
-The TGIF password change is snapshotted and audited without recording the password. If TGIF is disabled, changing the password does not bounce the active BrandMeister connection. If TGIF is already enabled, changing the password reapplies the DMR network stack so TGIF reconnects with the new credential.
+```text
+POST /api/tgif/configure
+```
 
-TGIF master/port/enable controls maintain a browser-local unsaved state. Once one of those fields is edited, normal dashboard status polling must not overwrite the in-progress values with the last saved configuration. The card shows `UNSAVED` until `SAVE & APPLY TGIF` succeeds, at which point it resumes synchronization with canonical configuration.
+Both routes require an unlocked WebUI control session. The TGIF password change is snapshotted and audited without recording the password. If TGIF is disabled, changing the password does not bounce the active BrandMeister connection. If TGIF is already enabled, changing the password reapplies the DMR network stack so TGIF reconnects with the new credential.
+
+Because TGIF fields now use the global Settings dirty state, normal dashboard polling does not overwrite in-progress TGIF edits. Runtime status continues to reflect the currently applied link until the operator uses the normal Settings Save & Apply action.
 
 The shared Save & Apply reconciler keeps DMRGateway running whenever **either** BrandMeister or TGIF is enabled. It still does not start a stopped MMDVM/RF stack just because a network was enabled in configuration.
 
 ## Dashboard network presentation
 
-The dashboard presentation layer now treats BM and TGIF as separate runtime links without changing DMRGateway routing or the activity collector.
+The dashboard presentation layer treats BM and TGIF as separate runtime links without changing DMRGateway routing or the activity collector.
 
 `lib/dashboard_tgif.py` projects the existing journal/config/activity state into dashboard-only metadata:
 
@@ -166,23 +182,24 @@ Use a non-production hotspot for this experimental branch.
 3. Unlock WebUI controls and open Settings.
 4. Set the TGIF security password while TGIF remains disabled.
 5. Verify BrandMeister remains connected after the password save.
-6. Enable TGIF and use `SAVE & APPLY TGIF`.
-7. Verify DMRGateway reports successful connections to both BrandMeister and TGIF.
-8. Verify a normal BrandMeister destination still reaches BrandMeister.
-9. Key radio destination `5031665` and verify DMRGateway sends TGIF destination `31665` only to TGIF.
-10. Verify an inbound TGIF call to `31665` is emitted to RF as `5031665`.
-11. Verify no TGIF call is forwarded to BrandMeister and no BrandMeister group call in the reserved `5xxxxxx` namespace is emitted to RF.
-12. Disable TGIF and apply; verify BrandMeister returns to its original pass-all group behavior.
+6. Toggle TGIF enabled; verify the normal Settings unsaved indicator appears and the toggle remains stable during status polling.
+7. Use the ordinary Settings `SAVE & APPLY` control.
+8. Verify DMRGateway reports successful connections to both BrandMeister and TGIF.
+9. Verify a normal BrandMeister destination still reaches BrandMeister.
+10. Key radio destination `5031665` and verify DMRGateway sends TGIF destination `31665` only to TGIF.
+11. Verify an inbound TGIF call to `31665` is emitted to RF as `5031665`.
+12. Verify no TGIF call is forwarded to BrandMeister and no BrandMeister group call in the reserved `5xxxxxx` namespace is emitted to RF.
+13. Disable TGIF using the same normal Settings Save & Apply flow; verify BrandMeister returns to its original pass-all group behavior.
 
 `tools/tgif-routing-smoke.py` covers schema migration, credential redaction/validation, simplex/duplex generated rules, namespace isolation, and TGIF-off compatibility without requiring RF or network access.
 
-`tools/tgif-ui-smoke.py` checks the experimental UI bootstrap, authenticated API routes, exact sudo allowlist, privileged helper wiring, credential redaction markers, the BM-or-TGIF DMRGateway reconciliation rule, polling guard, and dashboard presentation wiring.
+`tools/tgif-ui-smoke.py` checks the unified Settings transaction, TGIF credential separation, dispatcher/sudo wiring, polling guard, and dashboard presentation wiring. It also fails if a TGIF-specific Save & Apply control or browser call to `/api/tgif/configure` is reintroduced.
 
 `tools/tgif-status-smoke.py` exercises independent BM/TGIF journal-state parsing and verifies that RF `5009990` projects to `TGIF · TG 9990 · Parrot` while ordinary RF `9990` remains `BM · TG 9990 · Parrot`.
 
 ## Next slices
 
-With core routing, safe Settings controls, and network-aware dashboard presentation in place, follow-on work can add:
+With core routing, unified Settings controls, and network-aware dashboard presentation in place, follow-on work can add:
 
 - richer TGIF talkgroup directory/search support rather than only numeric translation;
 - a signed TGIF UI plugin for richer TGIF-specific features without giving plugin code direct modem or arbitrary network access;

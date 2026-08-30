@@ -67,7 +67,7 @@ def main() -> int:
         'network="tgif"',
         'network="brandmeister"',
         '"rf_id"',
-        '"network_id"',
+        "network_id=network_id",
         '"TGIF · TG {network_id}"',
         'base["tgif"]',
         "annotate_activity",

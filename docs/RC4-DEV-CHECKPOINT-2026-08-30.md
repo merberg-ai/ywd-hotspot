@@ -18,7 +18,42 @@ Accepted results:
 - RSSI map ownership/mode is suitable for the appliance runtime (`root:ywd-hotspot`, `0640`).
 - YWD-Hotspot OS uses `ywd-headless-oled.service` as the authoritative OLED owner; legacy `ywd-oled.service` remains inactive.
 - OLED runtime health reported `state=open`, `device_open=true`, bus `1`, address `0x3c`, and no error.
-- `/api/status` and `/api/health` now agree on the authoritative OLED owner after removing the stale dashboard owner cache.
+- `/api/status` and `/api/health` agree on the authoritative OLED owner after removing the stale dashboard owner cache.
+- the consolidated RC4 hardening smoke passed on the mature Pi Zero, including RSSI, source-install OLED/I2C, truthful OLED health, SSH policy, encrypted TGIF/BM backup round trip, TGIF regressions, and plugin restore/runtime regressions.
+
+## Live SSH policy acceptance
+
+The mature appliance reports a managed, active SSH service with the expected existing normal account and password-or-key policy:
+
+```text
+active                  true
+enabled_at_boot         true
+port                    22
+auth_mode               password+key
+password_authentication true
+root_login              false
+policy_managed          true
+login_user              ywd
+login_user_exists       true
+password_status         set
+authorized_key_count    7
+```
+
+Effective `sshd -T` policy on the appliance:
+
+```text
+permitrootlogin no
+pubkeyauthentication yes
+passwordauthentication yes
+kbdinteractiveauthentication no
+permitemptypasswords no
+allowusers ywd
+authenticationmethods any
+```
+
+`authenticationmethods any` is expected for password-or-key mode: no extra multi-factor method chain is imposed, while the explicitly enabled password and public-key mechanisms remain available and keyboard-interactive/root login remain disabled.
+
+The source-only SSH smoke also verifies the separate key-only contract. A final client-side acceptance can exercise one fresh password login and one fresh key login from a second terminal while preserving the current administrative session.
 
 ## RC4 hardening implemented
 
@@ -79,11 +114,11 @@ The smoke is intentionally read-only with respect to the managed source checkout
 
 Before RC4 freeze:
 
-1. run the extended RC4 hardening smoke on the mature Pi Zero;
-2. perform live SSH acceptance for key-only and password-or-key behavior without changing the security model;
-3. perform a real encrypted settings export/preview/restore preservation test covering TGIF, BrandMeister, and installed plugin intent;
-4. verify normal update preserves SSH/config/plugin/network state;
-5. after planned RC4 feature/UI work is complete, freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
+1. optionally complete client-side SSH acceptance with one fresh password login and one fresh public-key login from a second terminal;
+2. perform a real encrypted settings export/preview/restore preservation test covering TGIF, BrandMeister, and installed plugin intent;
+3. verify normal update preserves SSH/config/plugin/network state;
+4. complete the additional planned RC4 feature/UI work;
+5. freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
 6. test the published RC3 -> frozen RC4 updater path;
 7. build and physically accept the exact RC4 factory image before publication.
 

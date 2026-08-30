@@ -3,10 +3,11 @@
 
 No live YWD files or services are touched. A synthetic canonical config is
 encrypted into .ywdsettings v1, authenticated/decrypted, normalized, and checked
-for exact TGIF credential preservation.
+for exact TGIF credential preservation plus a redacted human preview.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -54,6 +55,16 @@ assert int(tgif["port"]) == 62031
 assert tgif["password"] == "tgif-smoke-secret"
 assert brandmeister["password"] == "bm-smoke-secret"
 
+preview = settings_backup.preview(restored)
+assert preview["tgif_enabled"] is True
+assert preview["tgif_master"] == "tgif.network"
+assert int(preview["tgif_port"]) == 62031
+assert preview["tgif_password_configured"] is True
+assert preview["hotspot_password_configured"] is True
+preview_text = json.dumps(preview, sort_keys=True)
+assert "tgif-smoke-secret" not in preview_text
+assert "bm-smoke-secret" not in preview_text
+
 try:
     settings_backup.decrypt_payload(blob, "wrong-passphrase-for-smoke")
 except settings_backup.SettingsBackupError:
@@ -63,5 +74,6 @@ else:
 
 print("[OK] encrypted .ywdsettings round trip preserves TGIF enabled/master/port/password")
 print("[OK] BrandMeister credential survives the same canonical-config round trip")
+print("[OK] redacted restore preview exposes TGIF intent without network passwords")
 print("[OK] network credentials are not present as plaintext in the encrypted envelope")
 print("[OK] wrong backup passphrase fails authentication before restore")

@@ -224,12 +224,86 @@ fi
 systemctl restart systemd-journald.service || true
 
 systemctl enable --now ywd-activity.service ywd-dashboard.service ywd-dmrid-update.timer
-OLED_ENABLED="$(python3 - <<'PY'
-import json; print(1 if json.load(open('/etc/ywd-hotspot/config.json')).get('display',{}).get('enabled',True) else 0)
+
+# Source installs do not get the pi-gen headless stage, so make I2C boot
+# enablement explicit here. If this changes the boot configuration, do not
+# pretend a missing /dev/i2c-* device or OLED is a hardware failure: the Pi
+# must reboot before the controller becomes available.
+read -r OLED_ENABLED OLED_BUS OLED_ADDR < <(python3 - <<'PY'
+import json
+c=json.load(open('/etc/ywd-hotspot/config.json')); d=c.get('display',{})
+print(1 if d.get('enabled',True) else 0, int(d.get('i2c_bus',1)), str(d.get('address','0x3c')).lower())
 PY
-)"
-OLED_SCAN="$(i2cdetect -y 1 2>/dev/null || true)"
-if [[ "$OLED_ENABLED" == 1 ]] && grep -Eq '(^|[[:space:]])3c([[:space:]]|$)' <<<"$OLED_SCAN"; then systemctl enable --now ywd-oled.service; else systemctl disable --now ywd-oled.service 2>/dev/null || true; fi
+)
+I2C_REBOOT_REQUIRED=0
+I2C_BOOT_CONFIG=""
+for candidate in /boot/firmware/config.txt /boot/config.txt; do
+  if [[ -f "$candidate" ]]; then I2C_BOOT_CONFIG="$candidate"; break; fi
+done
+if [[ -n "$I2C_BOOT_CONFIG" ]]; then
+  if grep -Eq '^[[:space:]]*dtparam=i2c_arm=off([[:space:]]*(#.*)?)?$' "$I2C_BOOT_CONFIG"; then
+    sed -i -E 's/^[[:space:]]*dtparam=i2c_arm=off([[:space:]]*(#.*)?)?$/dtparam=i2c_arm=on/' "$I2C_BOOT_CONFIG"
+    I2C_REBOOT_REQUIRED=1
+    echo "[INFO] Enabled Raspberry Pi I2C in $I2C_BOOT_CONFIG; reboot required before OLED probing."
+  elif ! grep -Eq '^[[:space:]]*dtparam=i2c_arm=on([[:space:]]*(#.*)?)?$' "$I2C_BOOT_CONFIG"; then
+    printf '\n# YWD-Hotspot OLED / I2C\ndtparam=i2c_arm=on\n' >> "$I2C_BOOT_CONFIG"
+    I2C_REBOOT_REQUIRED=1
+    echo "[INFO] Enabled Raspberry Pi I2C in $I2C_BOOT_CONFIG; reboot required before OLED probing."
+  fi
+else
+  echo "[WARN] Raspberry Pi boot config was not found; I2C enablement could not be verified."
+fi
+modprobe i2c-dev >/dev/null 2>&1 || true
+
+# Stop the generic owner before probing so it cannot compete for the display.
+systemctl stop ywd-oled.service >/dev/null 2>&1 || true
+OLED_DETECTED_ADDR=""
+if [[ "$OLED_ENABLED" == 1 && "$I2C_REBOOT_REQUIRED" == 0 && -e "/dev/i2c-${OLED_BUS}" ]]; then
+  OLED_SCAN="$(i2cdetect -y "$OLED_BUS" 2>/dev/null || true)"
+  OLED_WANTED="${OLED_ADDR#0x}"
+  OLED_WANTED="$(tr '[:upper:]' '[:lower:]' <<<"$OLED_WANTED")"
+  if grep -Eq "(^|[[:space:]])${OLED_WANTED}([[:space:]]|$)" <<<"$OLED_SCAN"; then
+    OLED_DETECTED_ADDR="$OLED_WANTED"
+  elif grep -Eq '(^|[[:space:]])3c([[:space:]]|$)' <<<"$OLED_SCAN"; then
+    OLED_DETECTED_ADDR="3c"
+  elif grep -Eq '(^|[[:space:]])3d([[:space:]]|$)' <<<"$OLED_SCAN"; then
+    OLED_DETECTED_ADDR="3d"
+  fi
+fi
+
+if [[ "$OLED_ENABLED" != 1 ]]; then
+  systemctl disable --now ywd-oled.service >/dev/null 2>&1 || true
+  echo "[INFO] OLED disabled by configuration."
+elif [[ -n "$OLED_DETECTED_ADDR" ]]; then
+  DETECTED_HEX="0x${OLED_DETECTED_ADDR}"
+  if [[ "$DETECTED_HEX" != "$OLED_ADDR" ]]; then
+    OLED_DETECTED_ADDR="$DETECTED_HEX" python3 - <<'PY'
+import grp,json,os
+from pathlib import Path
+p=Path('/etc/ywd-hotspot/config.json'); c=json.load(open(p))
+c.setdefault('display',{})['address']=os.environ['OLED_DETECTED_ADDR']
+t=p.with_suffix('.tmp'); t.write_text(json.dumps(c,indent=2)+'\n'); os.chmod(t,0o640)
+try: os.chown(t,0,grp.getgrnam('ywd-hotspot').gr_gid)
+except Exception: pass
+os.replace(t,p)
+PY
+    OLED_ADDR="$DETECTED_HEX"
+    echo "[INFO] OLED detected at $OLED_ADDR; updated canonical display address."
+  else
+    echo "[INFO] OLED detected on I2C bus $OLED_BUS at $OLED_ADDR."
+  fi
+  systemctl enable --now ywd-oled.service
+elif [[ "$I2C_REBOOT_REQUIRED" == 1 ]]; then
+  systemctl enable ywd-oled.service >/dev/null 2>&1 || true
+  echo "[WARN] OLED probing deferred until reboot because I2C was just enabled."
+else
+  systemctl disable --now ywd-oled.service >/dev/null 2>&1 || true
+  if [[ ! -e "/dev/i2c-${OLED_BUS}" ]]; then
+    echo "[WARN] OLED configured but /dev/i2c-${OLED_BUS} is unavailable; OLED service left stopped."
+  else
+    echo "[WARN] OLED configured but no SSD1306 was detected at 0x3c/0x3d on bus $OLED_BUS; OLED service left stopped."
+  fi
+fi
 
 cat <<'EOF'
 ============================================================

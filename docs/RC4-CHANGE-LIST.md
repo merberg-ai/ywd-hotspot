@@ -58,6 +58,65 @@ Acceptance intent:
 - preview changes do not alter the encrypted backup format or restore semantics;
 - existing encrypted backup/restore regression and live preservation behavior remain intact.
 
+### 3. Use plain HTTP for the first-time setup portal
+
+RC3 field testing shows that the current first-time setup portal's SSL/TLS behavior creates a disproportionate usability problem. Browsers may refuse, block, or heavily discourage access to the appliance because the setup environment cannot present a normally trusted public certificate. For an isolated first-boot provisioning workflow, this prevents users from reaching the very page required to configure the device.
+
+Change the first-time setup portal to use regular HTTP rather than HTTPS/SSL.
+
+Scope to inspect during implementation:
+
+- first-boot/setup portal listener and URL generation;
+- captive/setup access instructions shown to the operator;
+- setup AP behavior and redirects;
+- certificate-generation/setup-only TLS code that becomes unnecessary;
+- firewall/service rules tied specifically to the first-time setup listener;
+- image build and source-install paths so both expose the same setup URL/protocol;
+- setup documentation and troubleshooting text.
+
+Rules:
+
+- this change applies specifically to the first-time provisioning portal;
+- do not accidentally weaken or redesign unrelated post-setup WebUI authentication/security while making this change;
+- remove misleading `https://` setup instructions and certificate-warning guidance where no longer applicable;
+- avoid an HTTP-to-HTTPS redirect during first-time setup;
+- the setup portal must remain reachable from common desktop and mobile browsers without certificate bypass steps.
+
+Acceptance intent:
+
+- a freshly imaged hotspot exposes its setup dashboard over ordinary HTTP;
+- Chrome/Edge/Firefox/Safari-class browsers can open the setup page without a self-signed-certificate interstitial or hard refusal;
+- the documented setup URL matches the actual listener;
+- first-boot completion transitions cleanly into the normal configured appliance without leaving stale setup TLS services/listeners behind.
+
+### 4. Add optional TGIF configuration to first-time setup
+
+TGIF is now a first-class integrated network in the appliance, but a fresh user should not have to finish setup, enter the normal WebUI, and then manually add TGIF afterward.
+
+Add a TGIF section to the first-time setup wizard.
+
+Minimum behavior:
+
+- provide an `Enable TGIF` choice/toggle;
+- when disabled, TGIF-specific fields remain hidden or clearly inactive and TGIF remains disabled in canonical config;
+- when enabled, show the fields required by the existing canonical TGIF configuration, including:
+  - master/host;
+  - port;
+  - hotspot/network password;
+- use the current supported/default TGIF master and port as sensible defaults where the existing application already defines them;
+- password input must remain masked and must never be echoed into setup logs, completion summaries, or diagnostic text;
+- validate TGIF input with the same canonical validation rules used by the normal Settings page rather than introducing a second incompatible validation path.
+
+First-time setup should continue to support BrandMeister independently. A user may configure BrandMeister only, TGIF only if supported by the established routing model, both networks, or leave TGIF disabled according to the application's existing network requirements and validation rules.
+
+Acceptance intent:
+
+- a fresh install can complete provisioning with TGIF enabled and correctly configured in one pass;
+- generated canonical config matches what the normal Settings page would produce for the same TGIF values;
+- TGIF password is stored through the existing protected configuration path and is never displayed after submission;
+- when both networks are configured, the first normal dashboard session can show both BrandMeister and TGIF using the already-proven integrated routing/runtime behavior;
+- first-time setup restore/import and manually entered setup values present a consistent network model.
+
 ## Completed RC4 hardening gates before feature/UI work
 
 - persistent RSSI mapping: accepted;

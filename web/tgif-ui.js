@@ -6,6 +6,9 @@
   let formDirty = false;
 
   const el = id => document.getElementById(id);
+  const safe = value => String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
   const notify = (message, bad = false) => {
     if (typeof toast === 'function') toast(message, bad);
     else if (bad) console.error(message);
@@ -43,6 +46,92 @@
     if (card) card.classList.toggle('tgif-unsaved', formDirty);
     const badge = el('tgifRuntimeIntent');
     if (badge && formDirty) badge.textContent = 'UNSAVED';
+  }
+
+  function linkDot(linkState, enabled = true) {
+    if (!enabled || linkState === 'disabled') return '';
+    if (linkState === 'connected') return 'good';
+    if (linkState === 'connecting') return 'warn';
+    return 'bad';
+  }
+
+  function stateText(linkState, enabled = true) {
+    if (!enabled) return 'DISABLED';
+    return String(linkState || 'unknown').replace(/-/g, ' ').toUpperCase();
+  }
+
+  function destinationText(dst, includeRf = false) {
+    dst = dst || {};
+    if (!dst.group) return dst.label || `PRIVATE ${dst.display || '?'}`;
+    let text;
+    if (dst.network === 'tgif') {
+      text = `TGIF · TG ${dst.network_id ?? '?'}`;
+      if (dst.name) text += ` · ${dst.name}`;
+      if (includeRf && dst.rf_id != null) text += ` · RF ${dst.rf_id}`;
+      return text;
+    }
+    if (dst.network === 'brandmeister') {
+      text = `BM · TG ${dst.network_id ?? dst.display ?? '?'}`;
+      if (dst.name) text += ` · ${dst.name}`;
+      return text;
+    }
+    return `TG ${dst.display || '?'}`;
+  }
+
+  function renderNetworkPresentation(data) {
+    if (!data || !el('strip')) return;
+    const rf = data.services?.mmdvmhost === 'active';
+    const bm = data.brandmeister || {};
+    const tg = data.tgif || {};
+    const w = data.system?.wifi || {};
+    const temp = data.system?.temp_c;
+    const throttle = data.system?.throttled || {};
+    const tgEnabled = !!data.config?.tgif?.enabled;
+
+    el('strip').innerHTML = `
+      <span title="MMDVMHost service: ${safe(data.services?.mmdvmhost || 'unknown')}"><i class="dot ${rf ? 'good' : 'bad'}"></i> RF ${rf ? 'READY' : 'DOWN'}</span>
+      <span title="${safe(bm.detail || 'BrandMeister link state')}"><i class="dot ${linkDot(bm.state, bm.enabled !== false)}"></i> BM ${safe(stateText(bm.state, bm.enabled !== false))}</span>
+      <span title="${safe(tg.detail || 'TGIF link state')}"><i class="dot ${linkDot(tg.state, tgEnabled)}"></i> TGIF ${safe(stateText(tg.state, tgEnabled))}</span>
+      <span title="SSID ${safe(w.ssid || 'unknown')} · RX errors ${safe(w.rx_errors ?? '—')} · TX errors ${safe(w.tx_errors ?? '—')}"><i class="dot ${w.connected ? 'good' : 'bad'}"></i> WIFI ${safe(w.signal_dbm ?? '—')} dBm</span>
+      <span title="Throttle/power: ${safe(throttle.raw || throttle.value || '0x0')}">TEMP ${safe(temp ?? '—')}°C</span>`;
+
+    const activity = data.activity || {};
+    const current = activity.current || {};
+    if (current.active) {
+      const dst = current.destination || {};
+      if (el('activityDest')) el('activityDest').textContent = `→ ${destinationText(dst, true)}`;
+    } else {
+      const last = (activity.lastheard || [])[0];
+      if (last && el('activityWho')) {
+        const src = (last.source || {}).display || '?';
+        el('activityWho').textContent = `Last: ${src} → ${destinationText(last.destination || {}, false)}`;
+      }
+    }
+
+    const heard = activity.lastheard || [];
+    if (el('heardSummary')) {
+      const first = heard[0];
+      if (!first) el('heardSummary').textContent = 'no calls captured';
+      else {
+        const src = (first.source || {}).display || '?';
+        const when = typeof ago === 'function' ? ago(first.started_at) : '';
+        el('heardSummary').textContent = `${src} → ${destinationText(first.destination || {}, false)}${when ? ' · ' + when : ''}`;
+      }
+    }
+
+    if (el('heardRows')) {
+      el('heardRows').innerHTML = heard.slice(0, 30).map(row => {
+        const src = (row.source || {}).display || '?';
+        const dst = row.destination || {};
+        let quality = `BER ${row.ber_pct ?? '—'}%`;
+        if (row.packet_loss_pct != null) quality += ` / loss ${row.packet_loss_pct}%`;
+        else if (row.rssi_dbm != null) quality += ` / ${row.rssi_dbm} dBm`;
+        const when = typeof ago === 'function' ? ago(row.started_at) : '—';
+        const duration = typeof dur === 'function' ? dur(row.duration_s) : (row.duration_s ?? '—');
+        const path = `${row.path || '?'}${dst.network_label ? ' · ' + dst.network_label : ''}`;
+        return `<tr><td>${safe(when)}</td><td>${safe(path)}</td><td>${safe(src)}</td><td>${safe(destinationText(dst, true))}</td><td>${safe(duration)}</td><td>${safe(quality)}</td></tr>`;
+      }).join('') || '<tr><td colspan="6">No DMR calls captured yet.</td></tr>';
+    }
   }
 
   function ensurePasswordModal() {
@@ -144,7 +233,13 @@
       el('tgifEnabled').checked = !!cfg.enabled;
     }
     el('tgifPasswordStatus').textContent = cfg.password_configured ? 'configured' : 'missing';
-    if (!formDirty) el('tgifRuntimeIntent').textContent = cfg.enabled ? 'ENABLED — DMRGateway network 2' : 'DISABLED';
+    if (!formDirty) {
+      const runtime = (typeof state !== 'undefined' && state?.tgif) ? state.tgif : null;
+      el('tgifRuntimeIntent').textContent = cfg.enabled
+        ? stateText(runtime?.state || 'connecting', true)
+        : 'DISABLED';
+      el('tgifRuntimeIntent').title = runtime?.detail || '';
+    }
     const locked = !authenticated();
     ['tgifEnabled','tgifMaster','tgifPort','tgifSaveApply','tgifChangePassword'].forEach(id => {
       const node = el(id); if (node) node.disabled = locked;
@@ -190,6 +285,7 @@
       const wrapped = function(data) {
         const out = baseRender(data);
         sync();
+        renderNetworkPresentation(data);
         return out;
       };
       wrapped.__ywdTgifWrapped = true;
@@ -198,6 +294,7 @@
 
     installed = true;
     sync();
+    if (typeof state !== 'undefined' && state) renderNetworkPresentation(state);
     return true;
   }
 

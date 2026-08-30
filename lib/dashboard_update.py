@@ -35,7 +35,7 @@ _RELEASE_UI_BOOTSTRAP = b"""
   };
   loadReleaseUi('/update-branch.js?v=rc3-wire1');
   loadReleaseUi('/modem-ui.js?v=rc3-wire1');
-  loadReleaseUi('/tgif-ui.js?v=dev-tgif1');
+  loadReleaseUi('/tgif-ui.js?v=dev-tgif2');
 })();
 """
 

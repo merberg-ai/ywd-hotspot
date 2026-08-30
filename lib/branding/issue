@@ -7,6 +7,7 @@
                     Y W D - H O T S P O T
 
 Raspberry Pi DMR Hotspot Appliance
+Networks: BrandMeister + TGIF
 Host: \n    Console: \l
 WebUI: http://ywd-hotspot.local:8080/
 GitHub: https://github.com/merberg-ai/ywd-hotspot

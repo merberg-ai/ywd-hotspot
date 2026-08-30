@@ -51,6 +51,22 @@ A separate checkpoint marker was committed immediately before beginning TGIF dir
 
 `12605fd27571e65c6b3d40efa9bd209d9ae9214f`.
 
+## Proven TGIF directory + control-theme checkpoint
+
+The TGIF talkgroup-directory and dashboard-control-theme slice was then accepted as a solid working version on real hardware/browser testing:
+
+- all TGIF routing, UI/admin, dashboard-status, and directory smoke tests passed;
+- the Talkgroups page retained the existing BrandMeister manager behavior while adding TGIF directory search alongside it;
+- TGIF directory lookup correctly exposed the real TGIF talkgroup and the radio-side `5xxxxxx` destination;
+- TGIF favorites behaved as browser-local conveniences only and did not create pending configuration or restart network services;
+- focused/active dashboard inputs and controls remained in the YWD dark/cyan theme instead of falling back to bright browser-native white/yellow styling;
+- BrandMeister Parrot and TGIF Parrot both continued to pass after the directory/UI changes;
+- no routing, schema, MMDVM-Host, or DMRGateway generation changes were part of this slice.
+
+This is the preferred checkpoint for continuing `dev-tgif` work unless a later hardware-proven baseline supersedes it.
+
+TGIF directory + control-theme implementation checkpoint: `9f87631b1885dae9d239fc7fc847a516561d63ce`.
+
 ## Design goals
 
 - MMDVM-Host remains the only modem/RF owner.

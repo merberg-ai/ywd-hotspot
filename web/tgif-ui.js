@@ -3,6 +3,7 @@
   const RF_PREFIX = 5_000_000;
   let installed = false;
   let passwordModal = null;
+  let formDirty = false;
 
   const el = id => document.getElementById(id);
   const notify = (message, bad = false) => {
@@ -34,6 +35,14 @@
 
   function authenticated() {
     return !!(typeof state !== 'undefined' && state?.controls?.authenticated);
+  }
+
+  function setFormDirty(value) {
+    formDirty = !!value;
+    const card = el('tgifSettingsCard');
+    if (card) card.classList.toggle('tgif-unsaved', formDirty);
+    const badge = el('tgifRuntimeIntent');
+    if (badge && formDirty) badge.textContent = 'UNSAVED';
   }
 
   function ensurePasswordModal() {
@@ -94,12 +103,14 @@
     const enabled = el('tgifEnabled').checked;
     if (!master) return notify('TGIF master hostname is required', true);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return notify('TGIF UDP port must be 1-65535', true);
+    if (enabled && !currentConfig()?.password_configured) return notify('Set the TGIF security password before enabling the network', true);
 
     const button = el('tgifSaveApply');
     button.disabled = true;
     try {
       const result = await apiPost('/api/tgif/configure', {enabled, master, port, apply: true});
       const count = Array.isArray(result.changed) ? result.changed.length : 0;
+      setFormDirty(false);
       notify(count ? `TGIF settings applied (${count} change${count === 1 ? '' : 's'})` : 'No TGIF changes');
       if (typeof getStatus === 'function') await getStatus();
       if (typeof loadConfig === 'function') await loadConfig(true);
@@ -127,12 +138,13 @@
   function sync() {
     const cfg = currentConfig();
     if (!cfg || !el('tgifSettingsCard')) return;
-    const focused = document.activeElement;
-    if (focused !== el('tgifMaster')) el('tgifMaster').value = cfg.master || 'tgif.network';
-    if (focused !== el('tgifPort')) el('tgifPort').value = cfg.port || 62031;
-    el('tgifEnabled').checked = !!cfg.enabled;
+    if (!formDirty) {
+      el('tgifMaster').value = cfg.master || 'tgif.network';
+      el('tgifPort').value = cfg.port || 62031;
+      el('tgifEnabled').checked = !!cfg.enabled;
+    }
     el('tgifPasswordStatus').textContent = cfg.password_configured ? 'configured' : 'missing';
-    el('tgifRuntimeIntent').textContent = cfg.enabled ? 'ENABLED — DMRGateway network 2' : 'DISABLED';
+    if (!formDirty) el('tgifRuntimeIntent').textContent = cfg.enabled ? 'ENABLED — DMRGateway network 2' : 'DISABLED';
     const locked = !authenticated();
     ['tgifEnabled','tgifMaster','tgifPort','tgifSaveApply','tgifChangePassword'].forEach(id => {
       const node = el(id); if (node) node.disabled = locked;
@@ -167,6 +179,11 @@
     el('tgifChangePassword').onclick = openPassword;
     el('tgifSaveApply').onclick = saveSettings;
     el('tgifTalkgroupHelper').addEventListener('input', updateHelper);
+    ['tgifEnabled','tgifMaster','tgifPort'].forEach(id => {
+      const node = el(id);
+      node.addEventListener('input', () => setFormDirty(true));
+      node.addEventListener('change', () => setFormDirty(true));
+    });
 
     if (typeof render === 'function' && !render.__ywdTgifWrapped) {
       const baseRender = render;

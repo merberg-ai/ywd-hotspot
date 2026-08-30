@@ -1,0 +1,90 @@
+# RC4 development checkpoint — 2026-08-30
+
+This checkpoint records the first YWD-Hotspot `0.2.0-rc4` hardening pass on the canonical `dev` line. `VERSION` intentionally remains `0.2.0-rc3` until the RC4 candidate is frozen.
+
+## Hardware acceptance completed
+
+The mature Raspberry Pi Zero hotspot was updated from the integrated `dev` line and physically tested with the normal RF stack running.
+
+Accepted results:
+
+- BrandMeister Parrot passed.
+- TGIF Parrot passed.
+- MMDVMHost, DMRGateway, dashboard, and activity services remained active.
+- zero failed systemd units.
+- Save & Apply completed with no unintended service restart when configuration was unchanged.
+- generated `MMDVM-Host.ini` references the persistent RSSI map at `/etc/ywd-hotspot/mmdvm-hs-rssi.dat`.
+- the installed INI contains no `/tmp/ywd-config-*` RSSI path.
+- RSSI map ownership/mode is suitable for the appliance runtime (`root:ywd-hotspot`, `0640`).
+- YWD-Hotspot OS uses `ywd-headless-oled.service` as the authoritative OLED owner; legacy `ywd-oled.service` remains inactive.
+- OLED runtime health reported `state=open`, `device_open=true`, bus `1`, address `0x3c`, and no error.
+- `/api/status` and `/api/health` now agree on the authoritative OLED owner after removing the stale dashboard owner cache.
+
+## RC4 hardening implemented
+
+### Persistent RSSI mapping
+
+Save & Apply may stage candidate INI files under `/tmp/ywd-config-*`, but the installed MMDVM configuration must always reference persistent appliance state. RC4 keeps `RSSIMappingFile` at:
+
+```text
+/etc/ywd-hotspot/mmdvm-hs-rssi.dat
+```
+
+The regression suite fails if the final generated MMDVM INI leaks a temporary staging path.
+
+### Source-install I2C / OLED behavior
+
+Generic/source installation now treats I2C enablement and OLED detection separately:
+
+- Raspberry Pi boot configuration is enabled for I2C when required.
+- a newly enabled controller is reported as requiring reboot rather than misdiagnosed as failed hardware.
+- OLED probing uses the configured I2C bus.
+- SSD1306 addresses `0x3c` and `0x3d` are accepted.
+- an alternate detected address can be persisted to canonical configuration.
+- OLED failure never controls RF state.
+
+Factory-image I2C enablement remains owned by the pi-gen image stage and is not duplicated by runtime hacks.
+
+### Truthful OLED health
+
+The OLED renderer publishes bounded runtime health including:
+
+```text
+opening
+open
+waiting-for-device
+io-error
+runtime-error
+disabled
+stopping
+```
+
+Dashboard health combines the renderer's device-open report with the authoritative systemd owner. A process that is alive but retrying failed I2C access is no longer presented as healthy hardware.
+
+## Source-only RC4 hardening gate
+
+`tools/rc4-hardening-smoke.py` consolidates the non-RF regression set. At this checkpoint it covers:
+
+- persistent RSSI mapping;
+- source-install I2C/OLED behavior;
+- OLED device-open/status projection;
+- SSH key-only and password-or-key policy contract;
+- encrypted TGIF/BrandMeister settings backup round trip;
+- TGIF routing/UI/status/directory behavior;
+- plugin settings restore and feature-runtime behavior.
+
+The smoke is intentionally read-only with respect to the managed source checkout and live hotspot configuration.
+
+## Next RC4 gates
+
+Before RC4 freeze:
+
+1. run the extended RC4 hardening smoke on the mature Pi Zero;
+2. perform live SSH acceptance for key-only and password-or-key behavior without changing the security model;
+3. perform a real encrypted settings export/preview/restore preservation test covering TGIF, BrandMeister, and installed plugin intent;
+4. verify normal update preserves SSH/config/plugin/network state;
+5. after planned RC4 feature/UI work is complete, freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
+6. test the published RC3 -> frozen RC4 updater path;
+7. build and physically accept the exact RC4 factory image before publication.
+
+Do not expand TGIF routing semantics, rebuild MMDVM-Host/DMRGateway, or modify the proven RF routing path merely as part of this hardening checkpoint.

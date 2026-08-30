@@ -20,6 +20,12 @@ def require(rel: str, *markers: str) -> None:
         assert marker in data, f"{rel}: missing marker {marker!r}"
 
 
+def forbid(rel: str, *markers: str) -> None:
+    data = text(rel)
+    for marker in markers:
+        assert marker not in data, f"{rel}: forbidden marker still present {marker!r}"
+
+
 def main() -> int:
     # Python syntax for every changed privileged/backend module.
     for rel in (
@@ -33,23 +39,28 @@ def main() -> int:
 
     require(
         "lib/tgif_admin.py",
+        'action == "config-save"',
         'action == "tgif-configure"',
         'action == "set-tgif-password"',
+        'TGIF_BROWSER_KEYS = {"enabled", "master", "port"}',
+        'TGIF_SECRET_KEYS = {"password", "password_configured"}',
+        "core_admin.merge_browser_config(data)",
+        'candidate.setdefault("tgif", {})[key] = value',
+        'core_admin.backup_config("pre-save", changed)',
         '"tgif-security-password-change"',
         'cfg.get("brandmeister"',
         'cfg.get("tgif"',
-        'core_admin.backup_config("pre-tgif-config"',
-        'core_admin.backup_config("pre-tgif-password"',
     )
     require(
         "lib/admin_dispatch.sh",
-        "tgif-configure|set-tgif-password",
+        "config-save|tgif-configure|set-tgif-password",
         "tgif_admin.py",
     )
     require(
         "sudoers/ywd-hotspot",
         "ywd-hotspot-admin set-tgif-password",
         "ywd-hotspot-admin tgif-configure",
+        "ywd-hotspot-admin config-save",
     )
     require(
         "lib/dashboard_backup.py",
@@ -74,26 +85,36 @@ def main() -> int:
     )
     require(
         "lib/dashboard_update.py",
-        "'/tgif-ui.js?v=dev-tgif2'",
+        "'/tgif-ui.js?v=dev-tgif3'",
         '"/tgif-ui.js": ("tgif-ui.js"',
     )
     require(
         "web/tgif-ui.js",
         "TGIF NETWORK — EXPERIMENTAL",
-        "/api/tgif/configure",
         "/api/tgif/password",
         "5031665",
         "password_configured",
-        "let formDirty = false",
-        "function setFormDirty(value)",
-        "if (!formDirty)",
-        "setFormDirty(false)",
-        "node.addEventListener('change', () => setFormDirty(true))",
+        'data-cfg="tgif.master"',
+        'data-cfg="tgif.port"',
+        'data-cfg="tgif.enabled"',
+        "function settingsDirty()",
+        "function markSettingsDirty()",
+        "setDirty(true)",
+        "node.addEventListener('change', markSettingsDirty)",
+        "normal Settings SAVE / SAVE &amp; APPLY controls",
         "function renderNetworkPresentation(data)",
         "TGIF ${safe(stateText",
         "destinationText(dst, true)",
         "RF ${dst.rf_id}",
         "heardRows",
+    )
+    forbid(
+        "web/tgif-ui.js",
+        "tgifSaveApply",
+        "SAVE &amp; APPLY TGIF",
+        "saveSettings()",
+        "setFormDirty",
+        "/api/tgif/configure",
     )
     require(
         "lib/update_admin.py",

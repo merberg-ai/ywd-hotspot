@@ -24,6 +24,7 @@ def main() -> int:
     # Python syntax for every changed privileged/backend module.
     for rel in (
         "lib/tgif_admin.py",
+        "lib/dashboard_tgif.py",
         "lib/dashboard_backup.py",
         "lib/dashboard_update.py",
         "lib/update_admin.py",
@@ -52,9 +53,24 @@ def main() -> int:
     )
     require(
         "lib/dashboard_backup.py",
+        "import dashboard_tgif",
+        "dashboard_tgif.install(core)",
         '"/api/tgif/configure": ("tgif-configure", 60)',
         '"/api/tgif/password": ("set-tgif-password", 60)',
         "require_control",
+    )
+    require(
+        "lib/dashboard_tgif.py",
+        "TGIF_RF_FIRST",
+        "_network_state_from_lines",
+        '"TGIF_Network"',
+        'network="tgif"',
+        'network="brandmeister"',
+        '"rf_id"',
+        '"network_id"',
+        '"TGIF · TG {network_id}"',
+        'base["tgif"]',
+        "annotate_activity",
     )
     require(
         "lib/dashboard_update.py",
@@ -73,6 +89,11 @@ def main() -> int:
         "if (!formDirty)",
         "setFormDirty(false)",
         "node.addEventListener('change', () => setFormDirty(true))",
+        "function renderNetworkPresentation(data)",
+        "TGIF ${safe(stateText",
+        "destinationText(dst, true)",
+        "RF ${dst.rf_id}",
+        "heardRows",
     )
     require(
         "lib/update_admin.py",

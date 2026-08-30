@@ -32,7 +32,9 @@ TG_CACHE = Path("/var/lib/ywd-hotspot/talkgroup-directory.json")
 DMR_IDS = Path("/var/lib/ywd-hotspot/DMRIds.dat")
 PROVISION = Path("/etc/ywd-headless/provision.env")
 RUNTIME_VERSION = Path("/opt/ywd-hotspot/app/VERSION")
+OLED_HEALTH = Path("/var/lib/ywd-hotspot/oled-health.json")
 ACTIVE_OLED = None
+LAST_HEALTH = None
 
 FONT = {
     ' ':[0,0,0,0,0], '-':[8,8,8,8,8], '.':[0,96,96,0,0], '/':[32,16,8,4,2], ':':[0,54,54,0,0],
@@ -76,6 +78,41 @@ def config():
     d.setdefault("show_rssi", True); d.setdefault("show_loss", True); d.setdefault("post_call_hold_s", 3)
     d.setdefault("idle_cycle", False); d.setdefault("idle_cycle_s", 6)
     return c
+
+
+def write_health(state, c=None, error=None):
+    """Publish hardware-owner truth without turning display health into an RF dependency."""
+    global LAST_HEALTH
+    c = c if isinstance(c, dict) else config()
+    d = c.get("display", {}) if isinstance(c, dict) else {}
+    try:
+        bus = int(d.get("i2c_bus", 1))
+    except Exception:
+        bus = 1
+    address = str(d.get("address", "0x3c")).lower()
+    err = str(error or "").replace("\n", " ").replace("\r", " ")[:240]
+    key = (str(state), bus, address, err)
+    if key == LAST_HEALTH:
+        return
+    LAST_HEALTH = key
+    doc = {
+        "schema": 1,
+        "state": str(state),
+        "configured": bool(d.get("enabled", True)),
+        "device_open": str(state) == "open",
+        "bus": bus,
+        "address": address,
+        "updated_at": time.time(),
+        "error": err or None,
+    }
+    try:
+        OLED_HEALTH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = OLED_HEALTH.with_name(OLED_HEALTH.name + ".tmp")
+        tmp.write_text(json.dumps(doc, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.chmod(0o644)
+        tmp.replace(OLED_HEALTH)
+    except Exception:
+        pass
 
 
 def activity():
@@ -485,6 +522,7 @@ def critical_os_frame(cached_network, states):
 
 
 def shutdown_handler(signum, frame):
+    write_health("stopping", config())
     if ACTIVE_OLED is not None:
         try:
             ACTIVE_OLED.power(True)
@@ -498,11 +536,15 @@ def shutdown_handler(signum, frame):
 
 def open_oled_forever(c):
     d = c.get("display", {})
+    write_health("opening", c)
     while True:
         try:
-            return OLED(int(d.get("i2c_bus", 1)), int(str(d.get("address", "0x3c")), 0),
+            oled = OLED(int(d.get("i2c_bus", 1)), int(str(d.get("address", "0x3c")), 0),
                         int(d.get("brightness", 127)), int(d.get("rotation", 0)))
-        except Exception:
+            write_health("open", c)
+            return oled
+        except Exception as exc:
+            write_health("waiting-for-device", c, exc)
             time.sleep(2)
 
 
@@ -510,6 +552,7 @@ def main():
     global ACTIVE_OLED
     c = config()
     if not c.get("display", {}).get("enabled", True):
+        write_health("disabled", c)
         return
     ACTIVE_OLED = open_oled_forever(c)
     signal.signal(signal.SIGTERM, shutdown_handler)
@@ -541,27 +584,27 @@ def main():
 
             d = c.get("display", {})
             if not d.get("enabled", True):
-                ACTIVE_OLED.power(False); time.sleep(2); continue
+                ACTIVE_OLED.power(False); write_health("disabled", c); time.sleep(2); continue
 
             critical = critical_os_frame(cached_network, states)
             if critical is not None:
-                ACTIVE_OLED.power(True); ACTIVE_OLED.show(critical); time.sleep(1.5); continue
+                ACTIVE_OLED.power(True); ACTIVE_OLED.show(critical); write_health("open", c); time.sleep(1.5); continue
 
             upd = json_file(UPDATE_STATE)
             if upd.get("state") == "running":
-                ACTIVE_OLED.power(True); ACTIVE_OLED.show(update_frame(upd)); time.sleep(1); continue
+                ACTIVE_OLED.power(True); ACTIVE_OLED.show(update_frame(upd)); write_health("open", c); time.sleep(1); continue
 
             a = activity()
             event = event_for_display(a, int(d.get("post_call_hold_s", 3)))
             if event:
                 active_now = bool(event.get("active"))
                 last_activity_at = n
-                ACTIVE_OLED.power(True); ACTIVE_OLED.show(runtime_event_frame(c, event))
+                ACTIVE_OLED.power(True); ACTIVE_OLED.show(runtime_event_frame(c, event)); write_health("open", c)
                 time.sleep(0.75 if active_now else 1.0); continue
 
             idle_timeout = max(0, int(d.get("idle_timeout_s", 0)))
             if idle_timeout and n - last_activity_at >= idle_timeout:
-                ACTIVE_OLED.power(False); time.sleep(2); continue
+                ACTIVE_OLED.power(False); write_health("open", c); time.sleep(2); continue
             ACTIVE_OLED.power(True)
             pages = idle_frames(c, states, a)
             if not pages:
@@ -572,11 +615,11 @@ def main():
                 next_idle_page = n + max(2, int(d.get("idle_cycle_s", 6)))
             elif not cycle:
                 idle_page = 0; next_idle_page = 0.0
-            ACTIVE_OLED.show(pages[idle_page % len(pages)])
-        except OSError:
-            pass
-        except Exception:
-            pass
+            ACTIVE_OLED.show(pages[idle_page % len(pages)]); write_health("open", c)
+        except OSError as exc:
+            write_health("io-error", c, exc)
+        except Exception as exc:
+            write_health("runtime-error", c, exc)
         time.sleep(0.8 if active_now else 2.0)
 
 

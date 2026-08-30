@@ -1,0 +1,113 @@
+/* Dashboard-wide interactive-control theme guard.
+ *
+ * Keep browser/OS focus, active and autofill states inside the YWD dark theme.
+ * This intentionally excludes custom checkbox/radio/range chrome, which is
+ * styled separately by ui-polish.css and feature-specific stylesheets.
+ */
+
+:where(input, textarea, select, button){
+  color-scheme:dark;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+textarea,
+select{
+  background-color:#040d12!important;
+  color:var(--text)!important;
+  -webkit-text-fill-color:var(--text)!important;
+  border-color:#1c4553!important;
+  caret-color:var(--cyan);
+  outline:none!important;
+  transition:border-color .15s ease,box-shadow .15s ease,background-color .15s ease;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible{
+  background-color:#06141b!important;
+  color:var(--text)!important;
+  -webkit-text-fill-color:var(--text)!important;
+  border-color:var(--cyan)!important;
+  outline:none!important;
+  box-shadow:0 0 0 2px rgba(98,233,255,.13),0 0 16px rgba(98,233,255,.08)!important;
+}
+
+input::placeholder,
+textarea::placeholder{
+  color:#668b95!important;
+  opacity:1;
+}
+
+select option,
+select optgroup{
+  background:#07141b;
+  color:var(--text);
+}
+
+button:focus-visible,
+.btn:focus-visible,
+.tabs button:focus-visible,
+summary:focus-visible{
+  outline:none!important;
+  border-color:#bdf7ff!important;
+  box-shadow:0 0 0 2px rgba(98,233,255,.14),0 0 16px rgba(98,233,255,.10)!important;
+}
+
+button:active:not(:disabled),
+.btn:active:not(:disabled),
+.tabs button:active:not(:disabled){
+  transform:translateY(1px);
+  filter:brightness(1.12);
+}
+
+/* Chrome/WebKit can otherwise paint saved or autofilled values white/yellow. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--text)!important;
+  caret-color:var(--cyan)!important;
+  -webkit-box-shadow:0 0 0 1000px #06141b inset!important;
+  box-shadow:0 0 0 1000px #06141b inset!important;
+  border-color:var(--cyan)!important;
+  transition:background-color 9999s ease-out 0s;
+}
+
+input:autofill,
+textarea:autofill,
+select:autofill{
+  background:#06141b!important;
+  color:var(--text)!important;
+}
+
+input[type="file"]::file-selector-button{
+  border:1px solid var(--line);
+  background:#07141b;
+  color:var(--muted);
+  border-radius:7px;
+  padding:7px 9px;
+  margin-right:9px;
+  font:inherit;
+  cursor:pointer;
+}
+input[type="file"]::file-selector-button:hover,
+input[type="file"]::file-selector-button:focus-visible{
+  border-color:var(--line2);
+  color:var(--text);
+}
+
+/* Disabled controls remain visually distinct without reverting to native UI. */
+input:disabled,
+textarea:disabled,
+select:disabled{
+  opacity:.48;
+  cursor:not-allowed;
+}

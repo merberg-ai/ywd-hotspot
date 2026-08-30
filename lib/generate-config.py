@@ -11,7 +11,10 @@ import config_model
 CFG = Path(os.environ.get("YWD_CONFIG", "/etc/ywd-hotspot/config.json"))
 OUT = Path(os.environ.get("YWD_CONFIG_DIR", "/etc/ywd-hotspot"))
 DMRIDS = Path(os.environ.get("YWD_DMRID_FILE", "/var/lib/ywd-hotspot/DMRIds.dat"))
-RSSI_MAP = Path(os.environ.get("YWD_RSSI_MAPPING_FILE", str(OUT / "mmdvm-hs-rssi.dat")))
+# The RSSI mapping is a static runtime support file, not a staged candidate.
+# Keep both the generated INI reference and the file itself on a persistent
+# path even when Save & Apply stages the two INIs under /tmp/ywd-config-*.
+RSSI_MAP = Path(os.environ.get("YWD_RSSI_MAPPING_FILE", "/etc/ywd-hotspot/mmdvm-hs-rssi.dat"))
 TGIF_RF_BASE = 5_000_000
 TGIF_RF_RANGE = 999_999
 DMR_ID_MAX = 16_777_215
@@ -309,7 +312,7 @@ Enable=0
 
 
 def main():
-    if os.geteuid() != 0 and str(OUT).startswith("/etc/"):
+    if os.geteuid() != 0 and (str(OUT).startswith("/etc/") or str(RSSI_MAP).startswith("/etc/")):
         raise SystemExit("generate-config.py must run as root")
     raw = json.loads(CFG.read_text())
     c = config_model.normalize(raw)

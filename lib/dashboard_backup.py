@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import dashboard_core as core
 import dashboard_tgif
@@ -41,7 +41,8 @@ def wrap_handler(base):
             self.send_bytes(200, data, "application/javascript; charset=utf-8", cache="no-cache")
 
         def do_GET(self):
-            path = urlparse(self.path).path
+            parsed = urlparse(self.path)
+            path = parsed.path
             if path == "/backup-restore.js":
                 self._serve_backup_js(); return
             if path == "/ssh-key-export.js":
@@ -59,6 +60,29 @@ def wrap_handler(base):
                     self.send_json(core.admin_call("mmdvm-system-info", {}, 30))
                 except Exception as exc:
                     self.send_json({"error": str(exc)[:1000]}, 502)
+                return
+            if path == "/api/tgif/talkgroups/search":
+                qs = parse_qs(parsed.query, keep_blank_values=False)
+                query = str((qs.get("q") or [""])[0])[:80]
+                ids_raw = str((qs.get("ids") or [""])[0])[:1600]
+                ids = [x for x in ids_raw.split(",") if x.strip()][:100]
+                try:
+                    limit = int((qs.get("limit") or [50])[0])
+                except Exception:
+                    limit = 50
+                force = str((qs.get("refresh") or ["0"])[0]).lower() in {"1", "true", "yes"}
+                if force and not core.authenticated(self.headers):
+                    self.send_json({"error": "Unlock control mode before forcing a TGIF directory refresh"}, 401)
+                    return
+                if not query and not ids:
+                    self.send_json({"error": "Provide q or ids"}, 400)
+                    return
+                try:
+                    self.send_json(dashboard_tgif.search_tgif_talkgroups(
+                        query=query, ids=ids, limit=limit, force=force
+                    ))
+                except Exception as exc:
+                    self.send_json({"error": str(exc)[:800]}, 502)
                 return
             super().do_GET()
 

@@ -50,7 +50,7 @@ if [ -f "${FACTORY_CONFIG}" ]; then
   printf 'Installed builder-supplied canonical hotspot configuration.\n'
 fi
 
-install -d -m 0700 "${ROOTFS_DIR}/var/lib/ywd-hotspot/setup-tls" "${ROOTFS_DIR}/var/lib/ywd-hotspot/private"
+install -d -m 0700 "${ROOTFS_DIR}/var/lib/ywd-hotspot/private"
 if [ -f "${FACTORY_PAYLOAD}" ]; then
   install -m 0600 "${FACTORY_PAYLOAD}" "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-provision.json"
   chown root:root "${ROOTFS_DIR}/var/lib/ywd-hotspot/private/factory-provision.json"
@@ -75,7 +75,6 @@ if [ -f /etc/ywd-hotspot/config.json ]; then
     chown root:ywd-hotspot /etc/ywd-hotspot/config.json
     chmod 0640 /etc/ywd-hotspot/config.json
 fi
-chown -R ywd-hotspot:ywd-hotspot /var/lib/ywd-hotspot/setup-tls
 chmod 0700 /var/lib/ywd-hotspot/private
 chown root:root /var/lib/ywd-hotspot/private
 rm -f /var/lib/ywd-hotspot/setup-state.json
@@ -101,24 +100,26 @@ The appliance is factory-unconfigured until:
   /var/lib/ywd-hotspot/setup-state.json
 exists with state=complete.
 
-A complete builder profile is finalized before the secure setup wizard starts.
+A complete builder profile is finalized before the setup wizard starts.
 If the builder imported a dashboard .ywdsettings backup, the first-boot
 finalizer uses the same authenticated settings-import implementation as the
 live dashboard restore flow. This preserves the imported dashboard credential,
-BrandMeister/API state, calibration baseline and compatible plugin state/config.
+BrandMeister/TGIF state, calibration baseline and compatible plugin state/config.
 
 If the builder profile is partial, invalid, or the factory finalizer fails, the
 normal flow remains authoritative: network onboarding owns Wi-Fi first, then the
-secure HTTPS setup wizard starts on port 8443 and requires the six-digit OLED
-code. RF stays disabled unless the completed configuration explicitly requests
-RF autostart.
+HTTP first-boot setup wizard starts on port 8443 and requires the six-digit OLED
+code. Use http://<LAN-IP>:8443/ or http://ywd-hotspot.local:8443/ when mDNS is
+available. RF stays disabled unless the completed configuration explicitly
+requests RF autostart.
 
 Public factory SSH policy:
   - openssh-server is installed but disabled
   - no client key is embedded
   - no reusable ssh_host_* identity key is shipped
   - enabling SSH from the authenticated dashboard generates unique host keys
-  - SSH authentication is public-key only; password/root SSH stay disabled
+  - root SSH remains disabled; password authentication is only enabled by an
+    explicit dashboard choice
 EOF
 
-printf 'Installed current YWD-Hotspot secure first-boot + factory-preconfiguration layer; RF/SSH remain gated.\n'
+printf 'Installed current YWD-Hotspot HTTP first-boot + factory-preconfiguration layer; RF/SSH remain gated.\n'

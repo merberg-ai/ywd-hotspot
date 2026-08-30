@@ -22,6 +22,8 @@ PY_SOURCES = (
     "tools/telemetry-config-smoke.py",
     "tools/source-oled-install-smoke.py",
     "tools/oled-health-smoke.py",
+    "tools/ssh-policy-smoke.py",
+    "tools/settings-backup-tgif-smoke.py",
     "tools/tgif-routing-smoke.py",
     "tools/tgif-ui-smoke.py",
     "tools/tgif-status-smoke.py",
@@ -44,6 +46,8 @@ SMOKES = (
     "tools/telemetry-config-smoke.py",
     "tools/source-oled-install-smoke.py",
     "tools/oled-health-smoke.py",
+    "tools/ssh-policy-smoke.py",
+    "tools/settings-backup-tgif-smoke.py",
     "tools/tgif-routing-smoke.py",
     "tools/tgif-ui-smoke.py",
     "tools/tgif-status-smoke.py",
@@ -94,6 +98,8 @@ def main() -> int:
     print("[OK] persistent RSSI mapping path")
     print("[OK] source-install I2C/OLED policy")
     print("[OK] truthful OLED device health projection")
+    print("[OK] SSH key-only/password-or-key policy contract")
+    print("[OK] encrypted TGIF/BrandMeister backup round trip")
     print("[OK] TGIF routing/UI/status/directory regressions")
     print("[OK] plugin settings/runtime regressions")
     return 0

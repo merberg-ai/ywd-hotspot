@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Static smoke checks for the experimental TGIF WebUI/privileged wiring."""
+"""Smoke checks for the experimental TGIF WebUI/privileged wiring."""
 from __future__ import annotations
 
 import ast
+import copy
+import importlib.util
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+LIB = ROOT / "lib"
 
 
 def text(rel: str) -> str:
@@ -24,6 +28,45 @@ def forbid(rel: str, *markers: str) -> None:
     data = text(rel)
     for marker in markers:
         assert marker not in data, f"{rel}: forbidden marker still present {marker!r}"
+
+
+def functional_config_save_check() -> None:
+    """Prove redacted browser config cannot erase the stored TGIF credential."""
+    sys.path.insert(0, str(LIB))
+    spec = importlib.util.spec_from_file_location("tgif_admin_smoke", LIB / "tgif_admin.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    base = mod.config_model.defaults()
+    base["station"].update({"callsign": "KJ6YWD", "base_dmr_id": "3196104", "essid": "02"})
+    base["tgif"]["password"] = "smoke-secret"
+    old = mod.config_model.normalize(base)
+    candidate = copy.deepcopy(old)
+    writes = []
+
+    mod.core_admin.merge_browser_config = lambda data: (old, copy.deepcopy(candidate))
+    mod.core_admin.backup_config = lambda reason, changed=None: "smoke-snapshot"
+    mod.core_admin.write_config = lambda cfg: writes.append(copy.deepcopy(cfg))
+    mod.core_admin.audit = lambda *args, **kwargs: None
+
+    out = mod.config_save({
+        "config": {
+            "tgif": {
+                "enabled": True,
+                "master": "tgif.network",
+                "port": 62031,
+                "password": None,
+                "password_configured": True,
+            }
+        }
+    })
+    assert out.get("ok") is True
+    assert "tgif.enabled" in out.get("changed", [])
+    assert writes, "TGIF-aware config-save did not write the candidate"
+    saved = writes[-1]
+    assert saved["tgif"]["enabled"] is True
+    assert saved["tgif"]["password"] == "smoke-secret", "normal Settings save erased TGIF password"
 
 
 def main() -> int:
@@ -131,6 +174,7 @@ def main() -> int:
         'out["tgif"]["password_configured"]',
     )
 
+    functional_config_save_check()
     print("TGIF UI/admin smoke: PASS")
     return 0
 

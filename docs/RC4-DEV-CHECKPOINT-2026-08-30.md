@@ -61,6 +61,73 @@ Client-side physical acceptance is complete:
 
 The source-only SSH smoke separately verifies the key-only contract. Live password-or-key SSH acceptance is therefore closed for RC4 unless a later regression is observed.
 
+## Real encrypted settings restore acceptance
+
+A real `.ywdsettings` export/import was exercised on the mature Pi Zero, not merely the source-only crypto smoke.
+
+Baseline state before export included:
+
+```text
+station description   YWD Hotspot RC3
+RF autostart          true
+BrandMeister          enabled / connected
+TGIF                  enabled / connected
+plugin master         enabled
+enabled plugins       dmr-contact-intelligence, dmr-rx-monitor
+installed plugins     dmr-contact-intelligence, dmr-rx-monitor
+SSH                   active, password+key, 7 authorized keys
+failed systemd units  0
+```
+
+The live appliance recorded SHA-256 fingerprints for the BrandMeister and TGIF passwords without printing either secret. The encrypted settings file exported successfully.
+
+To prove the restore actually replaced live state, the operator deliberately changed only safe visible/plugin state:
+
+- station description changed from `YWD Hotspot RC3` to an RC4 restore mutation marker;
+- `dmr-contact-intelligence` was disabled while `dmr-rx-monitor` and the plugin master remained enabled;
+- BrandMeister and TGIF credentials were left untouched.
+
+The mutation was confirmed before restore: canonical config hash changed, Contact Intelligence disappeared from the enabled set, both network secret fingerprints remained unchanged, both networks remained connected, and there were zero failed units.
+
+The exported `.ywdsettings` file was then imported with explicit RF restart/autostart approval. Post-restore acceptance passed every comparison:
+
+```text
+[OK] canonical config
+[OK] description
+[OK] RF autostart
+[OK] BM enabled
+[OK] BM master
+[OK] BM password fingerprint
+[OK] TGIF enabled
+[OK] TGIF master
+[OK] TGIF port
+[OK] TGIF password fingerprint
+[OK] plugin master
+[OK] enabled plugins
+[OK] installed plugins
+[OK] plugin configs
+```
+
+Runtime after restore:
+
+```text
+Restored description  YWD Hotspot RC3
+Enabled plugins       dmr-contact-intelligence, dmr-rx-monitor
+Installed plugins     dmr-contact-intelligence, dmr-rx-monitor
+BrandMeister          connected
+TGIF                  connected
+MMDVMHost             active
+DMRGateway            active
+SSH active            true
+SSH boot enabled      true
+SSH auth mode         password+key
+SSH login user        ywd
+SSH authorized keys   7
+failed systemd units  0
+```
+
+This closes the real encrypted settings preservation gate for canonical configuration, BrandMeister, TGIF, plugin intent/config, RF policy, and the intentionally independent SSH state.
+
 ## RC4 hardening implemented
 
 ### Persistent RSSI mapping
@@ -120,11 +187,10 @@ The smoke is intentionally read-only with respect to the managed source checkout
 
 Before RC4 freeze:
 
-1. perform a real encrypted settings export/preview/restore preservation test covering TGIF, BrandMeister, and installed plugin intent;
-2. verify normal update preserves SSH/config/plugin/network state;
-3. complete the additional planned RC4 feature/UI work;
-4. freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
-5. test the published RC3 -> frozen RC4 updater path;
-6. build and physically accept the exact RC4 factory image before publication.
+1. verify a normal GitHub update preserves SSH/config/plugin/network state;
+2. complete the additional planned RC4 feature/UI work;
+3. freeze the candidate and only then change `VERSION` to `0.2.0-rc4`;
+4. test the published RC3 -> frozen RC4 updater path;
+5. build and physically accept the exact RC4 factory image before publication.
 
 Do not expand TGIF routing semantics, rebuild MMDVM-Host/DMRGateway, or modify the proven RF routing path merely as part of this hardening checkpoint.

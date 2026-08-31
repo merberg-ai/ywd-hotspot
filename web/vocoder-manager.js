@@ -3,6 +3,8 @@
   const el = id => document.getElementById(id);
   let installed = false;
   let loading = false;
+  let jobActive = false;
+  let pollTimer = null;
 
   const stateTone = state => {
     const s = String(state || '').toUpperCase();
@@ -63,6 +65,19 @@
     return 'IDLE';
   }
 
+  function syncActionState() {
+    const check = el('vocoderPreflight');
+    if (!check) return;
+    const unlocked = typeof state !== 'undefined' && !!state?.controls?.authenticated;
+    const localBusy = check.dataset.ywdVocoderBusy === '1';
+    check.disabled = !unlocked || jobActive || localBusy;
+    check.title = !unlocked
+      ? 'Unlock the dashboard to run the install-readiness check.'
+      : jobActive
+        ? 'A managed vocoder job is already running.'
+        : 'Check install/build prerequisites without changing the live RF runtime.';
+  }
+
   function renderConsole(job) {
     const pre = el('vocoderConsoleLog');
     if (!pre) return;
@@ -75,23 +90,25 @@
       pre.textContent = `${String(job.phase || 'working').toUpperCase()}${Number.isFinite(Number(job.progress)) ? ` · ${Number(job.progress)}%` : ''}\n${job.message || 'Managed vocoder job is running.'}`;
       return;
     }
-    pre.textContent = 'No managed vocoder job transcript yet.\nBuild/install actions are intentionally not enabled in this foundation slice.';
+    pre.textContent = 'No managed vocoder job transcript yet.\nUse CHECK INSTALL READINESS to exercise the guarded background job path without changing RF/runtime state.';
   }
 
   function render(doc) {
-    const state = doc?.state || {};
+    const stateDoc = doc?.state || {};
     const backend = doc?.backend || {};
     const recipe = doc?.recipe || {};
     const runtime = doc?.runtime || {};
+    const job = doc?.job || {};
+    jobActive = !!job.active;
     const badge = el('vocoderState');
-    const name = String(state.state || 'UNKNOWN').toUpperCase();
+    const name = String(stateDoc.state || 'UNKNOWN').toUpperCase();
     if (badge) {
       badge.textContent = name.replaceAll('_', ' ');
       badge.className = `vocoder-state ${stateTone(name)}`;
     }
-    text('vocoderSummary', state.reason || 'Vocoder manager status unavailable.');
+    text('vocoderSummary', stateDoc.reason || 'Vocoder manager status unavailable.');
     text('vocoderBackend', backend.binary_present ? (doc.managed ? 'MBELIB · MANAGED' : 'MBELIB · LEGACY/EXTERNAL') : 'NOT INSTALLED');
-    text('vocoderProcess', state.process_mode || String(backend.service_state || 'not installed').toUpperCase());
+    text('vocoderProcess', stateDoc.process_mode || String(backend.service_state || 'not installed').toUpperCase());
     text('vocoderProtocol', `YWD PROTOCOL v${recipe.protocol ?? '—'}`);
     text('vocoderRecipe', `${recipe.id || '—'} · recipe ${recipe.version ?? '—'}`);
     text('vocoderMbelibPin', shortSha(recipe.mbelib_commit));
@@ -103,15 +120,15 @@
     text('vocoderCollected', `STATUS ${stamp(doc?.collected_at)}`);
     const foundation = el('vocoderFoundationNote');
     if (foundation) {
-      foundation.textContent = doc?.mutations_enabled
-        ? 'Managed vocoder maintenance controls are available.'
-        : 'Status foundation is active. Build/install/update controls remain intentionally disabled until the transactional job path passes its next gate.';
+      foundation.textContent = 'Background job foundation is active. CHECK INSTALL READINESS performs guarded preflight only; package install, source build, and live runtime activation remain disabled in this slice.';
     }
-    renderConsole(doc?.job || {});
+    renderConsole(job);
+    if (jobActive) el('vocoderConsoleDetails')?.setAttribute('open', '');
+    syncActionState();
   }
 
   async function loadStatus({showError = false, showButtonBusy = false} = {}) {
-    if (loading) return;
+    if (loading) return null;
     loading = true;
     const button = el('vocoderRefresh');
     const old = button?.textContent;
@@ -127,11 +144,13 @@
       try { doc = await r.json(); } catch (_) {}
       if (!r.ok || doc?.error) throw new Error(doc?.error || `HTTP ${r.status}`);
       render(doc);
+      return doc;
     } catch (err) {
       const badge = el('vocoderState');
       if (badge) { badge.textContent = 'UNAVAILABLE'; badge.className = 'vocoder-state bad'; }
       text('vocoderSummary', err?.message || 'Could not read vocoder manager status.');
       if (showError && typeof toast === 'function') toast(`Vocoder status failed: ${err?.message || err}`, true);
+      return null;
     } finally {
       loading = false;
       if (button && showButtonBusy) {
@@ -140,6 +159,42 @@
         button.disabled = false;
         button.textContent = old || 'REFRESH STATUS';
       }
+      syncActionState();
+    }
+  }
+
+  function schedulePoll(delay = null) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(async () => {
+      const page = el('system');
+      if (installed && !document.hidden && page?.classList.contains('on')) await loadStatus();
+      schedulePoll(jobActive ? 1500 : 30000);
+    }, delay == null ? (jobActive ? 1500 : 30000) : delay);
+  }
+
+  async function startPreflight(button) {
+    if (!button || button.dataset.ywdVocoderBusy === '1' || jobActive) return;
+    button.dataset.ywdVocoderBusy = '1';
+    const old = button.textContent;
+    button.disabled = true;
+    button.classList.add('ywd-working');
+    button.setAttribute('aria-busy', 'true');
+    button.textContent = 'STARTING CHECK…';
+    try {
+      const out = await post('/api/system/vocoder/preflight', {});
+      if (typeof toast === 'function') toast(out?.message || 'Vocoder readiness check started');
+      el('vocoderConsoleDetails')?.setAttribute('open', '');
+      jobActive = true;
+      schedulePoll(300);
+      setTimeout(() => loadStatus(), 250);
+    } catch (err) {
+      if (typeof toast === 'function') toast(`Vocoder readiness check failed to start: ${err?.message || err}`, true);
+    } finally {
+      delete button.dataset.ywdVocoderBusy;
+      button.classList.remove('ywd-working');
+      button.removeAttribute('aria-busy');
+      button.textContent = old;
+      syncActionState();
     }
   }
 
@@ -169,14 +224,22 @@
         <div><span>MAINTENANCE</span><b id="vocoderMaintenance">—</b></div>
       </div>
       <div class="notice vocoder-foundation-note" id="vocoderFoundationNote">Status foundation is loading…</div>
-      <div class="buttonrow wrap vocoder-actions"><button class="btn vocoder-refresh" id="vocoderRefresh" type="button">REFRESH STATUS</button><span class="hint" id="vocoderCollected">—</span></div>
-      <details class="vocoder-console"><summary>MANAGED JOB CONSOLE</summary><pre id="vocoderConsoleLog">No managed vocoder job transcript yet.</pre></details>
+      <div class="buttonrow wrap vocoder-actions">
+        <button class="btn primary ctl" id="vocoderPreflight" type="button">CHECK INSTALL READINESS</button>
+        <button class="btn vocoder-refresh" id="vocoderRefresh" type="button">REFRESH STATUS</button>
+        <span class="hint" id="vocoderCollected">—</span>
+      </div>
+      <details class="vocoder-console" id="vocoderConsoleDetails"><summary>MANAGED JOB CONSOLE</summary><pre id="vocoderConsoleLog">No managed vocoder job transcript yet.</pre></details>
     `;
     const host = el('hostPowerCard');
     grid.insertBefore(card, host || null);
     el('vocoderRefresh').onclick = () => loadStatus({showError:true, showButtonBusy:true});
+    el('vocoderPreflight').onclick = event => startPreflight(event.currentTarget);
     installed = true;
+    if (typeof setCtl === 'function') setCtl();
+    syncActionState();
     loadStatus();
+    schedulePoll();
     return true;
   }
 
@@ -187,14 +250,6 @@
       if (ensureCard() || tries >= 200) clearInterval(timer);
     }, 60);
     ensureCard();
-
-    if (!window.__ywdVocoderStatusPoll) {
-      window.__ywdVocoderStatusPoll = setInterval(() => {
-        const page = el('system');
-        if (!installed || document.hidden || !page?.classList.contains('on')) return;
-        loadStatus();
-      }, 30000);
-    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true});

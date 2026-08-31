@@ -17,8 +17,10 @@ spec.loader.exec_module(mod)
 
 
 def main() -> int:
+    # Deliberately omit TGIF Parrot from the remote payload. The real public
+    # export does not necessarily contain service destinations such as Parrot,
+    # so YWD must merge its proven known-TG metadata locally.
     rows = mod.normalize_tgif_talkgroups([
-        {"id": 9990, "name": "Parrot", "website": "https://example.invalid/parrot"},
         {"id": "31665", "name": "TGIF Network"},
         {"id": 171, "name": "DX WORLD-WIDE", "country": "US", "language": "English"},
         {"id": 1234567, "name": "Legacy seven digit"},
@@ -26,6 +28,8 @@ def main() -> int:
     ])
     by_id = {row["id"]: row for row in rows}
 
+    assert by_id[9990]["name"] == "Parrot"
+    assert by_id[9990]["synthetic"] is True
     assert by_id[9990]["supported"] is True
     assert by_id[9990]["rf_talkgroup"] == 5_009_990
     assert by_id[31665]["rf_talkgroup"] == 5_031_665
@@ -39,11 +43,28 @@ def main() -> int:
     try:
         result = mod.search_tgif_talkgroups(query="world", limit=50)
         assert [row["id"] for row in result["results"]] == [171]
+
+        result = mod.search_tgif_talkgroups(query="9990", limit=50)
+        assert result["results"][0]["id"] == 9990
+        assert result["results"][0]["name"] == "Parrot"
+        assert result["results"][0]["rf_talkgroup"] == 5_009_990
+
         result = mod.search_tgif_talkgroups(query="31665", limit=50)
         assert result["results"][0]["id"] == 31665
         assert result["results"][0]["rf_talkgroup"] == 5_031_665
-        result = mod.search_tgif_talkgroups(ids=[9990, 31665], limit=50)
-        assert [row["id"] for row in result["results"]] == [9990, 31665]
+
+        # Exact numeric search must remain usable even when the remote catalog
+        # has no metadata row for the requested valid TGIF talkgroup.
+        result = mod.search_tgif_talkgroups(query="424242", limit=50)
+        assert result["results"][0]["id"] == 424242
+        assert result["results"][0]["name"] == "TG 424242"
+        assert result["results"][0]["synthetic"] is True
+        assert result["results"][0]["supported"] is True
+        assert result["results"][0]["rf_talkgroup"] == 5_424_242
+
+        result = mod.search_tgif_talkgroups(ids=[9990, 31665, 424242], limit=50)
+        assert [row["id"] for row in result["results"]] == [9990, 31665, 424242]
+        assert result["results"][2]["synthetic"] is True
         assert result["rf_base"] == 5_000_000
         assert result["rf_max_network_tg"] == 999_999
     finally:

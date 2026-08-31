@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Authoritative read-only state model for the RC4 DMR Audio Vocoder manager.
+"""Authoritative state model for the RC4 DMR Audio Vocoder manager.
 
-This foundation deliberately performs no install/build/repair mutation and does
-not send Protocol STATUS while the System page polls. Socket-activated backends
-must be allowed to remain dormant. Explicit self-test and mutation operations
-are added only in later gated slices.
+Normal System-page polling is intentionally lightweight: it reads the persisted
+YWD runtime identity plus passive systemd/file state and never wakes the decoder
+or launches the expensive MMDVM helper verification path. Exact installed
+binary/runtime verification remains available to guarded background jobs before
+any future build or activation decision.
 """
 from __future__ import annotations
 
@@ -154,7 +155,80 @@ def _sha256(path: Path) -> str | None:
         return None
 
 
+def _current_runtime_pins() -> dict:
+    """Return only the pins needed to validate persisted YWD Extended identity."""
+    try:
+        pins = mmdvm_runtime_state._pins()
+    except Exception:
+        pins = {}
+    return {
+        "upstream_commit": str(pins.get("MMDVM_HOST_COMMIT") or ""),
+        "patch_sha256": str(pins.get("MMDVM_YWD_PATCH_SHA256") or "").lower(),
+    }
+
+
 def _runtime() -> dict:
+    """Fast dashboard projection from the last verified persisted runtime state.
+
+    This deliberately does not invoke mmdvm_voice_build.py or the upstream build
+    helper. It still binds the persisted identity to the *current* release pins,
+    so a later app release that changes the accepted upstream/patch identity is
+    shown as not ready until the runtime is explicitly refreshed.
+    """
+    try:
+        persisted = mmdvm_runtime_state.persisted_state()
+    except Exception as exc:
+        persisted = {}
+        error = str(exc)[:300]
+    else:
+        error = ""
+
+    pins = _current_runtime_pins()
+    caps = sorted({str(x) for x in (persisted.get("capabilities") or [])})
+    missing = sorted(set(REQUIRED_RUNTIME_CAPABILITIES) - set(caps))
+    variant = str(persisted.get("variant") or "unknown")
+    expected_upstream = pins["upstream_commit"]
+    expected_patch = pins["patch_sha256"]
+    persisted_upstream = str(persisted.get("upstream_commit") or "")
+    persisted_patch = str(persisted.get("patch_sha256") or "").lower()
+    identity_matches = bool(
+        variant == "ywd-extended"
+        and persisted.get("binary_sha256")
+        and expected_upstream
+        and expected_patch
+        and persisted_upstream == expected_upstream
+        and persisted_patch == expected_patch
+    )
+    ready = bool(
+        identity_matches
+        and not missing
+        and not bool(persisted.get("upgrade_required"))
+        and str(persisted.get("runtime_generation") or "current") == "current"
+    )
+    out = {
+        "ready": ready,
+        "variant": variant,
+        "runtime_generation": str(persisted.get("runtime_generation") or "unknown"),
+        "in_sync": identity_matches,
+        "extension_api": persisted.get("extension_api"),
+        "capabilities": caps,
+        "missing_capabilities": missing,
+        "upgrade_required": bool(persisted.get("upgrade_required")),
+        "binary_sha256": persisted.get("binary_sha256"),
+        "verification": "persisted-current-pin-identity",
+        "selected_at": persisted.get("selected_at"),
+    }
+    if error:
+        out["error"] = error
+    elif not persisted:
+        out["error"] = "persisted MMDVM runtime identity is unavailable"
+    elif variant == "ywd-extended" and not identity_matches:
+        out["error"] = "persisted YWD Extended identity does not match the current release pins"
+    return out
+
+
+def verified_runtime() -> dict:
+    """Perform the expensive exact installed-runtime verification for jobs/gates."""
     try:
         doc = mmdvm_runtime_state.status()
     except Exception as exc:
@@ -164,6 +238,7 @@ def _runtime() -> dict:
             "in_sync": False,
             "capabilities": [],
             "missing_capabilities": list(REQUIRED_RUNTIME_CAPABILITIES),
+            "verification": "exact-installed-runtime",
             "error": str(exc)[:300],
         }
     observed = doc.get("observed") if isinstance(doc.get("observed"), dict) else {}
@@ -186,6 +261,7 @@ def _runtime() -> dict:
         "missing_capabilities": missing,
         "upgrade_required": bool(observed.get("upgrade_required")),
         "binary_sha256": observed.get("binary_sha256"),
+        "verification": "exact-installed-runtime",
     }
 
 
@@ -214,7 +290,7 @@ def _public_job() -> dict:
 
 
 def passive_snapshot() -> dict:
-    """Collect manager state without waking or talking to the decoder backend."""
+    """Collect lightweight manager state without waking the decoder backend."""
     provenance = _read_json(PROVENANCE)
     runtime = _runtime()
     service_exists = _unit_exists(SERVICE_UNIT)

@@ -1,0 +1,115 @@
+/* RC4 DMR Audio Vocoder manager status card. */
+.system-vocoder-card{
+  grid-column:1/-1;
+  border-color:#315268;
+  background:linear-gradient(180deg,#07151dee,#041017ee);
+}
+.vocoder-title-row{align-items:center}
+.vocoder-state{
+  display:inline-flex;
+  align-items:center;
+  min-height:22px;
+  padding:3px 8px;
+  border:1px solid #315268;
+  border-radius:999px;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.075em;
+  white-space:nowrap;
+}
+.vocoder-state.good{border-color:#24604f;color:var(--good)}
+.vocoder-state.warn{border-color:#695627;color:var(--warn)}
+.vocoder-state.bad{border-color:#68343e;color:var(--bad)}
+.vocoder-state.busy{border-color:#27566a;color:var(--cyan)}
+.vocoder-summary{
+  margin:7px 0 11px;
+  font-size:10px;
+  line-height:1.5;
+}
+.vocoder-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0 18px;
+  margin-top:8px;
+  border-top:1px solid #173540;
+}
+.vocoder-grid>div{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  min-width:0;
+  padding:7px 0;
+  border-bottom:1px solid #102b34;
+}
+.vocoder-grid span{
+  flex:0 0 auto;
+  color:var(--muted);
+  font-size:9px;
+  line-height:1.45;
+  letter-spacing:.055em;
+  text-transform:uppercase;
+}
+.vocoder-grid b{
+  min-width:0;
+  font-size:10px;
+  line-height:1.45;
+  text-align:right;
+  overflow-wrap:anywhere;
+}
+.vocoder-foundation-note{
+  margin-top:11px;
+  border-color:#274957;
+  background:#06131a;
+}
+.vocoder-actions{margin-top:10px}
+.vocoder-console{
+  margin-top:11px;
+  border:1px solid #173b45;
+  border-radius:9px;
+  background:#030b10;
+  overflow:hidden;
+}
+.vocoder-console summary{
+  cursor:pointer;
+  padding:9px 11px;
+  color:var(--muted);
+  font-size:10px;
+  letter-spacing:.07em;
+  user-select:none;
+}
+.vocoder-console[open] summary{border-bottom:1px solid #17343d;color:var(--cyan)}
+.vocoder-console pre{
+  margin:0;
+  max-height:220px;
+  overflow:auto;
+  padding:10px 11px;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  color:#9bb2bd;
+  font:9px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+.vocoder-refresh{min-width:132px}
+.vocoder-refresh.ywd-working::before{
+  content:"";
+  display:inline-block;
+  width:9px;
+  height:9px;
+  margin-right:7px;
+  vertical-align:-1px;
+  border:1px solid currentColor;
+  border-right-color:transparent;
+  border-radius:50%;
+  animation:ywdVocoderSpin .7s linear infinite;
+}
+@keyframes ywdVocoderSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.vocoder-refresh.ywd-working::before{animation:none;border-right-color:currentColor}}
+@media(max-width:620px){
+  .system-vocoder-card{padding:12px}
+  .vocoder-grid{grid-template-columns:1fr}
+  .vocoder-grid>div{padding:6px 0}
+  .vocoder-grid span{font-size:8.5px}
+  .vocoder-grid b{font-size:9.5px;max-width:68%}
+  .vocoder-actions{display:grid;grid-template-columns:1fr}
+  .vocoder-actions .btn{width:100%;min-width:0}
+}

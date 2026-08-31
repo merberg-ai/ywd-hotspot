@@ -27,6 +27,8 @@ def facts(**overrides):
         "architecture_supported": True,
         "runtime_ready": True,
         "runtime_variant": "ywd-extended",
+        "runtime_in_sync": True,
+        "runtime_verification": "exact-installed-runtime",
         "runtime_missing_capabilities": [],
         "backend_present": True,
         "free_bytes": 2 * 1024 * 1024 * 1024,
@@ -112,8 +114,10 @@ with tempfile.TemporaryDirectory(prefix="ywd-vocoder-job-smoke-") as td:
         assert report.is_file()
         report_doc = json.loads(report.read_text(encoding="utf-8"))
         assert report_doc["result"]["ready"] is True
+        assert report_doc["facts"]["runtime_verification"] == "exact-installed-runtime"
         assert runner.JOB_LOG.stat().st_size <= runner.MAX_LOG_BYTES
         assert len(state.get("log_tail") or []) <= runner.MAX_LOG_LINES
+        assert "Verifying exact installed YWD Extended runtime identity" in runner.JOB_LOG.read_text(encoding="utf-8")
 
         runner.collect_facts = lambda: facts(source_reachable=False, source_detail="offline")
         failed_job = {"job_id": "vocoder-smoke-fail", "job_type": "vocoder-preflight", "operation": "preflight", "started_at": 2}
@@ -135,6 +139,8 @@ ui_src = (ROOT / "web" / "vocoder-manager.js").read_text(encoding="utf-8")
 mc_src = (LIB / "maintenance_coordinator.py").read_text(encoding="utf-8")
 
 assert 'str(doc.get("operation") or "") != "preflight"' in runner_src
+assert "runtime = vocoder_manager.verified_runtime()" in runner_src
+assert "Verifying exact installed YWD Extended runtime identity" in runner_src
 assert '["apt-get", "install"' not in runner_src
 assert '[git, "clone"' not in runner_src
 assert '["systemctl", "stop"' not in runner_src
@@ -146,6 +152,7 @@ assert 'action != "vocoder-preflight-start"' in admin_src
 assert "maintenance_coordinator.reserve_launch(job_id, JOB_TYPE, SERVICE)" in admin_src
 assert 'core.admin_call("vocoder-preflight-start", {}, 20)' in dashboard_src
 assert "require_control()" in dashboard_src
+assert "_ACTIVE_CACHE_TTL = 0.75" in dashboard_src
 assert "vocoder-preflight-start)" in dispatch_src
 assert "/usr/local/libexec/ywd-hotspot-admin vocoder-preflight-start" in sudoers_src
 assert "User=ywd-hotspot" in unit_src and "User=root" not in unit_src
@@ -156,6 +163,7 @@ assert "SuccessExitStatus=0 3" in unit_src
 assert "Nice=10" in unit_src and "CPUWeight=50" in unit_src and "IOSchedulingClass=idle" in unit_src
 assert "CHECK INSTALL READINESS" in ui_src
 assert "post('/api/system/vocoder/preflight', {})" in ui_src
+assert "renderLaunch(out)" in ui_src
 assert "jobActive || maintenanceActive ? 1500 : 30000" in ui_src
 assert "check.disabled = !unlocked || maintenanceActive || jobActive || localBusy" in ui_src
 assert "os.O_RDWR | os.O_CREAT, 0o660" in mc_src
@@ -164,6 +172,7 @@ assert "LAUNCH_TIMEOUT_S = 60" in mc_src
 print("[OK] readiness evaluation distinguishes hard failures, temporary blockers, and YWD Extended prerequisite")
 print("[OK] launch reservation blocks competing maintenance before worker adoption")
 print("[OK] persistent preflight job completes/failed-safes with lease release and bounded transcript")
+print("[OK] background preflight owns expensive exact-runtime verification and reports it before waiting")
 print("[OK] background worker is unprivileged, low-priority, and filesystem-confined")
 print("[OK] readiness API is dashboard-authenticated and exposes no browser-controlled build options")
 print("[OK] gated worker contains no package install, source clone, compile, RF restart, or activation path")

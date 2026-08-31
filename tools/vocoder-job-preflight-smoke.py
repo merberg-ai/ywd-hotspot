@@ -164,8 +164,9 @@ assert "Nice=10" in unit_src and "CPUWeight=50" in unit_src and "IOSchedulingCla
 assert "CHECK INSTALL READINESS" in ui_src
 assert "post('/api/system/vocoder/preflight', {})" in ui_src
 assert "renderLaunch(out)" in ui_src
-assert "jobActive || maintenanceActive ? 1500 : 30000" in ui_src
-assert "check.disabled = !unlocked || maintenanceActive || jobActive || localBusy" in ui_src
+assert "launchPending || jobActive || maintenanceActive ? 1500 : 30000" in ui_src
+assert "launchedTerminal" in ui_src
+assert "check.disabled = !unlocked || blocked" in ui_src
 assert "os.O_RDWR | os.O_CREAT, 0o660" in mc_src
 assert "LAUNCH_TIMEOUT_S = 60" in mc_src
 
@@ -173,6 +174,7 @@ print("[OK] readiness evaluation distinguishes hard failures, temporary blockers
 print("[OK] launch reservation blocks competing maintenance before worker adoption")
 print("[OK] persistent preflight job completes/failed-safes with lease release and bounded transcript")
 print("[OK] background preflight owns expensive exact-runtime verification and reports it before waiting")
+print("[OK] browser readiness action stays latched until the matching managed job is terminal")
 print("[OK] background worker is unprivileged, low-priority, and filesystem-confined")
 print("[OK] readiness API is dashboard-authenticated and exposes no browser-controlled build options")
 print("[OK] gated worker contains no package install, source clone, compile, RF restart, or activation path")

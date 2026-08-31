@@ -92,6 +92,37 @@ with tempfile.TemporaryDirectory(prefix="ywd-maint-smoke-") as td:
     finally:
         mc.VAR, mc.LEASE, mc.LOCK, mc.LAST, mc.BOOT_ID = old
 
+# Normal dashboard runtime projection must never invoke the expensive exact
+# runtime helper path. It binds the last verified persisted identity to current
+# release pins instead.
+old_persisted = vm.mmdvm_runtime_state.persisted_state
+old_pins = vm.mmdvm_runtime_state._pins
+old_status = vm.mmdvm_runtime_state.status
+try:
+    vm.mmdvm_runtime_state.persisted_state = lambda: {
+        "variant": "ywd-extended",
+        "upstream_commit": "upstream-smoke",
+        "binary_sha256": "binary-smoke",
+        "extension_api": 2,
+        "patch_sha256": "patch-smoke",
+        "capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES),
+        "runtime_generation": "current",
+        "upgrade_required": False,
+        "selected_at": 123,
+    }
+    vm.mmdvm_runtime_state._pins = lambda: {
+        "MMDVM_HOST_COMMIT": "upstream-smoke",
+        "MMDVM_YWD_PATCH_SHA256": "patch-smoke",
+    }
+    vm.mmdvm_runtime_state.status = lambda: (_ for _ in ()).throw(AssertionError("dashboard runtime projection called expensive verifier"))
+    projected = vm._runtime()
+    assert projected["ready"] is True
+    assert projected["verification"] == "persisted-current-pin-identity"
+finally:
+    vm.mmdvm_runtime_state.persisted_state = old_persisted
+    vm.mmdvm_runtime_state._pins = old_pins
+    vm.mmdvm_runtime_state.status = old_status
+
 recipe = {"id": vm.BACKEND_RECIPE, "version": vm.BACKEND_RECIPE_VERSION, "protocol": vm.PROTOCOL_VERSION, "mbelib_commit": vm.APPROVED_MBELIB_COMMIT}
 ready_runtime = {
     "ready": True,
@@ -131,17 +162,23 @@ modem_ui_src = (ROOT / "web" / "modem-ui.js").read_text(encoding="utf-8")
 assert "import vocoder_client" not in manager_src
 assert "vocoder_client.status" not in manager_src
 assert '"mutations_enabled": False' in manager_src
+assert "def verified_runtime()" in manager_src
+assert '"persisted-current-pin-identity"' in manager_src
 assert 'path != "/api/system/vocoder"' in dashboard_src
 assert 'path != "/api/system/vocoder/preflight"' in dashboard_src
 assert "require_control()" in dashboard_src
 assert 'core.admin_call("vocoder-preflight-start", {}, 20)' in dashboard_src
-assert "vocoder-manager.js?v=rc4-vocoder-foundation1" in update_src
+assert "_ACTIVE_CACHE_TTL = 0.75" in dashboard_src
+assert "invalidate_status()" in dashboard_src
+assert "vocoder-manager.js?v=rc4-vocoder-foundation2" in update_src
 assert '"/vocoder-manager.css"' in update_src
 assert "DMR AUDIO VOCODER" in ui_src
 assert "REFRESH STATUS" in ui_src
 assert "CHECK INSTALL READINESS" in ui_src
 assert "fetch('/api/system/vocoder'" in ui_src
 assert "post('/api/system/vocoder/preflight', {})" in ui_src
+assert "renderLaunch(out)" in ui_src
+assert "JOB ACCEPTED · waiting for worker status" in ui_src
 assert "INSTALL VOCODER" not in ui_src
 assert "BUILD YWD EXTENDED" not in ui_src
 assert "showButtonBusy" in ui_src
@@ -160,7 +197,9 @@ print("[OK] maintenance public status strips unapproved metadata")
 print("[OK] vocoder manager classifies not-installed/repair/prerequisite/disabled/update/ready states")
 print("[OK] dormant socket-activated backend is represented as READY / DORMANT")
 print("[OK] passive System polling does not wake the vocoder Protocol backend")
+print("[OK] dashboard runtime projection uses persisted current-pin identity without exact helper verification")
 print("[OK] background polling is silent; only explicit refresh owns button busy feedback")
+print("[OK] readiness launch renders immediate local feedback and uses a short active cache")
 print("[OK] maintenance reservation immediately gates the readiness action")
 print("[OK] MODEM / MMDVM remains passive inventory; guarded YWD Extended work belongs to Vocoder")
 print("[OK] readiness launch is dashboard-authenticated while install/build/activation remain absent")

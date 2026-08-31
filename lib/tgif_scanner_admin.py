@@ -66,6 +66,18 @@ def write_preferences(prefs: dict) -> dict:
     return normalized
 
 
+def publish_runtime(**updates) -> dict:
+    """Publish admin-originated scanner/session state group-readable by dashboard."""
+    doc = core_admin.read_json(tgif_scanner.RUNTIME, {})
+    if not isinstance(doc, dict):
+        doc = {}
+    doc.setdefault("schema", 1)
+    doc.update(updates)
+    doc["updated_at"] = time.time()
+    core_admin.atomic_json(tgif_scanner.RUNTIME, doc, mode=0o640, group=True)
+    return doc
+
+
 def public_status() -> dict:
     cfg, tg, radio, station, prefs = scanner_context()
     runtime = core_admin.read_json(tgif_scanner.RUNTIME, {})
@@ -172,6 +184,20 @@ def perform(data: dict) -> dict:
             slot = 2
         stop_service()
         out = tgif_scanner.session_update(tgif_scanner.network_identity(cfg), int(slot), talkgroup)
+        publish_runtime(
+            state="tuned",
+            active=False,
+            current_tg=talkgroup,
+            current_name="",
+            current_rf_tg=tgif_scanner.RF_BASE + talkgroup,
+            slot=int(slot),
+            manual_hold=False,
+            hold_reason="pinned",
+            tuned_at=time.time(),
+            dwell_until=0.0,
+            dwell_remaining_s=None,
+            error=None,
+        )
         core_admin.audit("tgif-tune", {"talkgroup": talkgroup, "slot": int(slot), "rf_keyup": False})
         return {"ok": True, "tuned": talkgroup, "rf_talkgroup": tgif_scanner.RF_BASE + talkgroup, "slot": int(slot), "result": out}
 
@@ -183,6 +209,19 @@ def perform(data: dict) -> dict:
         stop_service()
         out = tgif_scanner.session_update(
             tgif_scanner.network_identity(cfg), int(slot), tgif_scanner.DISCONNECT_TG
+        )
+        publish_runtime(
+            state="disconnected",
+            active=False,
+            current_tg=None,
+            current_name="",
+            current_rf_tg=None,
+            slot=int(slot),
+            manual_hold=False,
+            hold_reason=None,
+            dwell_until=0.0,
+            dwell_remaining_s=None,
+            error=None,
         )
         core_admin.audit("tgif-disconnect", {"talkgroup": 4000, "slot": int(slot), "rf_keyup": False})
         return {"ok": True, "disconnected": True, "slot": int(slot), "result": out}

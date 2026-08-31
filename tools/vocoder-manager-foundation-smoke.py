@@ -128,6 +128,7 @@ dashboard_src = (LIB / "dashboard_vocoder_manager.py").read_text(encoding="utf-8
 update_src = (LIB / "dashboard_update.py").read_text(encoding="utf-8")
 ui_src = (ROOT / "web" / "vocoder-manager.js").read_text(encoding="utf-8")
 css_src = (ROOT / "web" / "vocoder-manager.css").read_text(encoding="utf-8")
+modem_ui_src = (ROOT / "web" / "modem-ui.js").read_text(encoding="utf-8")
 
 assert "import vocoder_client" not in manager_src
 assert "vocoder_client.status" not in manager_src
@@ -140,8 +141,14 @@ assert "REFRESH STATUS" in ui_src
 assert "fetch('/api/system/vocoder'" in ui_src
 assert "method:'POST'" not in ui_src and 'method: "POST"' not in ui_src
 assert "Build/install/update controls remain intentionally disabled" in ui_src
+assert "showButtonBusy" in ui_src
+assert "if (button && showButtonBusy)" in ui_src
+assert "}, 30000);" in ui_src
 assert "@media(max-width:620px)" in css_src
 assert ".vocoder-actions .btn{width:100%;min-width:0}" in css_src
+assert "BUILD / UPDATE YWD-EXTENDED" not in modem_ui_src
+assert "HAT FIRMWARE TOOLS" not in modem_ui_src
+assert "Inventory only. Guarded YWD Extended preparation for DMR audio is managed by the DMR Audio Vocoder section." in modem_ui_src
 
 print("[OK] appliance maintenance lease rejects conflicting live jobs")
 print("[OK] maintenance lease supports idempotent owner updates and stale recovery")
@@ -149,5 +156,7 @@ print("[OK] maintenance public status strips unapproved metadata")
 print("[OK] vocoder manager classifies not-installed/repair/prerequisite/disabled/update/ready states")
 print("[OK] dormant socket-activated backend is represented as READY / DORMANT")
 print("[OK] passive System polling does not wake the vocoder Protocol backend")
+print("[OK] background polling is silent; only explicit refresh owns button busy feedback")
+print("[OK] MODEM / MMDVM remains passive inventory; guarded YWD Extended work belongs to Vocoder")
 print("[OK] vocoder foundation exposes read-only status only; mutation controls remain gated off")
 print("[OK] System card and mobile layout assets are wired into the dashboard")

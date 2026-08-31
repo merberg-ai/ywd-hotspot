@@ -94,6 +94,26 @@
     pre.textContent = 'No managed vocoder job transcript yet.\nUse CHECK INSTALL READINESS to exercise the guarded background job path without changing RF/runtime state.';
   }
 
+  function renderLaunch(out) {
+    jobActive = true;
+    maintenanceActive = true;
+    const badge = el('vocoderState');
+    if (badge) {
+      badge.textContent = 'CHECKING';
+      badge.className = 'vocoder-state busy';
+    }
+    text('vocoderSummary', 'Install-readiness job accepted. Exact runtime and appliance checks are running in the background.');
+    text('vocoderMaintenance', 'VOCODER-PREFLIGHT · LAUNCHING');
+    text('vocoderCollected', 'JOB ACCEPTED · waiting for worker status');
+    const pre = el('vocoderConsoleLog');
+    if (pre) {
+      const id = String(out?.job_id || 'managed job');
+      pre.textContent = `[JOB] ${id}\n[>>] Readiness check accepted by YWD-Hotspot\n[>>] Starting background worker…\n[>>] Exact runtime verification may take a little while on a Pi Zero.`;
+    }
+    el('vocoderConsoleDetails')?.setAttribute('open', '');
+    syncActionState();
+  }
+
   function render(doc) {
     const stateDoc = doc?.state || {};
     const backend = doc?.backend || {};
@@ -185,11 +205,10 @@
     button.textContent = 'STARTING CHECK…';
     try {
       const out = await post('/api/system/vocoder/preflight', {});
+      renderLaunch(out);
       if (typeof toast === 'function') toast(out?.message || 'Vocoder readiness check started');
-      el('vocoderConsoleDetails')?.setAttribute('open', '');
-      maintenanceActive = true;
-      schedulePoll(300);
-      setTimeout(() => loadStatus(), 250);
+      schedulePoll(250);
+      setTimeout(() => loadStatus(), 200);
     } catch (err) {
       if (typeof toast === 'function') toast(`Vocoder readiness check failed to start: ${err?.message || err}`, true);
     } finally {

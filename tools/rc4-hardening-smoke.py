@@ -22,6 +22,8 @@ PY_SOURCES = (
     "lib/setup_server.py",
     "lib/setup_restore_server.py",
     "lib/setup_admin.py",
+    "lib/dashboard_backup.py",
+    "lib/dashboard_tgif_control.py",
     "lib/tgif_scanner.py",
     "lib/tgif_scanner_admin.py",
     "lib/oled.py",

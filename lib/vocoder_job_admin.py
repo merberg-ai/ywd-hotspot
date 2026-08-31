@@ -2,9 +2,9 @@
 """Narrow root launcher for managed vocoder background jobs.
 
 The dashboard can request only one fixed operation in this gated generation:
-`vocoder-preflight-start`. This helper generates the job id itself, writes one
-root-owned request for the unprivileged service, and starts that service without
-waiting for the job to finish.
+`vocoder-preflight-start`. This helper generates the job id itself, reserves the
+appliance maintenance lease for systemd, writes one root-owned request for the
+unprivileged service, and starts that service without waiting for completion.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ VAR = Path(os.environ.get("YWD_VAR", "/var/lib/ywd-hotspot"))
 STATE_DIR = Path(os.environ.get("YWD_VOCODER_STATE_DIR", str(VAR / "vocoder")))
 REQUEST = Path(os.environ.get("YWD_VOCODER_JOB_REQUEST", str(STATE_DIR / "request.json")))
 SERVICE = "ywd-vocoder-job.service"
+JOB_TYPE = "vocoder-preflight"
 
 
 def _json_out(doc: dict, rc: int = 0) -> int:
@@ -31,14 +32,16 @@ def _json_out(doc: dict, rc: int = 0) -> int:
     return rc
 
 
-def _service_active() -> bool:
+def _service_busy() -> bool:
     p = subprocess.run(
-        ["systemctl", "is-active", "--quiet", SERVICE],
-        stdout=subprocess.DEVNULL,
+        ["systemctl", "is-active", SERVICE],
+        text=True,
+        stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         check=False,
     )
-    return p.returncode == 0
+    state = (p.stdout or "").strip().lower()
+    return state in {"active", "activating", "reloading", "deactivating"}
 
 
 def _ensure_state_dir() -> tuple[int, int]:
@@ -59,7 +62,8 @@ def _atomic_request(doc: dict, gid: int) -> None:
 
 
 def start_preflight() -> dict:
-    if _service_active():
+    _uid, gid = _ensure_state_dir()
+    if _service_busy():
         raise RuntimeError("a vocoder maintenance job is already running")
 
     lease = maintenance_coordinator.inspect()
@@ -70,36 +74,46 @@ def start_preflight() -> dict:
         owner = str(lease.get("job_type") or "maintenance")
         raise RuntimeError(f"appliance maintenance is busy: {owner}")
 
-    _uid, gid = _ensure_state_dir()
     job_id = f"vocoder-{int(time.time())}-{secrets.token_hex(4)}"
-    request = {
-        "schema": 1,
-        "job_id": job_id,
-        "job_type": "vocoder-preflight",
-        "operation": "preflight",
-        "requested_at": int(time.time()),
-    }
-    _atomic_request(request, gid)
+    maintenance_coordinator.reserve_launch(job_id, JOB_TYPE, SERVICE)
+    reserved = True
+    try:
+        request = {
+            "schema": 1,
+            "job_id": job_id,
+            "job_type": JOB_TYPE,
+            "operation": "preflight",
+            "requested_at": int(time.time()),
+        }
+        _atomic_request(request, gid)
 
-    p = subprocess.run(
-        ["systemctl", "start", "--no-block", SERVICE],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if p.returncode != 0:
+        p = subprocess.run(
+            ["systemctl", "start", "--no-block", SERVICE],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if p.returncode != 0:
+            raise RuntimeError((p.stderr or p.stdout or "could not start vocoder job service").strip()[:500])
+        reserved = False  # worker now owns responsibility for adopting/releasing it
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "state": "CHECKING",
+            "message": "Vocoder install-readiness check started in the background",
+        }
+    except Exception:
         try:
             REQUEST.unlink()
         except FileNotFoundError:
             pass
-        raise RuntimeError((p.stderr or p.stdout or "could not start vocoder job service").strip()[:500])
-    return {
-        "ok": True,
-        "job_id": job_id,
-        "state": "CHECKING",
-        "message": "Vocoder install-readiness check started in the background",
-    }
+        if reserved:
+            try:
+                maintenance_coordinator.release(job_id, outcome="launch-failed", owner_pid=1)
+            except Exception:
+                pass
+        raise
 
 
 def main() -> int:
@@ -109,8 +123,6 @@ def main() -> int:
     if action != "vocoder-preflight-start":
         return _json_out({"ok": False, "error": "unsupported vocoder job action"}, 2)
     try:
-        # Consume and validate bounded JSON input even though this generation
-        # deliberately accepts no browser-controlled options.
         raw = sys.stdin.read(131073)
         if len(raw) > 131072:
             raise ValueError("request too large")

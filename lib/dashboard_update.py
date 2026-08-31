@@ -74,6 +74,63 @@ _RELEASE_UI_BOOTSTRAP = b"""
 })();
 """
 
+# app.js still contains the proven dependency-ordered RC3 module chain.  The
+# original loader stopped forever when any single static request failed, which
+# became visible once RC4's startup splash began waiting for the fully assembled
+# dashboard.  Patch only the tiny loader primitive at serve time: execution
+# order remains unchanged, but every request is tracked and a failed request
+# advances to the next dependency so the readiness gate can report the exact
+# failure instead of hanging generically.
+_LEGACY_LOAD_OLD = b"""  function load(src, next) {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = false;
+    s.onload = () => next && next();
+    s.onerror = () => console.error(`YWD-Hotspot failed to load ${src}`);
+    document.head.appendChild(s);
+  }
+"""
+_LEGACY_LOAD_NEW = b"""  function load(src, next) {
+    const progress = window.__YWD_LEGACY_UI_PROGRESS || (window.__YWD_LEGACY_UI_PROGRESS = {
+      loaded: 0, total: 17, failed: 0, current: null, failedSources: []
+    });
+    progress.current = src;
+    window.dispatchEvent(new CustomEvent('ywd:legacy-ui-progress'));
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = false;
+    let settled = false;
+    const finish = ok => {
+      if (settled) return;
+      settled = true;
+      progress.loaded += 1;
+      if (!ok) {
+        progress.failed += 1;
+        if (!progress.failedSources.includes(src)) progress.failedSources.push(src);
+      }
+      progress.current = null;
+      window.dispatchEvent(new CustomEvent('ywd:legacy-ui-progress'));
+      if (next) next();
+    };
+    s.onload = () => finish(true);
+    s.onerror = () => {
+      console.error(`YWD-Hotspot failed to load ${src}`);
+      finish(false);
+    };
+    document.head.appendChild(s);
+  }
+"""
+
+
+def _patch_app_js(data: bytes) -> bytes:
+    if not data:
+        return b""
+    if _LEGACY_LOAD_NEW in data:
+        return data
+    if _LEGACY_LOAD_OLD not in data:
+        return b""
+    return data.replace(_LEGACY_LOAD_OLD, _LEGACY_LOAD_NEW, 1)
+
 
 def setup_required():
     """Mirror the base dashboard's first-run gate before it can emit a stale URL."""
@@ -164,7 +221,7 @@ def wrap_handler(base):
                 self.send_bytes(200, body, "text/css; charset=utf-8", cache="no-cache")
                 return
             if path == "/app.js":
-                app_js = _asset_bytes("app.js")
+                app_js = _patch_app_js(_asset_bytes("app.js"))
                 theme_js = _asset_bytes("startup-themes.js")
                 readiness_js = _asset_bytes("startup-readiness.js")
                 if not app_js or not readiness_js:

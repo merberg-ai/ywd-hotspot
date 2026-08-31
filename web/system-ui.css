@@ -46,12 +46,35 @@
 .dmrid-grid b{font-size:10px;text-align:right;overflow-wrap:anywhere}
 .dmrid-actions{margin-top:4px}
 
-/* The appliance has one managed SSH/SFTP login account: ywd. Keep the hidden
- * compatibility value for the existing client-key action, but do not present a
- * fake user-selectable field in the System UI. */
+/* SSH client enrollment is the useful operator-facing key export. The server
+ * host-key recovery endpoint remains internal; keep this action compact and
+ * mobile-safe while giving long Pi Zero key-generation work visible feedback. */
 #sshClientUser{display:none!important}
 #sshAccessCard .lookup-row:has(#sshClientUser){grid-template-columns:1fr}
-#sshClientCreate{width:100%;min-width:0}
+#sshAccessCard .ssh-client-key-row{display:grid;grid-template-columns:minmax(0,1fr);width:100%}
+#sshClientCreate{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+#sshClientCreate.ywd-action-busy::before{
+  content:"";
+  display:inline-block;
+  width:.85em;
+  height:.85em;
+  margin-right:.55em;
+  border:2px solid currentColor;
+  border-right-color:transparent;
+  border-radius:50%;
+  vertical-align:-.12em;
+  animation:ywd-ssh-action-spin .75s linear infinite;
+}
+@keyframes ywd-ssh-action-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){
+  #sshClientCreate.ywd-action-busy::before{animation:none;border-right-color:currentColor;opacity:.55}
+}
 
 .system-power-card{
   align-self:start;

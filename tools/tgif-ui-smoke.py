@@ -122,8 +122,8 @@ def main() -> int:
         'path == "/api/tgif/talkgroups/search"',
         "search_tgif_talkgroups",
         "Unlock control mode before forcing a TGIF directory refresh",
-        '"/api/tgif/configure": ("tgif-configure", 60)',
-        '"/api/tgif/password": ("set-tgif-password", 60)',
+        '"/api/tgif/configure": ("tgif-configure", 60, None)',
+        '"/api/tgif/password": ("set-tgif-password", 60, None)',
         "require_control",
     )
     require(
@@ -133,6 +133,9 @@ def main() -> int:
         "https://api.tgif.network/dmr/talkgroups/json",
         "normalize_tgif_talkgroups",
         "search_tgif_talkgroups",
+        "TGIF_KNOWN_TG",
+        "_talkgroup_row",
+        '"synthetic"',
         '"rf_talkgroup"',
         '"supported"',
         "_directory_names",

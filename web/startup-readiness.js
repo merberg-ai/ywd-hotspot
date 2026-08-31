@@ -8,14 +8,6 @@
   let interval = null;
   let continueOffered = false;
 
-  const style = document.createElement('style');
-  style.textContent = `
-    #ywdStartupOverlay.${HOLD_CLASS}{opacity:1!important;visibility:visible!important;pointer-events:auto!important}
-    #ywdStartupOverlay.${HOLD_CLASS}.ywd-startup-out{opacity:1!important;visibility:visible!important;pointer-events:auto!important}
-    #ywdStartupOverlay .ywd-startup-continue{margin-top:12px}
-  `;
-  document.head.appendChild(style);
-
   function dataReady() {
     try {
       return typeof state !== 'undefined' && !!state && typeof configDoc !== 'undefined' && !!configDoc;

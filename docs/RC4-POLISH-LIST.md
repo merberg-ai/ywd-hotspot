@@ -42,6 +42,47 @@ At the normal desktop browser width used for RC4 testing:
 - active/hover styling must remain unchanged;
 - at narrow/mobile widths, every tab must remain reachable by horizontal swipe/scroll even though the scrollbar itself is visually hidden.
 
+## 2. Compact terminal YWD-HOTSPOT wordmark
+
+**Status:** IMPLEMENTED - awaiting appliance acceptance
+
+Replace the older radio/letter banner and plain box headings with one compact ASCII wordmark inspired by the YWD-Plug Windows console style. The wordmark must fit an ordinary 80-column SSH/local terminal.
+
+Presentation owners:
+
+- shared installer/updater banner in `bin/ywd-ui.sh`;
+- `/etc/issue` and `/etc/issue.net` through `lib/branding/issue`;
+- `/etc/motd` through `lib/branding/motd`;
+- dynamic SSH/local login panel in `lib/console/ywd-system-info.py`.
+
+The static and dynamic terminal surfaces should identify the appliance as **Raspberry Pi DMR Hotspot Appliance** and **BrandMeister + TGIF**.
+
+## 3. TGIF parity in GitHub/source install wizard
+
+**Status:** IMPLEMENTED - awaiting source/appliance acceptance
+
+The interactive source installer configuration path now asks whether TGIF Network should be enabled. When enabled it asks for:
+
+- TGIF master/host;
+- TGIF UDP port;
+- TGIF Hotspot Security password using hidden `getpass` input.
+
+Existing TGIF credentials are preserved when TGIF is disabled during a recovery/reconfiguration pass. The canonical config model remains the validator/source of truth.
+
+## 4. TGIF details in SSH/login appliance panel
+
+**Status:** IMPLEMENTED - awaiting appliance acceptance
+
+The dynamic login panel should show, without exposing credentials:
+
+- BrandMeister state and master endpoint;
+- TGIF `ACTIVE`, `ENABLED`, or `DISABLED` state;
+- TGIF master endpoint when enabled;
+- TGIF scanner runtime state/current TG when scanning;
+- the plain-HTTP first-boot setup URL if setup is still required.
+
+The login hook reads only local config/runtime/systemd state; it does not make an external or dashboard HTTP request during SSH login.
+
 ## Queue
 
 Add subsequent RC4 polish items here before implementation so this pass stays controlled and easy to checkpoint.

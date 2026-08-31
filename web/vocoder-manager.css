@@ -1,4 +1,12 @@
 /* RC4 DMR Audio Vocoder manager status / guarded job card. */
+#ywdStartupOverlay.ywd-startup-held,
+#ywdStartupOverlay.ywd-startup-held.ywd-startup-out{
+  opacity:1!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+#ywdStartupOverlay .ywd-startup-continue{margin-top:12px}
+
 .system-vocoder-card{
   grid-column:1/-1;
   border-color:#315268;

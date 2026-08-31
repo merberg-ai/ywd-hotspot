@@ -24,8 +24,11 @@ PY_SOURCES = (
     "lib/setup_admin.py",
     "lib/dashboard_backup.py",
     "lib/dashboard_tgif_control.py",
+    "lib/update_runner.py",
+    "lib/branch_update_runner.py",
     "lib/tgif_scanner.py",
     "lib/tgif_scanner_admin.py",
+    "lib/tgif_scanner_update_safety.py",
     "lib/console/ywd-system-info.py",
     "lib/oled.py",
     "lib/health.py",
@@ -42,6 +45,7 @@ PY_SOURCES = (
     "tools/tgif-directory-smoke.py",
     "tools/tgif-scanner-smoke.py",
     "tools/tgif-polish-smoke.py",
+    "tools/tgif-update-safety-smoke.py",
     "tools/terminal-branding-tgif-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
@@ -73,6 +77,7 @@ SMOKES = (
     "tools/tgif-directory-smoke.py",
     "tools/tgif-scanner-smoke.py",
     "tools/tgif-polish-smoke.py",
+    "tools/tgif-update-safety-smoke.py",
     "tools/terminal-branding-tgif-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
@@ -126,6 +131,7 @@ def main() -> int:
     print("[OK] TGIF routing/UI/status/directory regressions")
     print("[OK] TGIF Control Center/watchlist scanner regression")
     print("[OK] TGIF Control Center responsiveness/status polish regression")
+    print("[OK] TGIF scanner-aware update/rollback/channel preservation regression")
     print("[OK] terminal branding + TGIF source-install/SSH status regression")
     print("[OK] plugin settings/runtime regressions")
     return 0

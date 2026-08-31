@@ -202,8 +202,8 @@ def _fetch_directory():
     except Exception as exc:
         raise RuntimeError("TGIF directory returned invalid JSON") from exc
     rows = normalize_tgif_talkgroups(payload)
-    if not rows:
-        raise RuntimeError("TGIF directory returned no recognized talkgroups")
+    if not any(not row.get("synthetic") for row in rows):
+        raise RuntimeError("TGIF directory returned no recognized exported talkgroups")
     return rows
 
 

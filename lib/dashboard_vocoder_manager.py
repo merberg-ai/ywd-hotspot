@@ -11,7 +11,8 @@ import vocoder_manager
 
 _CACHE_LOCK = threading.Lock()
 _CACHE = {"at": 0.0, "doc": None}
-_CACHE_TTL = 8.0
+_IDLE_CACHE_TTL = 6.0
+_ACTIVE_CACHE_TTL = 0.75
 
 
 def invalidate_status() -> None:
@@ -19,11 +20,20 @@ def invalidate_status() -> None:
         _CACHE.update(at=0.0, doc=None)
 
 
+def _cache_ttl(doc: dict | None) -> float:
+    if not isinstance(doc, dict):
+        return _IDLE_CACHE_TTL
+    job = doc.get("job") if isinstance(doc.get("job"), dict) else {}
+    maintenance = doc.get("maintenance") if isinstance(doc.get("maintenance"), dict) else {}
+    return _ACTIVE_CACHE_TTL if job.get("active") or maintenance.get("active") else _IDLE_CACHE_TTL
+
+
 def cached_status(force: bool = False) -> dict:
     now = time.monotonic()
     with _CACHE_LOCK:
-        if not force and _CACHE["doc"] is not None and now - float(_CACHE["at"] or 0) < _CACHE_TTL:
-            return _CACHE["doc"]
+        cached = _CACHE["doc"]
+        if not force and cached is not None and now - float(_CACHE["at"] or 0) < _cache_ttl(cached):
+            return cached
         doc = vocoder_manager.status()
         _CACHE.update(at=now, doc=doc)
         return doc
@@ -53,6 +63,7 @@ def wrap_handler(base):
                 if body:
                     raise ValueError("vocoder readiness check accepts no options")
                 out = core.admin_call("vocoder-preflight-start", {}, 20)
+                # Never let an idle cached snapshot hide the launch reservation.
                 invalidate_status()
                 self.send_json(out)
             except ValueError as exc:

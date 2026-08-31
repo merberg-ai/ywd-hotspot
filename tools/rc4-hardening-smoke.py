@@ -40,6 +40,7 @@ PY_SOURCES = (
     "tools/tgif-status-smoke.py",
     "tools/tgif-directory-smoke.py",
     "tools/tgif-scanner-smoke.py",
+    "tools/tgif-polish-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
 )
@@ -68,6 +69,7 @@ SMOKES = (
     "tools/tgif-status-smoke.py",
     "tools/tgif-directory-smoke.py",
     "tools/tgif-scanner-smoke.py",
+    "tools/tgif-polish-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
 )
@@ -119,6 +121,7 @@ def main() -> int:
     print("[OK] RC4 HTTP setup/TGIF presentation/default-waterfall policy")
     print("[OK] TGIF routing/UI/status/directory regressions")
     print("[OK] TGIF Control Center/watchlist scanner regression")
+    print("[OK] TGIF Control Center responsiveness/status polish regression")
     print("[OK] plugin settings/runtime regressions")
     return 0
 

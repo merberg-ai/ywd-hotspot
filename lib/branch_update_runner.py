@@ -2,7 +2,7 @@
 """Detached runner for authenticated WebUI branch switches.
 
 This intentionally reuses the canonical GitHub updater and the existing shared
-update-status document.  The dashboard may select only the approved appliance
+update-status document. The dashboard may select only the approved appliance
 channels, while engineering/release CLI workflows remain free to target release
 branches explicitly.
 """
@@ -42,6 +42,7 @@ def check_branch(branch: str, *, live_progress: bool = False) -> dict:
     p = base.run(["bash", str(base.UPDATER), "--dry-run", "--branch", branch], timeout=210)
     info = base.parse_check(p.stdout)
     info["channel"] = branch
+    info.update(base.scanner_before())
     if p.returncode != 0:
         lines = base.clean(p.stdout).strip().splitlines()
         raise RuntimeError((lines[-1] if lines else "branch candidate check failed")[:900])
@@ -70,11 +71,13 @@ def stream_branch_update(info: dict, branch: str) -> tuple[int, str]:
     milestones = [
         ("Fetching YWD-Hotspot from GitHub", 42, "fetching", f"Refreshing {branch} from GitHub…"),
         ("Candidate validation: OK", 52, "validated", "Live candidate re-validation passed."),
+        ("TGIF scanner quiesced", 56, "scanner-paused", "TGIF scanner paused for protected channel replacement…"),
         ("Applying validated candidate", 58, "starting", f"Starting protected switch to {branch}…"),
         ("Protected pre-update backup:", 66, "backup", "Protected rollback backup created."),
         ("Installing ", 74, "installing", "Installing the selected branch…"),
         ("Persistent journal:", 84, "services", "Runtime files installed. Restoring service policy…"),
         ("Updated to ", 91, "restarting", "Branch installed. Restarting and verifying services…"),
+        ("TGIF scanner restored", 95, "scanner-restored", "TGIF scanner runtime restored after channel switch."),
         ("GitHub source checkout updated successfully", 97, "finalizing", "Finalizing managed Git branch state…"),
     ]
     seen = set()
@@ -104,9 +107,6 @@ def install_branch(branch: str) -> int:
         )
         info = check_branch(branch, live_progress=True)
         if info.get("up_to_date") or not info.get("available"):
-            # The WebUI admin helper handles exact-commit channel adoption before
-            # launching us. Reaching this branch means the remote moved during
-            # the handoff; fail safely rather than silently changing no channel.
             raise RuntimeError(
                 f"{branch} now matches the installed build; reopen Change Channel and retry adoption"
             )
@@ -116,11 +116,13 @@ def install_branch(branch: str) -> int:
         text = base.clean(output)
         tail = "\n".join(text.strip().splitlines()[-24:])[-5000:]
         if rc != 0:
+            after = base.scanner_current()
             base.write_status(
                 state="failed", phase="failed", progress=100,
                 message=f"Switch to {branch} failed; rollback handling completed or is in progress.",
                 error=(tail or "branch switch failed")[-1200:], completed_at=base.now_iso(),
-                output_tail=tail, **info,
+                output_tail=tail, **info, **after,
+                scanner_restore=base.scanner_restore_result(info, after),
             )
             return rc or 1
 
@@ -129,6 +131,7 @@ def install_branch(branch: str) -> int:
         matches = re.findall(r"Backup retained:\s*(\S+)", text)
         if matches:
             backup = matches[-1]
+        after = base.scanner_current()
         base.write_status(
             state="complete", phase="branch-switched", progress=100,
             message=f"Software channel switched to {branch}.", error=None,
@@ -141,13 +144,15 @@ def install_branch(branch: str) -> int:
             channel=built.get("update_channel") or branch,
             available=False, up_to_date=True, validated=True,
             backup=backup, output_tail=tail,
+            **{k: v for k, v in info.items() if k.startswith("scanner_before_") or k == "scanner_was_active"},
+            **after, scanner_restore=base.scanner_restore_result(info, after),
         )
         return 0
     except Exception as exc:
         base.write_status(
             state="failed", phase="branch-switch-failed", progress=100,
             message=f"Switch to {branch} failed.", error=str(exc)[:1200],
-            completed_at=base.now_iso(), channel=branch,
+            completed_at=base.now_iso(), channel=branch, **base.scanner_current(),
         )
         return 1
 

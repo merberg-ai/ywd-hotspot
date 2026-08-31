@@ -207,7 +207,7 @@ def claim(
     owner_pid: int | None = None,
     service: str | None = None,
 ) -> dict:
-    """Atomically claim the appliance maintenance lease for one managed job."""
+    """Atomically claim or adopt the appliance maintenance lease."""
     job_id, job_type, phase = _validate(job_id, job_type, phase)
     pid = int(owner_pid or os.getpid())
     service = str(service or "")[:120] or None
@@ -216,6 +216,21 @@ def claim(
         existing = _read(LEASE)
         reason = _stale_reason(existing)
         if existing and reason is None:
+            same_job = str(existing.get("job_id")) == job_id and str(existing.get("job_type")) == job_type
+            same_service = service is None or str(existing.get("service") or "") == service
+            if (
+                same_job
+                and same_service
+                and str(existing.get("phase") or "") == "launching"
+                and int(existing.get("owner_pid") or -1) == 1
+            ):
+                existing["owner_pid"] = pid
+                existing["phase"] = phase
+                existing["updated_at"] = now
+                existing["cancellable"] = bool(cancellable)
+                existing["boot_id"] = _boot_id()
+                _atomic(LEASE, existing)
+                return public_status({**existing, "active": True, "stale": False})
             if str(existing.get("job_id")) == job_id and int(existing.get("owner_pid") or -1) == pid:
                 existing["phase"] = phase
                 existing["updated_at"] = now
@@ -259,7 +274,7 @@ def reserve_launch(job_id: str, job_type: str, service: str) -> dict:
 
 def adopt(job_id: str, job_type: str, *, owner_pid: int | None = None, service: str | None = None,
           phase: str = "checking", cancellable: bool = True) -> dict:
-    """Atomically transfer a live systemd launch reservation to its worker."""
+    """Explicitly transfer a live systemd launch reservation to its worker."""
     job_id, job_type, phase = _validate(job_id, job_type, phase)
     pid = int(owner_pid or os.getpid())
     service = str(service or "")[:120] or None

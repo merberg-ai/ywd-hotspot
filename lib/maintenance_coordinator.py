@@ -6,9 +6,9 @@ jobs claim one persistent lease before changing appliance state. The lease is
 serialized with flock so two processes cannot both win a claim. Read-only
 status never mutates the lease.
 
-The RC4 vocoder-manager foundation consumes this status first. Updater/channel,
-plugin-package and runtime activation paths will be migrated onto the same
-coordinator in later controlled slices.
+The lock file is intentionally shared between root launch/recovery helpers and
+the unprivileged ywd-hotspot worker. Live lease metadata remains bounded and
+contains no credentials.
 """
 from __future__ import annotations
 
@@ -150,8 +150,17 @@ def public_status(doc: dict | None = None) -> dict:
 @contextmanager
 def _locked():
     LOCK.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(LOCK, os.O_RDWR | os.O_CREAT, 0o640)
+    fd = os.open(LOCK, os.O_RDWR | os.O_CREAT, 0o660)
     try:
+        # The root launcher/recovery helper and unprivileged worker must both be
+        # able to serialize against this one inode. The containing appliance
+        # state directory already carries the ywd-hotspot group identity.
+        try:
+            os.fchmod(fd, 0o660)
+            if os.geteuid() == 0:
+                os.fchown(fd, 0, os.stat(LOCK.parent).st_gid)
+        except Exception:
+            pass
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
     finally:

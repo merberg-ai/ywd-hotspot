@@ -53,8 +53,6 @@ with tempfile.TemporaryDirectory(prefix="ywd-maint-smoke-") as td:
         first = mc.claim("vocoder-smoke-1", "vocoder-install", "preparing", owner_pid=os.getpid())
         assert first["active"] is True and first["phase"] == "preparing"
 
-        # Same live owner/job is idempotent and may advance its phase without
-        # recursively acquiring flock.
         same = mc.claim("vocoder-smoke-1", "vocoder-install", "building", owner_pid=os.getpid())
         assert same["active"] is True and same["phase"] == "building"
 
@@ -134,16 +132,21 @@ assert "import vocoder_client" not in manager_src
 assert "vocoder_client.status" not in manager_src
 assert '"mutations_enabled": False' in manager_src
 assert 'path != "/api/system/vocoder"' in dashboard_src
+assert 'path != "/api/system/vocoder/preflight"' in dashboard_src
+assert "require_control()" in dashboard_src
+assert 'core.admin_call("vocoder-preflight-start", {}, 20)' in dashboard_src
 assert "vocoder-manager.js?v=rc4-vocoder-foundation1" in update_src
 assert '"/vocoder-manager.css"' in update_src
 assert "DMR AUDIO VOCODER" in ui_src
 assert "REFRESH STATUS" in ui_src
+assert "CHECK INSTALL READINESS" in ui_src
 assert "fetch('/api/system/vocoder'" in ui_src
-assert "method:'POST'" not in ui_src and 'method: "POST"' not in ui_src
-assert "Build/install/update controls remain intentionally disabled" in ui_src
+assert "post('/api/system/vocoder/preflight', {})" in ui_src
+assert "INSTALL VOCODER" not in ui_src
+assert "BUILD YWD EXTENDED" not in ui_src
 assert "showButtonBusy" in ui_src
 assert "if (button && showButtonBusy)" in ui_src
-assert "}, 30000);" in ui_src
+assert "jobActive ? 1500 : 30000" in ui_src
 assert "@media(max-width:620px)" in css_src
 assert ".vocoder-actions .btn{width:100%;min-width:0}" in css_src
 assert "BUILD / UPDATE YWD-EXTENDED" not in modem_ui_src
@@ -158,5 +161,5 @@ print("[OK] dormant socket-activated backend is represented as READY / DORMANT")
 print("[OK] passive System polling does not wake the vocoder Protocol backend")
 print("[OK] background polling is silent; only explicit refresh owns button busy feedback")
 print("[OK] MODEM / MMDVM remains passive inventory; guarded YWD Extended work belongs to Vocoder")
-print("[OK] vocoder foundation exposes read-only status only; mutation controls remain gated off")
+print("[OK] readiness launch is dashboard-authenticated while install/build/activation remain absent")
 print("[OK] System card and mobile layout assets are wired into the dashboard")

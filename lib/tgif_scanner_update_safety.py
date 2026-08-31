@@ -33,8 +33,7 @@ def run(args, timeout=20):
 
 def read_json(path: Path, default):
     try:
-        obj = json.loads(path.read_text(encoding="utf-8"))
-        return obj
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
 
@@ -58,7 +57,8 @@ def service_active() -> bool:
 
 def clean_state(value) -> str:
     state = str(value or "stopped").strip().lower()
-    return state if state in {"starting", "scanning", "holding", "stopped", "idle", "disabled", "tuned", "disconnected"} else "unknown"
+    allowed = {"starting", "scanning", "holding", "stopped", "idle", "disabled", "tuned", "disconnected", "error"}
+    return state if state in allowed else "unknown"
 
 
 def valid_tg(value):
@@ -67,6 +67,15 @@ def valid_tg(value):
     except Exception:
         return None
     return tg if 1 <= tg <= 999999 and tg != 4000 else None
+
+
+def normalized_slot(*values) -> int:
+    for value in values:
+        try:
+            return 1 if int(value) == 1 else 2
+        except Exception:
+            continue
+    return 2
 
 
 def capture_doc() -> dict:
@@ -88,7 +97,7 @@ def capture_doc() -> dict:
         "service_active": service_active(),
         "state": state,
         "current_tg": valid_tg(runtime.get("current_tg")),
-        "slot": 1 if int(runtime.get("slot") or prefs.get("slot") or 2) == 1 else 2,
+        "slot": normalized_slot(runtime.get("slot"), prefs.get("slot")),
         "manual_hold": bool(runtime.get("manual_hold")) or (state == "holding" and hold_reason == "manual"),
         "hold_reason": hold_reason or None,
         "tgif_enabled": bool(tgif.get("enabled", False)),
@@ -165,7 +174,7 @@ def write_restore_hint(doc: dict) -> None:
         {
             "schema": 1,
             "talkgroup": tg,
-            "slot": 1 if int(doc.get("slot") or 2) == 1 else 2,
+            "slot": normalized_slot(doc.get("slot")),
             "manual_hold": bool(doc.get("manual_hold")),
             "issued_at": time.time(),
             "reason": "application-update-restore",
@@ -173,6 +182,21 @@ def write_restore_hint(doc: dict) -> None:
         0o640,
         group=True,
     )
+
+
+def fresh_runtime_after(timestamp: float):
+    runtime = read_json(RUNTIME, {})
+    if not isinstance(runtime, dict):
+        return None
+    try:
+        updated = float(runtime.get("updated_at") or 0)
+    except Exception:
+        updated = 0
+    if updated < timestamp:
+        return None
+    if not runtime.get("active"):
+        return None
+    return runtime
 
 
 def restore(snapshot: Path) -> dict:
@@ -192,6 +216,7 @@ def restore(snapshot: Path) -> dict:
         print("[WARN] TGIF scanner was active before update, but the installed watchlist is empty; scanner remains stopped.")
         return {"ok": True, "restored": False, "reason": "empty-watchlist"}
 
+    restore_started = time.time()
     write_restore_hint(doc)
     p = run(["systemctl", "start", SERVICE], 20)
     if p.returncode != 0:
@@ -201,13 +226,21 @@ def restore(snapshot: Path) -> dict:
             pass
         detail = (p.stderr or p.stdout or "could not start scanner").strip()[-500:]
         raise RuntimeError(f"TGIF scanner restore failed: {detail}")
-    time.sleep(0.35)
-    if not service_active():
-        raise RuntimeError("TGIF scanner restore failed: service did not remain active")
 
-    runtime = read_json(RUNTIME, {})
-    state = clean_state(runtime.get("state") if isinstance(runtime, dict) else None)
-    tg = valid_tg(runtime.get("current_tg") if isinstance(runtime, dict) else None)
+    runtime = None
+    deadline = time.time() + 12.0
+    while time.time() < deadline:
+        if not service_active():
+            raise RuntimeError("TGIF scanner restore failed: service exited during restart")
+        runtime = fresh_runtime_after(restore_started)
+        if runtime is not None:
+            break
+        time.sleep(0.4)
+    if runtime is None:
+        raise RuntimeError("TGIF scanner restore timed out waiting for fresh runtime state")
+
+    state = clean_state(runtime.get("state"))
+    tg = valid_tg(runtime.get("current_tg"))
     suffix = f" TG {tg}" if tg else ""
     manual = " with manual HOLD restored" if doc.get("manual_hold") else ""
     print(f"TGIF scanner restored after application update: {state.upper()}{suffix}{manual}.")

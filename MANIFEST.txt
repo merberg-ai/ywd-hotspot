@@ -59,6 +59,7 @@ docs/TELEMETRY.md
 docs/TGIF.md
 docs/UPGRADING.md
 docs/VOCODER.md
+docs/checkpoints/rc4-ui-setup-hardware-pass.md
 docs/checkpoints/tgif-unified-settings-hardware-pass.md
 docs/history/README.md
 docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md
@@ -150,6 +151,8 @@ lib/system_admin.py
 lib/system_branding.sh
 lib/telemetry_runtime.py
 lib/tgif_admin.py
+lib/tgif_scanner.py
+lib/tgif_scanner_admin.py
 lib/update_admin.py
 lib/update_runner.py
 lib/vocoder_client.py
@@ -174,6 +177,7 @@ systemd/ywd-mqtt.service
 systemd/ywd-oled.service
 systemd/ywd-plugin@.service
 systemd/ywd-setup.service
+systemd/ywd-tgif-scanner.service
 systemd/ywd-update.service
 systemd/ywd-vocoder-fake.service
 systemd/ywd-vocoder-fake.socket
@@ -193,6 +197,7 @@ tools/startup-theme-config-smoke.py
 tools/telemetry-config-smoke.py
 tools/tgif-directory-smoke.py
 tools/tgif-routing-smoke.py
+tools/tgif-scanner-smoke.py
 tools/tgif-status-smoke.py
 tools/tgif-ui-smoke.py
 tools/ywdplugin-build.py
@@ -227,6 +232,8 @@ web/style.css
 web/system-ui.css
 web/system-ui.js
 web/talkgroups.js
+web/tgif-control.css
+web/tgif-control.js
 web/tgif-ui.js
 web/ui-polish.css
 web/ui-polish.js

@@ -1,4 +1,21 @@
 /* TGIF Control Center responsiveness + Status scanner presentation */
+
+/* RC4 global navigation polish. This asset is bundled unconditionally by the
+ * dashboard release layer, so these rules also apply when TGIF is disabled.
+ * Hide native scrollbar chrome without clipping access to tabs on small screens. */
+.tabs{
+  gap:5px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding:10px 0 8px;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+  overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.tabs::-webkit-scrollbar{display:none;width:0;height:0}
+.tabs button{flex:0 0 auto;padding:8px 9px;font-size:12px}
+
 .tgif-action-spinner{display:inline-block;width:.78em;height:.78em;margin-right:.48em;vertical-align:-.04em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:tgif-action-spin .72s linear infinite}
 #tgifControlPage button[aria-busy="true"]{position:relative;cursor:wait;pointer-events:none;user-select:none;opacity:.82;box-shadow:0 0 0 1px rgba(76,219,255,.18),0 0 18px rgba(36,186,226,.12)}
 @keyframes tgif-action-spin{to{transform:rotate(360deg)}}
@@ -31,5 +48,6 @@
 @keyframes tgif-scope-sweep{0%{left:-20%}100%{left:102%}}
 @keyframes tgif-lock-pulse{0%{transform:scale(.7);opacity:.95}100%{transform:scale(3.2);opacity:0}}
 @keyframes tgif-card-glint{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
-@media(max-width:760px){.tgif-status-layout{grid-template-columns:1fr}.tgif-status-scope{height:76px}}
+@media(max-width:760px){.tabs button{padding:8px 9px;font-size:10px}.tgif-status-layout{grid-template-columns:1fr}.tgif-status-scope{height:76px}}
+@media(max-width:440px){.tabs{gap:4px}.tabs button{padding:8px;font-size:10px}}
 @media(prefers-reduced-motion:reduce){.tgif-action-spinner,.tgif-status-scanner::after,.tgif-status-sweep,.tgif-status-lock i{animation:none!important}.tgif-status-sweep{left:41%;opacity:.38}}

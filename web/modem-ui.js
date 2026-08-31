@@ -195,13 +195,10 @@
         <div class="modem-details-body"><pre id="mmdvmJournalIdentity" class="modem-journal">Checking current-boot MMDVMHost journal…</pre></div>
       </details>
 
-      <div class="modem-maintenance">
-        <div class="modem-section-title">RUNTIME MAINTENANCE</div>
-        <p class="hint">Reserved for future guarded maintenance. RC3 UI polish is read-only here: no compile/install, RF restart, or HAT firmware flash is exposed yet.</p>
+      <div class="modem-maintenance modem-inventory-actions">
+        <p class="hint">Inventory only. Guarded YWD Extended preparation for DMR audio is managed by the DMR Audio Vocoder section.</p>
         <div class="buttonrow wrap">
           <button id="mmdvmRefreshInfo" class="btn modem-refresh" type="button">REFRESH INFO</button>
-          <button class="btn primary" type="button" disabled title="Planned for a future guarded runtime-maintenance workflow">BUILD / UPDATE YWD-EXTENDED</button>
-          <button class="btn" type="button" disabled title="Physical HAT firmware maintenance is a separate future workflow">HAT FIRMWARE TOOLS</button>
         </div>
         <div id="mmdvmCollectedAt" class="hint">Collecting modem inventory…</div>
       </div>`;

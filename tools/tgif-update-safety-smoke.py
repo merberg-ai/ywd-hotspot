@@ -168,7 +168,7 @@ def main() -> int:
     require(
         "web/update-branch.js",
         "If the TGIF watchlist scanner is active",
-        "paused for live replacement and restored when supported by the target",
+        "pauses it immediately before live replacement and restores it when the selected target still supports scanning",
     )
     print("[OK] dashboard update/check/channel UI explains and reports scanner preservation")
 
@@ -180,7 +180,7 @@ def main() -> int:
     require(
         "lib/console/ywd-system-info.py",
         "TGIF Scanner",
-        "SCANNING  TG",
+        "return f'{state}  TG {tg}'",
     )
     print("[OK] terminal updater/login surfaces are scanner-aware")
 

@@ -3,10 +3,12 @@
   const HOLD_CLASS = 'ywd-startup-held';
   const READY_FLAG = '__YWD_DASHBOARD_FULLY_READY';
   const START = Date.now();
+  const SETTLE_MS = 500;
   let overlay = null;
   let overlayObserver = null;
   let interval = null;
   let continueOffered = false;
+  let structuralReadyAt = 0;
 
   function dataReady() {
     try {
@@ -16,8 +18,12 @@
     }
   }
 
+  function heroElement() {
+    return document.querySelector('.ywd-hero-banner');
+  }
+
   function heroReady() {
-    const hero = document.querySelector('.ywd-hero-banner');
+    const hero = heroElement();
     return !!hero && hero.complete && hero.naturalWidth > 0;
   }
 
@@ -42,15 +48,29 @@
     return window.__YWD_RELEASE_UI_READY === true && Number(p.failed || 0) === 0;
   }
 
+  function structuralReady() {
+    return dataReady() && layoutReady() && releaseUiReady() && systemExtensionsMounted();
+  }
+
   function fullyReady() {
-    return dataReady() && heroReady() && layoutReady() && releaseUiReady() && systemExtensionsMounted();
+    if (!structuralReady()) {
+      structuralReadyAt = 0;
+      return false;
+    }
+
+    // The hero banner is a late cosmetic transform in app.js, not a functional
+    // dashboard dependency. If it exists, wait for the image to finish. If it
+    // has not been inserted yet, give the final DOM transforms a short settling
+    // window but never let a missing decorative image deadlock startup.
+    const hero = heroElement();
+    if (hero && !heroReady()) return false;
+    if (!structuralReadyAt) structuralReadyAt = Date.now();
+    return Date.now() - structuralReadyAt >= SETTLE_MS;
   }
 
   function statusText() {
     if (!dataReady()) return 'Loading appliance status and configuration…';
-    if (!document.querySelector('.ywd-hero-banner')) return 'Assembling dashboard interface…';
-    if (!heroReady()) return 'Loading YWD dashboard artwork…';
-    if (!layoutReady()) return 'Building System controls…';
+    if (!layoutReady()) return 'Loading dashboard modules and building interface…';
     if (!releaseUiReady()) {
       const p = releaseUiProgress();
       const loaded = Number(p.loaded || 0);
@@ -60,7 +80,8 @@
       return total ? `Loading RC4 interface modules… ${loaded}/${total}` : 'Loading RC4 interface modules…';
     }
     if (!systemExtensionsMounted()) return 'Registering System tools…';
-    return 'Dashboard ready';
+    if (heroElement() && !heroReady()) return 'Loading YWD dashboard artwork…';
+    return 'Finalizing dashboard interface…';
   }
 
   function setStatus(message) {

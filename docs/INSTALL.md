@@ -8,7 +8,7 @@
 > YWD-Hotspot can control a radio transmitter. Attach a suitable antenna and verify the configured frequencies before enabling RF.
 
 > [!IMPORTANT]
-> `0.2.0-rc3` is the current public-testing release. Its exact factory image was physically tested on the reference Pi Zero W + MMDVM appliance, and the published RC2 -> RC3 application updater path also passed.
+> `0.2.0-rc3` is the current public-testing release. Its exact factory image was physically tested on the reference Pi Zero W + MMDVM appliance, and the published RC2 -> RC3 application updater path also passed. The current `dev` branch contains RC4 development changes that are not yet represented by the published RC3 image.
 
 ## Recommended tester install: prebuilt factory image
 
@@ -73,15 +73,31 @@ After Wi-Fi connects:
 
 1. reconnect your phone/computer to the normal LAN;
 2. read the six-digit one-time setup code from the hotspot OLED;
-3. browse to `http://<LAN-IP>:8443/`; `http://ywd-hotspot.local:8443/` is an optional mDNS convenience when supported;
+3. open the setup portal for the image/build you are testing;
 4. enter the OLED code;
-5. configure dashboard password, station identity, location, simplex/duplex RF settings, BrandMeister, optional TGIF Network, OLED/appliance settings;
+5. configure dashboard password, station identity, location, simplex/duplex RF settings, network settings, OLED/appliance settings;
 6. review and finish setup;
 7. the wizard shows apply progress/errors inline and hands off to the configured dashboard on success.
 
-RC4 development intentionally uses plain HTTP for the isolated first-time setup portal. This avoids self-signed-certificate failures on browsers that refuse to open the provisioning page. The normal dashboard remains on the configured LAN at port 8080.
+The setup URL differs between the published RC3 image and the current RC4 development candidate:
 
-If you choose **RESTORE FROM .YWDSETTINGS BACKUP**, the first-boot restore page shows upload progress, verify/decrypt processing state, redacted BrandMeister/TGIF intent, and apply progress. The restore action remains disabled while the transaction is running.
+```text
+Published RC3 image
+  https://<LAN-IP>:8443/
+  https://ywd-hotspot.local:8443/
+  self-signed TLS certificate warning is expected
+
+Current RC4 development / future RC4 image
+  http://<LAN-IP>:8443/
+  http://ywd-hotspot.local:8443/
+  no self-signed TLS gate
+```
+
+RC4 intentionally uses plain HTTP for the isolated first-time setup portal because testers found browsers could refuse the self-signed RC3 setup page entirely. The six-digit OLED code, expiration, rate limiting, same-origin checks, RF-off safety, and setup session remain in place.
+
+RC4 setup also includes optional **TGIF Network** configuration alongside BrandMeister. If TGIF is enabled, the wizard asks for TGIF master/host, UDP port, and security password.
+
+If you choose **RESTORE FROM .YWDSETTINGS BACKUP**, the RC4 first-boot restore page shows upload progress, verify/decrypt processing state, redacted BrandMeister/TGIF intent, and apply progress. The restore action remains disabled while the transaction is running.
 
 RF remains off unless explicitly enabled.
 

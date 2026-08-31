@@ -4,49 +4,11 @@
   const READY_FLAG = '__YWD_DASHBOARD_FULLY_READY';
   const START = Date.now();
   const SETTLE_MS = 500;
-  const LEGACY_MODULES = [
-    '/app-core.js',
-    '/backup-restore.js?v=alpha18.2.1',
-    '/talkgroups.js?v=alpha12.1',
-    '/ui-polish.js?v=alpha12.2',
-    '/update.js?v=alpha12.3',
-    '/update-progress.js?v=alpha16.1',
-    '/instrumentation.js?v=alpha12.1',
-    '/instrumentation-bootstrap.js?v=alpha12.1',
-    '/plugin-manager-render.js?v=alpha18.2',
-    '/plugin-package-actions.js?v=alpha18.2',
-    '/plugin-package-upload.js?v=alpha18.2',
-    '/plugin-manager.js?v=alpha18.2',
-    '/plugin-config-actions.js?v=alpha16',
-    '/plugin-telemetry.js?v=alpha18',
-    '/plugin-ui-host.js?v=alpha20.3',
-    '/system-ui.js?v=dashboard1',
-    '/ssh-key-export.js?v=rc1-system2',
-  ];
   let overlay = null;
   let overlayObserver = null;
   let interval = null;
   let continueOffered = false;
   let structuralReadyAt = 0;
-
-  window.__YWD_LEGACY_UI_PROGRESS = window.__YWD_LEGACY_UI_PROGRESS || {
-    loaded: 0,
-    total: LEGACY_MODULES.length,
-    failed: 0,
-    current: null,
-    failedSources: [],
-  };
-
-  // The legacy app loader executes modules in dependency order. Preload them
-  // all up front so a Pi Zero does not pay 17 separate network round trips
-  // serially before System/UI polish can finish.
-  LEGACY_MODULES.forEach(src => {
-    const link = document.createElement('link');
-    link.rel = 'preload';
-    link.as = 'script';
-    link.href = src;
-    document.head.appendChild(link);
-  });
 
   function dataReady() {
     try {
@@ -65,17 +27,9 @@
     return !!hero && hero.complete && hero.naturalWidth > 0;
   }
 
-  function legacyProgress() {
-    const p = window.__YWD_LEGACY_UI_PROGRESS;
-    return p && typeof p === 'object' ? p : {};
-  }
-
-  function legacyReady() {
-    const p = legacyProgress();
-    const total = Number(p.total || LEGACY_MODULES.length);
-    return Number(p.loaded || 0) >= total && Number(p.failed || 0) === 0;
-  }
-
+  // system-ui.js is near the end of the proven dependency-ordered legacy UI
+  // set.  RC4 serves that set as one classic-script bundle, so this final
+  // System anchor is also our authoritative proof that the bundle executed.
   function layoutReady() {
     return !!document.querySelector('.tabs [data-tab="system"]')
       && !!document.getElementById('system')
@@ -98,7 +52,7 @@
   }
 
   function structuralReady() {
-    return dataReady() && legacyReady() && layoutReady() && releaseUiReady() && systemExtensionsMounted();
+    return dataReady() && layoutReady() && releaseUiReady() && systemExtensionsMounted();
   }
 
   function fullyReady() {
@@ -115,25 +69,7 @@
 
   function statusText() {
     if (!dataReady()) return 'Loading appliance status and configuration…';
-
-    const lp = legacyProgress();
-    const legacyLoaded = Number(lp.loaded || 0);
-    const legacyTotal = Number(lp.total || LEGACY_MODULES.length);
-    const legacyFailed = Number(lp.failed || 0);
-    if (!legacyReady()) {
-      if (legacyFailed > 0) {
-        const failed = Array.isArray(lp.failedSources) && lp.failedSources.length
-          ? lp.failedSources[lp.failedSources.length - 1]
-          : 'unknown module';
-        return `Dashboard module failed to load: ${failed}. Keeping the dashboard covered for safety…`;
-      }
-      const current = String(lp.current || '').replace(/^\//, '').split('?')[0];
-      return current
-        ? `Loading dashboard modules… ${legacyLoaded}/${legacyTotal} · ${current}`
-        : `Loading dashboard modules… ${legacyLoaded}/${legacyTotal}`;
-    }
-
-    if (!layoutReady()) return 'Building dashboard interface…';
+    if (!layoutReady()) return 'Loading dashboard interface bundle…';
     if (!releaseUiReady()) {
       const p = releaseUiProgress();
       const loaded = Number(p.loaded || 0);
@@ -230,7 +166,6 @@
   const rootObserver = new MutationObserver(tick);
   rootObserver.observe(document.documentElement, {childList:true, subtree:true});
   window.addEventListener('ywd:release-ui-ready', tick);
-  window.addEventListener('ywd:legacy-ui-progress', tick);
   interval = setInterval(tick, 80);
   tick();
 })();

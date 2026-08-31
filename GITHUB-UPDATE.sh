@@ -23,6 +23,11 @@ if declare -F ywd_banner >/dev/null; then
   ywd_banner "GITHUB UPDATE" "$VERSION"
   ywd_info "Integrated networks: BrandMeister + TGIF."
   ywd_info "Fetch + validation happen before the live RF stack is touched."
+  if systemctl is-active --quiet ywd-tgif-scanner.service 2>/dev/null; then
+    ywd_info "TGIF scanner is ACTIVE; it will pause only for live replacement and resume afterward."
+  else
+    ywd_info "TGIF scanner runtime intent is preserved across supported updates."
+  fi
 fi
 CORE="$SELF/GITHUB-UPDATE-core.sh"
 [[ -f "$CORE" ]] || CORE="/opt/ywd-hotspot/repo/GITHUB-UPDATE-core.sh"

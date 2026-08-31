@@ -1,0 +1,33 @@
+[Unit]
+Description=YWD-Hotspot managed vocoder background job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ywd-hotspot
+Group=ywd-hotspot
+UMask=0027
+WorkingDirectory=/var/lib/ywd-hotspot
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_job_runner.py
+Nice=10
+CPUWeight=50
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/ywd-hotspot
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Runtime-only worker. Jobs are started explicitly by the guarded admin helper.

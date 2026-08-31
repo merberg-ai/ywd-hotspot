@@ -74,62 +74,59 @@ _RELEASE_UI_BOOTSTRAP = b"""
 })();
 """
 
-# app.js still contains the proven dependency-ordered RC3 module chain.  The
-# original loader stopped forever when any single static request failed, which
-# became visible once RC4's startup splash began waiting for the fully assembled
-# dashboard.  Patch only the tiny loader primitive at serve time: execution
-# order remains unchanged, but every request is tracked and a failed request
-# advances to the next dependency so the readiness gate can report the exact
-# failure instead of hanging generically.
-_LEGACY_LOAD_OLD = b"""  function load(src, next) {
-    const s = document.createElement('script');
-    s.src = src;
-    s.async = false;
-    s.onload = () => next && next();
-    s.onerror = () => console.error(`YWD-Hotspot failed to load ${src}`);
-    document.head.appendChild(s);
-  }
-"""
-_LEGACY_LOAD_NEW = b"""  function load(src, next) {
-    const progress = window.__YWD_LEGACY_UI_PROGRESS || (window.__YWD_LEGACY_UI_PROGRESS = {
-      loaded: 0, total: 17, failed: 0, current: null, failedSources: []
-    });
-    progress.current = src;
-    window.dispatchEvent(new CustomEvent('ywd:legacy-ui-progress'));
-    const s = document.createElement('script');
-    s.src = src;
-    s.async = false;
-    let settled = false;
-    const finish = ok => {
-      if (settled) return;
-      settled = true;
-      progress.loaded += 1;
-      if (!ok) {
-        progress.failed += 1;
-        if (!progress.failedSources.includes(src)) progress.failedSources.push(src);
-      }
-      progress.current = null;
-      window.dispatchEvent(new CustomEvent('ywd:legacy-ui-progress'));
-      if (next) next();
-    };
-    s.onload = () => finish(true);
-    s.onerror = () => {
-      console.error(`YWD-Hotspot failed to load ${src}`);
-      finish(false);
-    };
-    document.head.appendChild(s);
-  }
-"""
+# These are the proven dependency-ordered RC3 dashboard modules.  Serving them
+# as one classic-script bundle preserves their existing global/script semantics
+# while avoiding 17 separate browser requests/revalidations on a Pi Zero.
+# plugin-package-upload.js has historically been served with the transactional
+# plugin-package-update.js overlay appended; keep that composition explicit.
+_LEGACY_UI_COMPONENTS = (
+    "app-core.js",
+    "backup-restore.js",
+    "talkgroups.js",
+    "ui-polish.js",
+    "update.js",
+    "update-progress.js",
+    "instrumentation.js",
+    "instrumentation-bootstrap.js",
+    "plugin-manager-render.js",
+    "plugin-package-actions.js",
+    "plugin-package-upload.js",
+    "plugin-package-update.js",
+    "plugin-manager.js",
+    "plugin-config-actions.js",
+    "plugin-telemetry.js",
+    "plugin-ui-host.js",
+    "system-ui.js",
+    "ssh-key-export.js",
+)
+_LEGACY_BUNDLE_SRC = "/legacy-ui-bundle.js?v=rc4-legacy-bundle1"
 
-
+# app.js contains the old nested network loader at its tail.  Replace only that
+# tail with one bundle load.  Keep the loader primitive itself intact so a
+# bundle fetch failure still takes the proven error path and remains visible in
+# browser diagnostics.
 def _patch_app_js(data: bytes) -> bytes:
     if not data:
         return b""
-    if _LEGACY_LOAD_NEW in data:
-        return data
-    if _LEGACY_LOAD_OLD not in data:
+    start = data.rfind(b"  load('/app-core.js'")
+    end = data.find(b"\n})();", start if start >= 0 else 0)
+    if start < 0 or end < 0:
+        # Already-patched source is acceptable for future source consolidation.
+        if _LEGACY_BUNDLE_SRC.encode("utf-8") in data:
+            return data
         return b""
-    return data.replace(_LEGACY_LOAD_OLD, _LEGACY_LOAD_NEW, 1)
+    replacement = f"  load('{_LEGACY_BUNDLE_SRC}', applyAlpha21Polish);\n".encode("utf-8")
+    return data[:start] + replacement + data[end:]
+
+
+def _legacy_ui_bundle() -> bytes:
+    parts = []
+    for name in _LEGACY_UI_COMPONENTS:
+        data = _asset_bytes(name)
+        if not data:
+            return b""
+        parts.append(b"\n;/* YWD legacy module: " + name.encode("utf-8") + b" */\n" + data + b"\n")
+    return b"".join(parts)
 
 
 def setup_required():
@@ -232,6 +229,13 @@ def wrap_handler(base):
                 if theme_js:
                     body += theme_js + b"\n;\n"
                 body += readiness_js + b"\n;\n" + app_js + _RELEASE_UI_BOOTSTRAP
+                self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
+                return
+            if path == "/legacy-ui-bundle.js":
+                body = _legacy_ui_bundle()
+                if not body:
+                    self.send_json({"error": "legacy UI bundle unavailable"}, 404)
+                    return
                 self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
                 return
 

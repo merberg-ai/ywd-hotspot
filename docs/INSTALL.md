@@ -36,6 +36,7 @@ The release `.img.xz` is intentionally not personalized. It contains no:
 - Wi-Fi credentials;
 - operator callsign/DMR ID;
 - BrandMeister Hotspot Security password;
+- TGIF Hotspot Security password;
 - BrandMeister API key;
 - dashboard password;
 - imported YWD settings backup;
@@ -72,13 +73,15 @@ After Wi-Fi connects:
 
 1. reconnect your phone/computer to the normal LAN;
 2. read the six-digit one-time setup code from the hotspot OLED;
-3. browse to `https://<LAN-IP>:8443/`; `https://ywd-hotspot.local:8443/` is an optional mDNS convenience when supported;
+3. browse to `http://<LAN-IP>:8443/`; `http://ywd-hotspot.local:8443/` is an optional mDNS convenience when supported;
 4. enter the OLED code;
-5. configure dashboard password, station identity, location, simplex/duplex RF settings, BrandMeister, OLED/appliance settings;
+5. configure dashboard password, station identity, location, simplex/duplex RF settings, BrandMeister, optional TGIF Network, OLED/appliance settings;
 6. review and finish setup;
 7. the wizard shows apply progress/errors inline and hands off to the configured dashboard on success.
 
-If you choose **RESTORE FROM .YWDSETTINGS BACKUP**, the first-boot restore page shows upload progress, verify/decrypt processing state, and apply progress. The restore action remains disabled while the transaction is running.
+RC4 development intentionally uses plain HTTP for the isolated first-time setup portal. This avoids self-signed-certificate failures on browsers that refuse to open the provisioning page. The normal dashboard remains on the configured LAN at port 8080.
+
+If you choose **RESTORE FROM .YWDSETTINGS BACKUP**, the first-boot restore page shows upload progress, verify/decrypt processing state, redacted BrandMeister/TGIF intent, and apply progress. The restore action remains disabled while the transaction is running.
 
 RF remains off unless explicitly enabled.
 
@@ -102,7 +105,7 @@ chmod 600 ywd_hotspot_client_ed25519
 ssh -i ./ywd_hotspot_client_ed25519 ywd@HOTSPOT-IP
 ```
 
-SFTP uses the same key/user/port 22. Password SSH and root SSH login remain disabled. The first time SSH is enabled, unique server host keys are generated on that appliance.
+SFTP uses the same key/user/port 22. RC4 also supports an explicit password-or-key mode when the operator enables it; root and keyboard-interactive login remain disabled. The first time SSH is enabled, unique server host keys are generated on that appliance.
 
 On YWD-Hotspot OS, `ywd` has passwordless sudo, so protect the client private key as an administrator credential.
 
@@ -118,7 +121,7 @@ Full instructions: **[SSH.md](SSH.md)**.
 | UART | `/dev/serial0` at 115200 |
 | Pi Zero mapping | `/dev/serial0 -> /dev/ttyAMA0` |
 | OLED | I2C bus 1, normally `0x3C` |
-| Network | BrandMeister DMR |
+| Networks | BrandMeister + optional TGIF Network |
 
 RSSI/dBm support depends on the MMDVM HAT firmware. Some compatible MMDVM_HS builds report BER but not RSSI. YWD-Hotspot does not synthesize dBm from BER and hides RSSI-only instrumentation when no usable RSSI is supplied.
 
@@ -138,6 +141,8 @@ sudo ./INSTALL.sh
 A normal Git clone preserves executable bits. If source came through a ZIP/Windows copy and modes were lost, invoke the installer explicitly with `sudo bash ./INSTALL.sh`.
 
 The source installer keeps its configuration phase attached directly to the controlling terminal so typed characters, defaults and validation messages remain visible over SSH/local console.
+
+The interactive source configuration wizard asks for BrandMeister settings and then asks whether **TGIF Network** should be enabled. When TGIF is enabled it asks for the TGIF master, UDP port, and TGIF Hotspot Security password. Network passwords use hidden terminal input and are never echoed. Recovery/reconfiguration preserves an existing TGIF credential if TGIF is left disabled.
 
 ### SSH note for source-installed systems
 
@@ -213,7 +218,7 @@ See **[DMR-VOICE.md](DMR-VOICE.md)** and **[UPGRADING.md](UPGRADING.md)** for le
 10. installs systemd units, CLI and restricted privileged bridge;
 11. records Git/version provenance;
 12. creates/adopts the managed `/opt/ywd-hotspot/repo` checkout;
-13. creates/migrates canonical configuration;
+13. creates/migrates canonical configuration, including BrandMeister and optional TGIF Network settings;
 14. updates the DMR ID database when possible;
 15. configures journaling;
 16. starts non-RF side services;
@@ -234,7 +239,7 @@ cd ywd-hotspot
 sudo ./MIGRATE-TO-GITHUB.sh
 ```
 
-Migration preserves configuration, BrandMeister credentials, WebUI credential, calibration/history data, plugin state/data, RF active/enabled policy, and the installed MMDVM runtime. It does not recompile MMDVM-Host or DMRGateway.
+Migration preserves configuration, BrandMeister/TGIF credentials, WebUI credential, calibration/history data, plugin state/data, RF active/enabled policy, and the installed MMDVM runtime. It does not recompile MMDVM-Host or DMRGateway.
 
 ## UART / modem preflight
 
@@ -293,7 +298,7 @@ Older configuration migrates conservatively rather than silently changing mode.
 
 Source installation, migration, update, restore, dashboard restart, plugin installation, SSH enable/disable, or MMDVM runtime selection is never permission to unexpectedly key the transmitter. RF start/enable remains explicit.
 
-## WebUI / BrandMeister credentials
+## WebUI / network credentials
 
 Set local dashboard write access:
 
@@ -301,13 +306,13 @@ Set local dashboard write access:
 sudo ywd-hotspotctl web-password
 ```
 
-Set the separate BrandMeister API v2 key for TG controls:
+Set the separate BrandMeister API v2 key for BM talkgroup controls:
 
 ```bash
 sudo ywd-hotspotctl bm-api-key
 ```
 
-These are separate from the BrandMeister Hotspot Security password.
+The WebUI password, BrandMeister API key, BrandMeister Hotspot Security password, and TGIF Hotspot Security password are separate credentials.
 
 ## Verify installation
 
@@ -321,12 +326,14 @@ systemctl --failed --no-pager
 
 ## Next steps
 
-- **[SSH / SFTP](SSH.md)** — enable key-only remote administration and connect
+- **[SSH / SFTP](SSH.md)** — enable remote administration and connect
 - **[Building](BUILDING.md)** — source validation, runtime variants, personalized/public images
 - **[OS Development](OS-DEVELOPMENT.md)** — appliance builder and factory release workflow
 - **[Upgrading](UPGRADING.md)** — update channels, validation, rollback
 - **[Backup / Restore](BACKUP-RESTORE.md)** — encrypted settings migration
-- **[Talkgroups](TALKGROUPS.md)** — simplex/duplex BrandMeister controls
+- **[Talkgroups](TALKGROUPS.md)** — BrandMeister talkgroup controls
+- **[TGIF](TGIF.md)** — dual-network routing and TGIF namespace
+- **[TGIF Control Center](TGIF-CONTROL-CENTER.md)** — TGIF directory, favorites and scanner
 - **[Plugins](PLUGINS.md)** — plugin lifecycle/capability model
 - **[Passive DMR Voice](DMR-VOICE.md)** — YWD Extended observation path
 - **[Calibration](CALIBRATION.md)** — BER-driven RXOffset workflow

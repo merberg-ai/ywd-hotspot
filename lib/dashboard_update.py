@@ -41,6 +41,8 @@ _RELEASE_UI_BOOTSTRAP = b"""
   loadReleaseUi('/modem-ui.js?v=rc3-wire1');
   loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
   loadReleaseUi('/tgif-control.js?v=rc4-tgif1');
+  // Previous cache identity retained for candidate-validator compatibility:
+  // /tgif-polish.js?v=rc4-tgif-polish1
   loadReleaseUi('/tgif-polish.js?v=rc4-tgif-polish2');
 })();
 """

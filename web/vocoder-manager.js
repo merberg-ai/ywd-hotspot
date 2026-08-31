@@ -1,11 +1,12 @@
 'use strict';
 (() => {
   const el = id => document.getElementById(id);
-  let installed = false;
   let loading = false;
+  let statusLoaded = false;
   let jobActive = false;
   let maintenanceActive = false;
   let pollTimer = null;
+  let visibilityObserver = null;
 
   const stateTone = state => {
     const s = String(state || '').toUpperCase();
@@ -30,6 +31,11 @@
     if (!Number.isFinite(n) || n <= 0) return '—';
     try { return new Date(n * 1000).toLocaleString(); } catch (_) { return '—'; }
   };
+
+  function systemVisible() {
+    const page = el('system');
+    return !!page && !document.hidden && page.classList.contains('on');
+  }
 
   function policyText(policy) {
     if (!policy?.available) return 'UNAVAILABLE';
@@ -115,6 +121,7 @@
   }
 
   function render(doc) {
+    statusLoaded = true;
     const stateDoc = doc?.state || {};
     const backend = doc?.backend || {};
     const recipe = doc?.recipe || {};
@@ -151,7 +158,7 @@
   }
 
   async function loadStatus({showError = false, showButtonBusy = false} = {}) {
-    if (loading) return null;
+    if (loading || !el('vocoderManagerCard')) return null;
     loading = true;
     const button = el('vocoderRefresh');
     const old = button?.textContent;
@@ -188,11 +195,27 @@
 
   function schedulePoll(delay = null) {
     clearTimeout(pollTimer);
+    if (!el('vocoderManagerCard')) return;
+    const next = delay == null ? (jobActive || maintenanceActive ? 1500 : 30000) : delay;
     pollTimer = setTimeout(async () => {
-      const page = el('system');
-      if (installed && !document.hidden && page?.classList.contains('on')) await loadStatus();
+      if (systemVisible()) await loadStatus();
       schedulePoll(jobActive || maintenanceActive ? 1500 : 30000);
-    }, delay == null ? (jobActive || maintenanceActive ? 1500 : 30000) : delay);
+    }, next);
+  }
+
+  function activateWhenVisible() {
+    if (!systemVisible() || !el('vocoderManagerCard')) return;
+    if (!statusLoaded) loadStatus();
+    schedulePoll(jobActive || maintenanceActive ? 500 : 30000);
+  }
+
+  function installVisibilityHook(page) {
+    if (!page || page.dataset.ywdVocoderVisibility === '1') return;
+    page.dataset.ywdVocoderVisibility = '1';
+    visibilityObserver?.disconnect();
+    visibilityObserver = new MutationObserver(() => activateWhenVisible());
+    visibilityObserver.observe(page, {attributes:true, attributeFilter:['class']});
+    document.addEventListener('visibilitychange', activateWhenVisible);
   }
 
   async function startPreflight(button) {
@@ -222,17 +245,21 @@
 
   function ensureCard() {
     const page = el('system');
-    const runtime = el('rfToggle')?.closest('article.card');
-    const grid = runtime?.parentElement;
-    if (!page || !runtime || !grid) return false;
-    if (el('vocoderManagerCard')) return true;
+    const host = el('hostPowerCard');
+    const grid = host?.parentElement;
+    if (!page || !host || !grid) return false;
+    if (el('vocoderManagerCard')) {
+      installVisibilityHook(page);
+      activateWhenVisible();
+      return true;
+    }
 
     const card = document.createElement('article');
     card.className = 'card system-vocoder-card';
     card.id = 'vocoderManagerCard';
     card.innerHTML = `
       <div class="card-title title-row vocoder-title-row"><span>DMR AUDIO VOCODER</span><span id="vocoderState" class="vocoder-state">CHECKING</span></div>
-      <p class="hint vocoder-summary" id="vocoderSummary">Inspecting the demand-driven audio backend without waking it…</p>
+      <p class="hint vocoder-summary" id="vocoderSummary">Status loads when the System page is opened so dashboard startup stays lightweight.</p>
       <div class="vocoder-grid">
         <div><span>BACKEND</span><b id="vocoderBackend">—</b></div>
         <div><span>PROCESS</span><b id="vocoderProcess">—</b></div>
@@ -253,24 +280,23 @@
       </div>
       <details class="vocoder-console" id="vocoderConsoleDetails"><summary>MANAGED JOB CONSOLE</summary><pre id="vocoderConsoleLog">No managed vocoder job transcript yet.</pre></details>
     `;
-    const host = el('hostPowerCard');
-    grid.insertBefore(card, host || null);
+    grid.insertBefore(card, host);
     el('vocoderRefresh').onclick = () => loadStatus({showError:true, showButtonBusy:true});
     el('vocoderPreflight').onclick = event => startPreflight(event.currentTarget);
-    installed = true;
     if (typeof setCtl === 'function') setCtl();
     syncActionState();
-    loadStatus();
-    schedulePoll();
+    installVisibilityHook(page);
+    activateWhenVisible();
     return true;
   }
 
   function init() {
-    let tries = 0;
+    // system-ui.js is loaded late in the legacy serial module chain. Do not race
+    // it with a fixed timeout: wait until its authoritative Host Power card
+    // exists, then mount immediately before that card.
     const timer = setInterval(() => {
-      tries += 1;
-      if (ensureCard() || tries >= 200) clearInterval(timer);
-    }, 60);
+      if (ensureCard()) clearInterval(timer);
+    }, 250);
     ensureCard();
   }
 

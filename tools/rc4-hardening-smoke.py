@@ -24,6 +24,9 @@ PY_SOURCES = (
     "lib/setup_admin.py",
     "lib/dashboard_backup.py",
     "lib/dashboard_tgif_control.py",
+    "lib/dashboard_vocoder_manager.py",
+    "lib/maintenance_coordinator.py",
+    "lib/vocoder_manager.py",
     "lib/update_runner.py",
     "lib/branch_update_runner.py",
     "lib/tgif_scanner.py",
@@ -36,6 +39,7 @@ PY_SOURCES = (
     "tools/source-oled-install-smoke.py",
     "tools/oled-health-smoke.py",
     "tools/ssh-policy-smoke.py",
+    "tools/vocoder-manager-foundation-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
     "tools/startup-theme-config-smoke.py",
     "tools/rc4-ui-setup-smoke.py",
@@ -68,6 +72,7 @@ SMOKES = (
     "tools/source-oled-install-smoke.py",
     "tools/oled-health-smoke.py",
     "tools/ssh-policy-smoke.py",
+    "tools/vocoder-manager-foundation-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
     "tools/startup-theme-config-smoke.py",
     "tools/rc4-ui-setup-smoke.py",
@@ -126,6 +131,7 @@ def main() -> int:
     print("[OK] source-install I2C/OLED policy")
     print("[OK] truthful OLED device health projection")
     print("[OK] SSH key-only/password-or-key policy contract")
+    print("[OK] passive vocoder manager + appliance maintenance coordination foundation")
     print("[OK] encrypted TGIF/BrandMeister backup round trip + redacted preview")
     print("[OK] RC4 HTTP setup/TGIF presentation/default-waterfall policy")
     print("[OK] TGIF routing/UI/status/directory regressions")

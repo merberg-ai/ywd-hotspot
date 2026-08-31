@@ -29,7 +29,12 @@ def main() -> int:
         assert len(line) <= 78, f"wordmark line exceeds compact-terminal budget: {len(line)}"
     assert max(len(line) for line in issue.splitlines()) <= 78
     assert max(len(line) for line in motd.splitlines()) <= 78
-    print("[OK] compact YWD-HOTSPOT wordmark is shared by installer/update/static login branding")
+    require(
+        "lib/console/ywd-system-info.py",
+        "'__   __ __        __ ____        _   _  ___  _____",
+        "Raspberry Pi DMR Hotspot Appliance  //  BrandMeister + TGIF",
+    )
+    print("[OK] compact YWD-HOTSPOT wordmark is shared by installer/update/static + dynamic login branding")
 
     require(
         "lib/configure.py",

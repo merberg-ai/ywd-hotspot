@@ -8,6 +8,7 @@ Type=exec
 User=ywd-hotspot
 Group=ywd-hotspot
 UMask=0027
+Environment=PYTHONDONTWRITEBYTECODE=1
 WorkingDirectory=/var/lib/ywd-hotspot
 ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_job_runner.py
 Nice=10

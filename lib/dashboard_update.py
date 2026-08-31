@@ -39,6 +39,7 @@ _RELEASE_UI_BOOTSTRAP = b"""
   loadReleaseUi('/modem-ui.js?v=rc3-wire1');
   loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
   loadReleaseUi('/tgif-control.js?v=rc4-tgif1');
+  loadReleaseUi('/tgif-polish.js?v=rc4-tgif-polish1');
 })();
 """
 
@@ -120,7 +121,11 @@ def wrap_handler(base):
                 modem_css = _asset_bytes("modem-ui.css")
                 control_css = _asset_bytes("control-theme.css")
                 tgif_control_css = _asset_bytes("tgif-control.css")
-                if not base_css or not branch_css or not modem_css or not control_css or not tgif_control_css:
+                tgif_polish_css = _asset_bytes("tgif-polish.css")
+                if (
+                    not base_css or not branch_css or not modem_css or not control_css
+                    or not tgif_control_css or not tgif_polish_css
+                ):
                     self.send_json({"error": "style asset unavailable"}, 404)
                     return
                 body = base_css
@@ -130,6 +135,7 @@ def wrap_handler(base):
                 body += b"\n\n/* MMDVM inventory UI */\n" + modem_css
                 body += b"\n\n/* dashboard-wide interactive control theme */\n" + control_css
                 body += b"\n\n/* TGIF Control Center */\n" + tgif_control_css
+                body += b"\n\n/* TGIF Control Center polish */\n" + tgif_polish_css
                 self.send_bytes(200, body, "text/css; charset=utf-8", cache="no-cache")
                 return
             if path == "/app.js":
@@ -152,7 +158,9 @@ def wrap_handler(base):
                 "/modem-ui.js": ("modem-ui.js", "application/javascript; charset=utf-8"),
                 "/tgif-ui.js": ("tgif-ui.js", "application/javascript; charset=utf-8"),
                 "/tgif-control.js": ("tgif-control.js", "application/javascript; charset=utf-8"),
+                "/tgif-polish.js": ("tgif-polish.js", "application/javascript; charset=utf-8"),
                 "/tgif-control.css": ("tgif-control.css", "text/css; charset=utf-8"),
+                "/tgif-polish.css": ("tgif-polish.css", "text/css; charset=utf-8"),
                 "/control-theme.css": ("control-theme.css", "text/css; charset=utf-8"),
                 "/update.css": ("update.css", "text/css; charset=utf-8"),
                 "/update-branch.css": ("update-branch.css", "text/css; charset=utf-8"),

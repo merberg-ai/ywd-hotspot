@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Persistent appliance-wide maintenance coordination for YWD-Hotspot.
 
-This module is deliberately small and operation-agnostic. Privileged mutating
-jobs claim one persistent lease before changing appliance state. The lease is
-serialized with flock so two processes cannot both win a claim. Read-only
-status never mutates the lease.
-
-The lock file is intentionally shared between root launch/recovery helpers and
-the unprivileged ywd-hotspot worker. Live lease metadata remains bounded and
-contains no credentials.
+State-changing jobs serialize through one persistent lease. Root launch/recovery
+helpers and unprivileged workers share one flock inode. Background jobs use a
+short systemd-owned launch reservation before the worker atomically adopts the
+lease, closing the request/start race without granting browser-controlled
+process or path authority.
 """
 from __future__ import annotations
 
@@ -28,6 +25,7 @@ BOOT_ID = Path(os.environ.get("YWD_BOOT_ID_PATH", "/proc/sys/kernel/random/boot_
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
 TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 PHASE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+LAUNCH_TIMEOUT_S = 60
 
 
 class MaintenanceBusy(RuntimeError):
@@ -78,7 +76,7 @@ def _pid_alive(pid: int) -> bool:
         pid = int(pid)
     except Exception:
         return False
-    if pid <= 1:
+    if pid <= 0:
         return False
     try:
         os.kill(pid, 0)
@@ -111,7 +109,21 @@ def _stale_reason(doc: dict) -> str | None:
     current_boot = _boot_id()
     if lease_boot and current_boot != "unknown" and lease_boot != current_boot:
         return "previous-boot"
-    pid = doc.get("owner_pid")
+
+    phase = str(doc.get("phase") or "").lower()
+    try:
+        pid = int(doc.get("owner_pid") or 0)
+    except Exception:
+        pid = 0
+    if phase == "launching" and pid == 1:
+        try:
+            age = max(0, _now() - int(doc.get("updated_at") or doc.get("started_at") or 0))
+        except Exception:
+            age = LAUNCH_TIMEOUT_S + 1
+        if age > LAUNCH_TIMEOUT_S:
+            return "launch-timeout"
+        return None
+
     if not _pid_alive(pid):
         return "owner-not-running"
     return None
@@ -152,9 +164,6 @@ def _locked():
     LOCK.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(LOCK, os.O_RDWR | os.O_CREAT, 0o660)
     try:
-        # The root launcher/recovery helper and unprivileged worker must both be
-        # able to serialize against this one inode. The containing appliance
-        # state directory already carries the ywd-hotspot group identity.
         try:
             os.fchmod(fd, 0o660)
             if os.geteuid() == 0:
@@ -234,6 +243,46 @@ def claim(
         }
         _atomic(LEASE, doc)
         return public_status({**doc, "active": True, "stale": False})
+
+
+def reserve_launch(job_id: str, job_type: str, service: str) -> dict:
+    """Reserve maintenance for a systemd-managed worker before it is queued."""
+    return claim(
+        job_id,
+        job_type,
+        "launching",
+        cancellable=True,
+        owner_pid=1,
+        service=service,
+    )
+
+
+def adopt(job_id: str, job_type: str, *, owner_pid: int | None = None, service: str | None = None,
+          phase: str = "checking", cancellable: bool = True) -> dict:
+    """Atomically transfer a live systemd launch reservation to its worker."""
+    job_id, job_type, phase = _validate(job_id, job_type, phase)
+    pid = int(owner_pid or os.getpid())
+    service = str(service or "")[:120] or None
+    with _locked():
+        existing = _read(LEASE)
+        if not existing:
+            raise MaintenanceOwnershipError("maintenance launch reservation is missing")
+        reason = _stale_reason(existing)
+        if reason is not None:
+            raise MaintenanceOwnershipError(f"maintenance launch reservation is stale: {reason}")
+        if str(existing.get("job_id")) != job_id or str(existing.get("job_type")) != job_type:
+            raise MaintenanceOwnershipError("maintenance launch reservation belongs to a different job")
+        if str(existing.get("phase") or "") != "launching" or int(existing.get("owner_pid") or -1) != 1:
+            raise MaintenanceOwnershipError("maintenance lease is not an adoptable launch reservation")
+        if service is not None and str(existing.get("service") or "") != service:
+            raise MaintenanceOwnershipError("maintenance launch reservation belongs to a different service")
+        existing["owner_pid"] = pid
+        existing["phase"] = phase
+        existing["updated_at"] = _now()
+        existing["cancellable"] = bool(cancellable)
+        existing["boot_id"] = _boot_id()
+        _atomic(LEASE, existing)
+        return public_status({**existing, "active": True, "stale": False})
 
 
 def _owned(existing: dict, job_id: str, owner_pid: int | None) -> None:

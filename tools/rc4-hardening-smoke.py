@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run the offline/source-only RC4 hardening regression set.
 
-This intentionally performs no RF transmission, network mutation, service
-restart, package installation, live configuration write, or source-tree
-bytecode write. It is safe to run against the root-owned managed checkout as a
-normal user.
+This intentionally performs no RF transmission, external network mutation,
+service restart, package installation, live configuration write, or source-tree
+bytecode write. The TGIF scanner smoke opens only a loopback HTTP server to
+verify URL construction. It is safe to run against the managed checkout.
 """
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ PY_SOURCES = (
     "lib/setup_server.py",
     "lib/setup_restore_server.py",
     "lib/setup_admin.py",
+    "lib/tgif_scanner.py",
+    "lib/tgif_scanner_admin.py",
     "lib/oled.py",
     "lib/health.py",
     "tools/telemetry-config-smoke.py",
@@ -35,6 +37,7 @@ PY_SOURCES = (
     "tools/tgif-ui-smoke.py",
     "tools/tgif-status-smoke.py",
     "tools/tgif-directory-smoke.py",
+    "tools/tgif-scanner-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
 )
@@ -62,6 +65,7 @@ SMOKES = (
     "tools/tgif-ui-smoke.py",
     "tools/tgif-status-smoke.py",
     "tools/tgif-directory-smoke.py",
+    "tools/tgif-scanner-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
 )
@@ -112,6 +116,7 @@ def main() -> int:
     print("[OK] encrypted TGIF/BrandMeister backup round trip + redacted preview")
     print("[OK] RC4 HTTP setup/TGIF presentation/default-waterfall policy")
     print("[OK] TGIF routing/UI/status/directory regressions")
+    print("[OK] TGIF Control Center/watchlist scanner regression")
     print("[OK] plugin settings/runtime regressions")
     return 0
 

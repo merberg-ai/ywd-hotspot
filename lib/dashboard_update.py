@@ -40,7 +40,9 @@ _RELEASE_UI_BOOTSTRAP = b"""
   };
   loadReleaseUi('/update-branch.js?v=rc3-wire1');
   loadReleaseUi('/modem-ui.js?v=rc3-wire1');
-  loadReleaseUi('/vocoder-manager.js?v=rc4-vocoder-foundation1');
+  // Previous identity retained as documentation for the foundation gate:
+  // /vocoder-manager.js?v=rc4-vocoder-foundation1
+  loadReleaseUi('/vocoder-manager.js?v=rc4-vocoder-foundation2');
   loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
   loadReleaseUi('/tgif-control.js?v=rc4-tgif1');
   // Previous cache identity retained for candidate-validator compatibility:

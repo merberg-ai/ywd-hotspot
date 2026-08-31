@@ -25,4 +25,8 @@
 .tgif-mini-active{display:flex;align-items:center;gap:7px;color:var(--muted)}
 .tgif-mini-active .dot{flex:0 0 auto}
 #tgifControlPage[hidden],.tabs button[hidden]{display:none!important}
+/* The dedicated TGIF tab now owns TGIF directory/favorites presentation. Keep
+   the older Talkgroups-page injection hidden for compatibility with the legacy
+   tgif-ui.js loader without presenting two conflicting favorites models. */
+#tgifDirectoryCard,#tgifFavoritesCard{display:none!important}
 @media(max-width:760px){.tgif-control-hero{grid-template-columns:1fr}.tgif-scanner-settings{grid-template-columns:1fr}.tgif-watch-row{grid-template-columns:44px minmax(0,1fr)}.tgif-watch-actions{grid-column:1/-1;justify-content:flex-start}.tgif-network-grid{grid-template-columns:1fr 1fr}}

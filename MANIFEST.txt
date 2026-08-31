@@ -200,6 +200,7 @@ tools/ssh-policy-smoke.py
 tools/startup-theme-config-smoke.py
 tools/telemetry-config-smoke.py
 tools/tgif-directory-smoke.py
+tools/tgif-polish-smoke.py
 tools/tgif-routing-smoke.py
 tools/tgif-scanner-smoke.py
 tools/tgif-status-smoke.py
@@ -238,6 +239,8 @@ web/system-ui.js
 web/talkgroups.js
 web/tgif-control.css
 web/tgif-control.js
+web/tgif-polish.css
+web/tgif-polish.js
 web/tgif-ui.js
 web/ui-polish.css
 web/ui-polish.js

@@ -170,7 +170,7 @@ assert "require_control()" in dashboard_src
 assert 'core.admin_call("vocoder-preflight-start", {}, 20)' in dashboard_src
 assert "_ACTIVE_CACHE_TTL = 0.75" in dashboard_src
 assert "invalidate_status()" in dashboard_src
-assert "vocoder-manager.js?v=rc4-vocoder-foundation2" in update_src
+assert "vocoder-manager.js?v=rc4-vocoder-foundation3" in update_src
 assert '"/vocoder-manager.css"' in update_src
 assert "DMR AUDIO VOCODER" in ui_src
 assert "REFRESH STATUS" in ui_src
@@ -179,12 +179,17 @@ assert "fetch('/api/system/vocoder'" in ui_src
 assert "post('/api/system/vocoder/preflight', {})" in ui_src
 assert "renderLaunch(out)" in ui_src
 assert "JOB ACCEPTED · waiting for worker status" in ui_src
+assert "launchedJobId" in ui_src and "launchPending" in ui_src
+assert "launchedTerminal" in ui_src
+assert "check.textContent = 'CHECKING…'" in ui_src
 assert "INSTALL VOCODER" not in ui_src
 assert "BUILD YWD EXTENDED" not in ui_src
 assert "showButtonBusy" in ui_src
 assert "if (button && showButtonBusy)" in ui_src
-assert "jobActive || maintenanceActive ? 1500 : 30000" in ui_src
-assert "check.disabled = !unlocked || maintenanceActive || jobActive || localBusy" in ui_src
+assert "launchPending || jobActive || maintenanceActive ? 1500 : 30000" in ui_src
+assert "check.disabled = !unlocked || blocked" in ui_src
+assert ".vocoder-state.busy::before" in css_src
+assert "ywdVocoderBadgePulse" in css_src
 assert "@media(max-width:620px)" in css_src
 assert ".vocoder-actions .btn{width:100%;min-width:0}" in css_src
 assert "BUILD / UPDATE YWD-EXTENDED" not in modem_ui_src
@@ -200,6 +205,7 @@ print("[OK] passive System polling does not wake the vocoder Protocol backend")
 print("[OK] dashboard runtime projection uses persisted current-pin identity without exact helper verification")
 print("[OK] background polling is silent; only explicit refresh owns button busy feedback")
 print("[OK] readiness launch renders immediate local feedback and uses a short active cache")
+print("[OK] readiness action remains latched/animated until the matching managed job completes")
 print("[OK] maintenance reservation immediately gates the readiness action")
 print("[OK] MODEM / MMDVM remains passive inventory; guarded YWD Extended work belongs to Vocoder")
 print("[OK] readiness launch is dashboard-authenticated while install/build/activation remain absent")

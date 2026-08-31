@@ -32,8 +32,14 @@
       && !!document.getElementById('vocoderManagerCard');
   }
 
+  function releaseUiProgress() {
+    const p = window.__YWD_RELEASE_UI_PROGRESS;
+    return p && typeof p === 'object' ? p : {};
+  }
+
   function releaseUiReady() {
-    return window.__YWD_RELEASE_UI_READY === true;
+    const p = releaseUiProgress();
+    return window.__YWD_RELEASE_UI_READY === true && Number(p.failed || 0) === 0;
   }
 
   function fullyReady() {
@@ -46,9 +52,11 @@
     if (!heroReady()) return 'Loading YWD dashboard artwork…';
     if (!layoutReady()) return 'Building System controls…';
     if (!releaseUiReady()) {
-      const p = window.__YWD_RELEASE_UI_PROGRESS || {};
+      const p = releaseUiProgress();
       const loaded = Number(p.loaded || 0);
       const total = Number(p.total || 0);
+      const failed = Number(p.failed || 0);
+      if (failed > 0) return `RC4 interface module load failed (${failed}). Keeping the dashboard covered for safety…`;
       return total ? `Loading RC4 interface modules… ${loaded}/${total}` : 'Loading RC4 interface modules…';
     }
     if (!systemExtensionsMounted()) return 'Registering System tools…';
@@ -57,7 +65,7 @@
 
   function setStatus(message) {
     const node = document.getElementById('ywdStartupStatus');
-    if (node) node.textContent = message;
+    if (node && node.textContent !== message) node.textContent = message;
   }
 
   function attachOverlay(node) {

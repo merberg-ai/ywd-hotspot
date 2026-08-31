@@ -16,9 +16,6 @@ def _service_active(force=False):
     now = time.monotonic()
     if not force and now - _SERVICE_AT < 2.0:
         return _SERVICE_ACTIVE
-    _SERVICE_ACTIVE = core.run(["systemctl", "is-active", "--quiet", "ywd-tgif-scanner.service"], 2) == ""
-    # systemctl --quiet normally has no stdout whether active or not, so use the
-    # ordinary text form for a truthful unprivileged status check.
     state = core.run(["systemctl", "is-active", "ywd-tgif-scanner.service"], 2).strip()
     _SERVICE_ACTIVE = state == "active"
     _SERVICE_AT = now

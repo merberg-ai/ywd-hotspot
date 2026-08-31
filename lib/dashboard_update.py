@@ -12,6 +12,7 @@ import dashboard_plugin_upload
 import dashboard_plugin_vocoder
 import dashboard_plugin_wasm
 import dashboard_plugins
+import dashboard_vocoder_manager
 
 STATUS = core.VAR / "update-status.json"
 SETUP_STATE = core.VAR / "setup-state.json"
@@ -39,6 +40,7 @@ _RELEASE_UI_BOOTSTRAP = b"""
   };
   loadReleaseUi('/update-branch.js?v=rc3-wire1');
   loadReleaseUi('/modem-ui.js?v=rc3-wire1');
+  loadReleaseUi('/vocoder-manager.js?v=rc4-vocoder-foundation1');
   loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
   loadReleaseUi('/tgif-control.js?v=rc4-tgif1');
   // Previous cache identity retained for candidate-validator compatibility:
@@ -115,11 +117,12 @@ def wrap_handler(base):
                 theme_css = _asset_bytes("startup-themes.css")
                 branch_css = _asset_bytes("update-branch.css")
                 modem_css = _asset_bytes("modem-ui.css")
+                vocoder_css = _asset_bytes("vocoder-manager.css")
                 control_css = _asset_bytes("control-theme.css")
                 tgif_control_css = _asset_bytes("tgif-control.css")
                 tgif_polish_css = _asset_bytes("tgif-polish.css")
                 if (
-                    not base_css or not branch_css or not modem_css or not control_css
+                    not base_css or not branch_css or not modem_css or not vocoder_css or not control_css
                     or not tgif_control_css or not tgif_polish_css
                 ):
                     self.send_json({"error": "style asset unavailable"}, 404)
@@ -129,6 +132,7 @@ def wrap_handler(base):
                     body += b"\n\n/* startup themes: first-paint bundle */\n" + theme_css
                 body += b"\n\n/* software channel UI */\n" + branch_css
                 body += b"\n\n/* MMDVM inventory UI */\n" + modem_css
+                body += b"\n\n/* DMR Audio Vocoder manager */\n" + vocoder_css
                 body += b"\n\n/* dashboard-wide interactive control theme */\n" + control_css
                 body += b"\n\n/* TGIF Control Center */\n" + tgif_control_css
                 body += b"\n\n/* TGIF Control Center polish */\n" + tgif_polish_css
@@ -150,6 +154,8 @@ def wrap_handler(base):
                 "/update-progress.js": ("update-progress.js", "application/javascript; charset=utf-8"),
                 "/update-branch.js": ("update-branch.js", "application/javascript; charset=utf-8"),
                 "/modem-ui.js": ("modem-ui.js", "application/javascript; charset=utf-8"),
+                "/vocoder-manager.js": ("vocoder-manager.js", "application/javascript; charset=utf-8"),
+                "/vocoder-manager.css": ("vocoder-manager.css", "text/css; charset=utf-8"),
                 "/tgif-ui.js": ("tgif-ui.js", "application/javascript; charset=utf-8"),
                 "/tgif-control.js": ("tgif-control.js", "application/javascript; charset=utf-8"),
                 "/tgif-polish.js": ("tgif-polish.js", "application/javascript; charset=utf-8"),
@@ -210,7 +216,8 @@ def wrap_handler(base):
                 self.send_json({"error": str(exc)[:800]}, 502)
 
     UpdateHandler.__name__ = f"Update{base.__name__}"
-    handler = dashboard_plugins.wrap_handler(UpdateHandler)
+    handler = dashboard_vocoder_manager.wrap_handler(UpdateHandler)
+    handler = dashboard_plugins.wrap_handler(handler)
     handler = dashboard_plugin_vocoder.wrap_handler(handler)
     handler = dashboard_plugin_audio_stream.wrap_handler(handler)
     handler = dashboard_plugin_wasm.wrap_handler(handler)

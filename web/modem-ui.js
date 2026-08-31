@@ -1,7 +1,11 @@
 'use strict';
 (() => {
+  let loadedOnce = false;
+  let loading = false;
+  let visibilityObserver = null;
+
   const esc = value => String(value ?? '—').replace(/[&<>"']/g, c => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'
   }[c]));
   const short = (value, n = 16) => {
     const text = String(value || '');
@@ -34,7 +38,13 @@
     return rows.map(item => `${item.namespace || '?'}=${item.entries ?? 0}`).join(' · ');
   }
 
+  function systemVisible() {
+    const page = document.getElementById('system');
+    return !!page && !document.hidden && page.classList.contains('on');
+  }
+
   function render(doc) {
+    loadedOnce = true;
     const card = document.getElementById('mmdvmInfoCard');
     if (!card) return;
     const hat = doc?.hat || {};
@@ -134,6 +144,8 @@
   }
 
   async function load(showError = false) {
+    if (loading || !document.getElementById('mmdvmInfoCard')) return null;
+    loading = true;
     const badge = document.getElementById('mmdvmInfoState');
     if (badge) {
       badge.textContent = 'CHECKING…';
@@ -154,17 +166,37 @@
       if (collected) collected.textContent = `Could not read modem inventory: ${err.message || err}`;
       if (showError && typeof toast === 'function') toast(`MMDVM inventory failed: ${err.message || err}`, true);
       return null;
+    } finally {
+      loading = false;
     }
   }
 
+  function activateWhenVisible() {
+    if (systemVisible() && !loadedOnce) load(false);
+  }
+
+  function installVisibilityHook(page) {
+    if (!page || page.dataset.ywdModemVisibility === '1') return;
+    page.dataset.ywdModemVisibility = '1';
+    visibilityObserver?.disconnect();
+    visibilityObserver = new MutationObserver(activateWhenVisible);
+    visibilityObserver.observe(page, {attributes:true, attributeFilter:['class']});
+    document.addEventListener('visibilitychange', activateWhenVisible);
+  }
+
   function install() {
-    if (document.getElementById('mmdvmInfoCard')) return true;
     const page = document.getElementById('system');
     const runtime = page && Array.from(page.querySelectorAll('article.card')).find(card =>
       card.querySelector(':scope > .card-title')?.textContent?.trim() === 'RUNTIME'
     );
-    const grid = runtime?.parentElement;
-    if (!page || !runtime || !grid) return false;
+    const host = document.getElementById('hostPowerCard');
+    const grid = host?.parentElement;
+    if (!page || !runtime || !host || !grid) return false;
+    if (document.getElementById('mmdvmInfoCard')) {
+      installVisibilityHook(page);
+      activateWhenVisible();
+      return true;
+    }
 
     const card = document.createElement('article');
     card.className = 'card system-modem-card';
@@ -192,7 +224,7 @@
 
       <details class="modem-details">
         <summary>MODEM JOURNAL IDENTITY LINES</summary>
-        <div class="modem-details-body"><pre id="mmdvmJournalIdentity" class="modem-journal">Checking current-boot MMDVMHost journal…</pre></div>
+        <div class="modem-details-body"><pre id="mmdvmJournalIdentity" class="modem-journal">Inventory loads when System is opened…</pre></div>
       </details>
 
       <div class="modem-maintenance modem-inventory-actions">
@@ -200,12 +232,11 @@
         <div class="buttonrow wrap">
           <button id="mmdvmRefreshInfo" class="btn modem-refresh" type="button">REFRESH INFO</button>
         </div>
-        <div id="mmdvmCollectedAt" class="hint">Collecting modem inventory…</div>
+        <div id="mmdvmCollectedAt" class="hint">Inventory loads when the System page is opened.</div>
       </div>`;
 
     const dmr = document.getElementById('dmridCard');
-    const host = document.getElementById('hostPowerCard');
-    grid.insertBefore(card, dmr || host || runtime.nextSibling);
+    grid.insertBefore(card, dmr || host);
 
     document.getElementById('mmdvmRefreshInfo').onclick = async event => {
       const button = event.currentTarget;
@@ -222,14 +253,16 @@
         button.textContent = old;
       }
     };
-    load(false);
+    installVisibilityHook(page);
+    activateWhenVisible();
     return true;
   }
 
-  let tries = 0;
+  // system-ui.js arrives late in the legacy serial loader. Wait for its final
+  // Host Power anchor with no fixed deadline, and do not run inventory until
+  // the operator actually opens System.
   const timer = setInterval(() => {
-    tries += 1;
-    if (install() || tries >= 120) clearInterval(timer);
-  }, 100);
+    if (install()) clearInterval(timer);
+  }, 250);
   if (install()) clearInterval(timer);
 })();

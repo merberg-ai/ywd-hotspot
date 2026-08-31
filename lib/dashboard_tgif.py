@@ -90,12 +90,31 @@ def _tgif_name(value) -> str:
     return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())[:160]
 
 
+def _talkgroup_row(ident, name="", synthetic=False):
+    ident = _tgif_id(ident)
+    if ident is None:
+        return None
+    text = _tgif_name(name) or TGIF_KNOWN_TG.get(ident) or f"TG {ident}"
+    row = {
+        "id": ident,
+        "name": text,
+        "supported": ident <= TGIF_RF_RANGE,
+        "rf_talkgroup": TGIF_RF_BASE + ident if ident <= TGIF_RF_RANGE else None,
+    }
+    if synthetic:
+        row["synthetic"] = True
+    return row
+
+
 def normalize_tgif_talkgroups(payload):
     """Normalize TGIF directory JSON into small id/name metadata rows.
 
     The current TGIF endpoint returns an array containing id/name fields. The
     defensive shapes below keep the dashboard tolerant of harmless API format
     changes without accepting arbitrary nested data into the appliance cache.
+
+    TGIF's public export does not necessarily contain service destinations such
+    as Parrot, so YWD merges a tiny built-in known-TG set after normalization.
     """
     if isinstance(payload, dict):
         items = None
@@ -123,19 +142,24 @@ def normalize_tgif_talkgroups(payload):
         if ident is None:
             continue
         name = _tgif_name(item.get("name", item.get("label", item.get("title", ""))))
-        if not name:
-            name = f"TG {ident}"
-        row = {
-            "id": ident,
-            "name": name,
-            "supported": ident <= TGIF_RF_RANGE,
-            "rf_talkgroup": TGIF_RF_BASE + ident if ident <= TGIF_RF_RANGE else None,
-        }
+        row = _talkgroup_row(ident, name)
+        if row is None:
+            continue
         for key in ("country", "language", "website"):
             value = _tgif_name(item.get(key, ""))
             if value:
                 row[key] = value
         rows[ident] = row
+
+    # Service destinations such as Parrot may be absent from TGIF's exported
+    # directory even though they are valid network talkgroups and have already
+    # been proven through YWD's RF rewrite path.
+    for ident, name in TGIF_KNOWN_TG.items():
+        if ident not in rows:
+            row = _talkgroup_row(ident, name, synthetic=True)
+            if row is not None:
+                rows[ident] = row
+
     return [rows[k] for k in sorted(rows)]
 
 
@@ -230,6 +254,25 @@ def search_tgif_talkgroups(query="", ids=None, limit=50, force=False):
         return all(term in hay for term in terms)
 
     found = [dict(row) for row in rows if matches(row)]
+    present = {int(row["id"]) for row in found}
+
+    # A valid numeric TG may be usable even when TGIF's public metadata export
+    # does not list it. Return an explicit synthesized row rather than making
+    # TUNE/WATCH unavailable merely because optional directory metadata is absent.
+    if idset:
+        for ident in sorted(idset):
+            if ident not in present:
+                row = _talkgroup_row(ident, TGIF_KNOWN_TG.get(ident, ""), synthetic=True)
+                if row is not None:
+                    found.append(row)
+                    present.add(ident)
+    elif q.isdigit():
+        ident = _tgif_id(q)
+        if ident is not None and ident not in present:
+            row = _talkgroup_row(ident, TGIF_KNOWN_TG.get(ident, ""), synthetic=True)
+            if row is not None:
+                found.append(row)
+
     if idset:
         found.sort(key=lambda row: int(row["id"]))
     else:

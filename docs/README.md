@@ -17,6 +17,8 @@
 | 🌿 Change/check the main/dev/dev-plugins software channel | **[Software Channels](SOFTWARE-CHANNELS.md)** |
 | 🔐 Export/restore `.ywdsettings` | **[Backup / Restore](BACKUP-RESTORE.md)** |
 | 📻 Manage BrandMeister talkgroups | **[Talkgroup Manager](TALKGROUPS.md)** |
+| 🛰️ Use TGIF favorites/watchlist scanner/session controls | **[TGIF Control Center](TGIF-CONTROL-CENTER.md)** |
+| 🌐 Understand integrated TGIF routing and RF namespace | **[TGIF Architecture](TGIF.md)** |
 | 📟 Configure gauges/OLED | **[Display + Instrumentation](DISPLAY.md)** |
 | 🧪 Calibrate RXOffset | **[Calibration](CALIBRATION.md)** |
 | 🧩 Understand plugins/runtime requirements | **[Plugins](PLUGINS.md)** |
@@ -87,6 +89,7 @@ See [Repository Policy](REPOSITORY.md) for the cleanup/retention rules.
 - YWD-Hotspot OS keeps one authoritative OLED owner.
 - RSSI is displayed only when modem firmware actually supplies a usable value; BER is never converted into fake dBm.
 - Factory SSH is OFF; when enabled from the authenticated dashboard it is public-key-only and root/password SSH remain disabled.
+- TGIF scanner/session controls change only the TGIF network session; they do not own the modem, key RF, or alter the proven DMRGateway routing namespace.
 - The original Pi Zero W remains the performance budget.
 - Branch/ref identity and persistent update channel are distinct provenance fields.
 

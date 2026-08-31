@@ -20,7 +20,21 @@
 .vocoder-state.good{border-color:#24604f;color:var(--good)}
 .vocoder-state.warn{border-color:#695627;color:var(--warn)}
 .vocoder-state.bad{border-color:#68343e;color:var(--bad)}
-.vocoder-state.busy{border-color:#27566a;color:var(--cyan)}
+.vocoder-state.busy{
+  border-color:#27566a;
+  color:var(--cyan);
+  animation:ywdVocoderBadgePulse 1.15s ease-in-out infinite;
+}
+.vocoder-state.busy::before{
+  content:"";
+  width:7px;
+  height:7px;
+  margin-right:6px;
+  border:1px solid currentColor;
+  border-right-color:transparent;
+  border-radius:50%;
+  animation:ywdVocoderSpin .7s linear infinite;
+}
 .vocoder-summary{
   margin:7px 0 11px;
   font-size:10px;
@@ -103,7 +117,11 @@
   animation:ywdVocoderSpin .7s linear infinite;
 }
 @keyframes ywdVocoderSpin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.vocoder-actions .ywd-working::before{animation:none;border-right-color:currentColor}}
+@keyframes ywdVocoderBadgePulse{0%,100%{box-shadow:0 0 0 0 rgba(80,220,255,0)}50%{box-shadow:0 0 0 4px rgba(80,220,255,.08)}}
+@media(prefers-reduced-motion:reduce){
+  .vocoder-actions .ywd-working::before,.vocoder-state.busy::before{animation:none;border-right-color:currentColor}
+  .vocoder-state.busy{animation:none}
+}
 @media(max-width:620px){
   .system-vocoder-card{padding:12px}
   .vocoder-grid{grid-template-columns:1fr}

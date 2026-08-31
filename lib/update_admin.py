@@ -78,6 +78,9 @@ def mark_queued(check):
         "target_commit": check.get("target_commit"),
         "target_date": check.get("target_date"), "channel": check.get("channel"),
         "available": True, "up_to_date": False, "validated": True,
+        "scanner_was_active": bool(check.get("scanner_was_active")),
+        "scanner_before_state": check.get("scanner_before_state"),
+        "scanner_before_tg": check.get("scanner_before_tg"),
         "started_at": core_admin.now_iso(), "updated_at": core_admin.now_iso(), "error": None,
     }
     core_admin.atomic_json(UPDATE_STATUS, doc, mode=0o640, group=True)
@@ -113,6 +116,8 @@ def update_start():
     core_admin.audit("software-update-start", {
         "channel": check.get("channel"), "target_commit": check.get("target_commit"),
         "target_version": check.get("target_version"),
+        "tgif_scanner_active": bool(check.get("scanner_was_active")),
+        "tgif_scanner_tg": check.get("scanner_before_tg"),
     })
     return {"ok": True, "started": True, **check}
 
@@ -137,14 +142,8 @@ def set_hotspot_password(data):
 
 
 def config_apply(data):
-    # Save & Apply may reconcile services already belonging to a running RF
-    # stack, but it must never start a stopped RF stack merely because a DMR
-    # upstream is enabled in configuration.
     rf_was_running = core_admin.active("ywd-mmdvmhost.service")
-
-    # core_admin owns OLED arbitration and the canonical config/INI apply.
     out = core_admin.config_apply(data)
-
     cfg = core_admin.current()
     dmr_network_enabled = bool(cfg.get("brandmeister", {}).get("enabled", True)) or bool(
         cfg.get("tgif", {}).get("enabled", False)
@@ -152,13 +151,10 @@ def config_apply(data):
     gateway_running = core_admin.active("ywd-dmrgateway.service")
 
     if rf_was_running and dmr_network_enabled and not gateway_running:
-        # Covers BM/TGIF disabled -> enabled while RF is already running.
         core_admin.run(["systemctl", "start", "ywd-dmrgateway.service"], 15, check=True)
         out.setdefault("restarted", []).append("DMRGateway")
         out["dmr_network_reconciled"] = "started"
     elif (not dmr_network_enabled or not rf_was_running) and gateway_running:
-        # With no upstream enabled DMRGateway should not remain running. Likewise,
-        # a stopped MMDVM stack must not be partially activated by Save & Apply.
         core_admin.run(["systemctl", "stop", "ywd-dmrgateway.service"], 15, check=False)
         out["dmr_network_reconciled"] = "stopped"
 
@@ -170,8 +166,6 @@ def config_revert(data):
 
 
 def service_restart(data):
-    # The core service action uses the same owner helper and therefore preserves
-    # the single-owner rule without a separate blocking headless transition.
     return core_admin.service_action(data)
 
 

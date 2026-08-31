@@ -3,6 +3,7 @@
   const el = id => document.getElementById(id);
   let sshState = null;
   let busy = false;
+  let busyAction = '';
   let policyDirty = false;
 
   function notify(message, bad = false) {
@@ -52,11 +53,16 @@
 
     const badge=el('sshBadge'); if (badge) { badge.className='badge'; if(!auth) badge.textContent='LOCKED'; else if(!sshState) badge.textContent='CHECKING'; else if(active){badge.textContent='SSH ON';badge.classList.add('good');} else badge.textContent='SSH OFF'; }
     const users = Array.isArray(state.eligible_login_users) ? state.eligible_login_users : []; const haveUser = users.includes(selectedUser());
-    const toggle=el('sshToggle'), apply=el('sshApplyPolicy'), create=el('sshClientCreate'), exportBtn=el('sshKeysExport'), setPw=el('sshSetPassword'), user=el('sshLoginUserSelect'), mode=el('sshAuthMode');
+    const toggle=el('sshToggle'), apply=el('sshApplyPolicy'), create=el('sshClientCreate'), setPw=el('sshSetPassword'), user=el('sshLoginUserSelect'), mode=el('sshAuthMode');
     if (toggle) { toggle.disabled=!auth||busy||!sshState||(!active&&!haveUser); toggle.textContent=active?'DISABLE SSH ACCESS':'ENABLE SSH ACCESS'; toggle.className=active?'btn danger':'btn good'; }
     if (apply) { apply.disabled=!auth||busy||!active||!policyDirty||!haveUser; apply.textContent=active?'APPLY AUTHENTICATION':'USED WHEN SSH ENABLES'; }
-    if (create) create.disabled=!auth||busy||!haveUser;
-    if (exportBtn) exportBtn.disabled=!auth||busy;
+    if (create) {
+      const creating = busyAction === 'client-key';
+      create.disabled=!auth||busy||!haveUser;
+      create.classList.toggle('ywd-action-busy', creating);
+      create.textContent=creating?'CREATING SSH CLIENT KEY…':'CREATE & EXPORT SSH CLIENT KEY';
+      create.setAttribute('aria-busy', creating ? 'true' : 'false');
+    }
     if (setPw) setPw.disabled=!auth||busy||!haveUser||selectedMode()!=='password+key';
     if (user) user.disabled=!auth||busy||users.length===0;
     if (mode) mode.disabled=!auth||busy||users.length===0;
@@ -118,22 +124,13 @@
     finally { busy=false; renderState(); }
   }
 
-  async function exportServerIdentity() {
-    if (!unlocked()) return notify('Unlock dashboard controls before exporting SSH server identity keys.', true);
-    if (typeof window.ywdConfirm !== 'function') return notify('YWD confirmation UI is unavailable.', true);
-    const ok=await window.ywdConfirm({title:'EXPORT SSH SERVER IDENTITY KEYS',kicker:'YWD // RECOVERY BACKUP',message:'Export this hotspot’s private SSH server identity keys?\n\nRecovery only. They cannot be used as a client login credential. Store the archive privately.',confirmText:'EXPORT SERVER IDENTITY',cancelText:'CANCEL',tone:'danger'});
-    if(!ok)return; busy=true; renderState();
-    try{const d=await api('/api/ssh-keys/export',{});if(!d.archive_b64)throw new Error('SSH server identity export returned no archive');download(d.filename||'ywd-hotspot-ssh-server-identity.tar.gz',d.archive_b64);d.archive_b64='';notify('SSH server identity archive created');}
-    catch(e){notify(e.message||'Could not export SSH server identity keys.',true);}finally{busy=false;renderState();}
-  }
-
   async function createClientKey() {
     if(!unlocked()||busy)return; const username=selectedUser(); if(!username)return notify('Choose an SSH login user first.',true);
     if(typeof window.ywdConfirm!=='function')return notify('YWD confirmation UI is unavailable.',true);
-    const ok=await window.ywdConfirm({title:'CREATE SSH CLIENT LOGIN KEY',kicker:'YWD // CLIENT ENROLLMENT',message:`Create a new Ed25519 login key for ${username}?\n\nOnly the public key is retained on the hotspot; the private/public pair is downloaded once.`,confirmText:'CREATE & DOWNLOAD KEY',cancelText:'CANCEL',tone:'danger'});
-    if(!ok)return;busy=true;renderState();
+    const ok=await window.ywdConfirm({title:'CREATE & EXPORT SSH CLIENT KEY',kicker:'YWD // CLIENT ENROLLMENT',message:`Create a new Ed25519 SSH login key for ${username}?\n\nOnly the public key is retained on the hotspot. The private/public key archive is downloaded once; store it privately.`,confirmText:'CREATE & EXPORT KEY',cancelText:'CANCEL',tone:'danger'});
+    if(!ok)return;busy=true;busyAction='client-key';renderState();
     try{const d=await api('/api/ssh-client-key/create',{username});if(!d.archive_b64)throw new Error('SSH client enrollment returned no key archive');download(d.filename||'ywd-hotspot-ssh-client-login.tar.gz',d.archive_b64);d.archive_b64='';notify(`SSH client login key created for ${username}${d.fingerprint?` · ${d.fingerprint}`:''}`);await loadStatus();}
-    catch(e){notify(e.message||'Could not create SSH client login key.',true);}finally{busy=false;renderState();}
+    catch(e){notify(e.message||'Could not create SSH client login key.',true);}finally{busyAction='';busy=false;renderState();}
   }
 
   function canonicalSystemPage(){const pages=Array.from(document.querySelectorAll('section.page#system'));return pages.find(page=>page.querySelector('#rfToggle')||page.querySelector('#hostPowerCard')||page.querySelector('#dmridCard'))||null;}
@@ -156,11 +153,11 @@
       </div>
       <div class="buttonrow wrap"><button class="btn" id="sshApplyPolicy" type="button">USED WHEN SSH ENABLES</button><button class="btn good" id="sshToggle" type="button">ENABLE SSH ACCESS</button></div>
       <div id="sshPasswordBlock" class="field" hidden><hr><label>SSH LOGIN PASSWORD</label><div class="formgrid"><div class="field"><input id="sshPassword" type="password" autocomplete="new-password" minlength="10" maxlength="128" placeholder="New password"></div><div class="field"><input id="sshPasswordConfirm" type="password" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Confirm password"></div></div><div class="buttonrow wrap"><button class="btn" id="sshSetPassword" type="button">SET / CHANGE PASSWORD</button></div><div class="hint">The password changes the selected Linux account. It is not stored in YWD configuration or returned by the API.</div></div>
-      <hr><div class="buttonrow wrap"><button class="btn" id="sshClientCreate" type="button">CREATE & EXPORT CLIENT KEY</button><button class="btn" id="sshKeysExport" type="button">EXPORT SERVER IDENTITY</button></div>
-      <div class="hint">Client-key export creates a new login key for the selected user. Server identity export is recovery-only.</div>`;
+      <hr><div class="buttonrow ssh-client-key-row"><button class="btn" id="sshClientCreate" type="button" aria-busy="false">CREATE & EXPORT SSH CLIENT KEY</button></div>
+      <div class="hint">Creates a new Ed25519 SSH login key for the selected user. The private/public key archive is downloaded once; only the public key is retained on the hotspot.</div>`;
     const runtime=page.querySelector('#rfToggle')?.closest('article.card');const grid=runtime?.parentElement;const hostPower=page.querySelector('#hostPowerCard');
     if(grid&&hostPower?.parentElement===grid)grid.insertBefore(card,hostPower);else if(grid)grid.appendChild(card);else page.appendChild(card);
-    el('sshToggle').onclick=()=>configure(!sshState?.active,false);el('sshApplyPolicy').onclick=()=>configure(true,true);el('sshSetPassword').onclick=setPassword;el('sshClientCreate').onclick=createClientKey;el('sshKeysExport').onclick=exportServerIdentity;
+    el('sshToggle').onclick=()=>configure(!sshState?.active,false);el('sshApplyPolicy').onclick=()=>configure(true,true);el('sshSetPassword').onclick=setPassword;el('sshClientCreate').onclick=createClientKey;
     [el('sshLoginUserSelect'),el('sshAuthMode')].forEach(node=>node?.addEventListener('change',()=>{policyDirty=true;const pw=el('sshPasswordBlock');if(pw)pw.hidden=selectedMode()!=='password+key';renderState();}));
     const logout=el('logoutBtn');if(logout)new MutationObserver(()=>{renderState();loadStatus();}).observe(logout,{attributes:true,attributeFilter:['hidden']});
     renderState();loadStatus();return true;

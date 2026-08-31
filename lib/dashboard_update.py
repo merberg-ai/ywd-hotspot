@@ -44,7 +44,7 @@ _RELEASE_UI_BOOTSTRAP = b"""
     '/tgif-polish.js?v=rc4-tgif-polish2',
   ];
   window.__YWD_RELEASE_UI_READY = false;
-  window.__YWD_RELEASE_UI_PROGRESS = {loaded:0,total:sources.length,current:null};
+  window.__YWD_RELEASE_UI_PROGRESS = {loaded:0,total:sources.length,failed:0,current:null};
 
   const loadReleaseUi = src => new Promise(resolve => {
     window.__YWD_RELEASE_UI_PROGRESS.current = src;
@@ -58,15 +58,17 @@ _RELEASE_UI_BOOTSTRAP = b"""
     script.onerror = () => {
       console.error(`YWD-Hotspot failed to load ${src}`);
       window.__YWD_RELEASE_UI_PROGRESS.loaded += 1;
+      window.__YWD_RELEASE_UI_PROGRESS.failed += 1;
       resolve(false);
     };
     document.head.appendChild(script);
   });
 
   (async () => {
-    for (const src of sources) await loadReleaseUi(src);
+    let ok = true;
+    for (const src of sources) ok = (await loadReleaseUi(src)) && ok;
     window.__YWD_RELEASE_UI_PROGRESS.current = null;
-    window.__YWD_RELEASE_UI_READY = true;
+    window.__YWD_RELEASE_UI_READY = ok && window.__YWD_RELEASE_UI_PROGRESS.failed === 0;
     window.dispatchEvent(new CustomEvent('ywd:release-ui-ready'));
   })();
 })();

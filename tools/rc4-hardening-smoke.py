@@ -41,6 +41,7 @@ PY_SOURCES = (
     "tools/source-oled-install-smoke.py",
     "tools/oled-health-smoke.py",
     "tools/ssh-policy-smoke.py",
+    "tools/system-lazy-ui-smoke.py",
     "tools/vocoder-manager-foundation-smoke.py",
     "tools/vocoder-job-preflight-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
@@ -75,6 +76,7 @@ SMOKES = (
     "tools/source-oled-install-smoke.py",
     "tools/oled-health-smoke.py",
     "tools/ssh-policy-smoke.py",
+    "tools/system-lazy-ui-smoke.py",
     "tools/vocoder-manager-foundation-smoke.py",
     "tools/vocoder-job-preflight-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
@@ -135,6 +137,7 @@ def main() -> int:
     print("[OK] source-install I2C/OLED policy")
     print("[OK] truthful OLED device health projection")
     print("[OK] SSH key-only/password-or-key policy contract")
+    print("[OK] Pi Zero lazy System extension startup + no fixed mount race")
     print("[OK] passive vocoder manager + appliance maintenance coordination foundation")
     print("[OK] unprivileged persistent vocoder install-readiness job + bounded transcript")
     print("[OK] encrypted TGIF/BrandMeister backup round trip + redacted preview")

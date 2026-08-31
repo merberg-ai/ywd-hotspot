@@ -38,6 +38,7 @@ _RELEASE_UI_BOOTSTRAP = b"""
   loadReleaseUi('/update-branch.js?v=rc3-wire1');
   loadReleaseUi('/modem-ui.js?v=rc3-wire1');
   loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
+  loadReleaseUi('/tgif-control.js?v=rc4-tgif1');
 })();
 """
 
@@ -110,16 +111,16 @@ def wrap_handler(base):
             # First-paint startup presentation is bundled into the two assets the
             # base index already requests. This avoids a config round-trip and,
             # more importantly, avoids painting the historical spinner before the
-            # selected startup theme is known. Late-RC3 release UI modules are
-            # also bootstrapped explicitly here so an unrelated feature bundle can
-            # never accidentally hide the software-channel or MMDVM inventory UI.
+            # selected startup theme is known. Late-RC3/RC4 extension modules are
+            # bootstrapped explicitly so an unrelated bundle cannot orphan them.
             if path == "/style.css":
                 base_css = _asset_bytes("style.css")
                 theme_css = _asset_bytes("startup-themes.css")
                 branch_css = _asset_bytes("update-branch.css")
                 modem_css = _asset_bytes("modem-ui.css")
                 control_css = _asset_bytes("control-theme.css")
-                if not base_css or not branch_css or not modem_css or not control_css:
+                tgif_control_css = _asset_bytes("tgif-control.css")
+                if not base_css or not branch_css or not modem_css or not control_css or not tgif_control_css:
                     self.send_json({"error": "style asset unavailable"}, 404)
                     return
                 body = base_css
@@ -128,6 +129,7 @@ def wrap_handler(base):
                 body += b"\n\n/* software channel UI */\n" + branch_css
                 body += b"\n\n/* MMDVM inventory UI */\n" + modem_css
                 body += b"\n\n/* dashboard-wide interactive control theme */\n" + control_css
+                body += b"\n\n/* TGIF Control Center */\n" + tgif_control_css
                 self.send_bytes(200, body, "text/css; charset=utf-8", cache="no-cache")
                 return
             if path == "/app.js":
@@ -149,6 +151,8 @@ def wrap_handler(base):
                 "/update-branch.js": ("update-branch.js", "application/javascript; charset=utf-8"),
                 "/modem-ui.js": ("modem-ui.js", "application/javascript; charset=utf-8"),
                 "/tgif-ui.js": ("tgif-ui.js", "application/javascript; charset=utf-8"),
+                "/tgif-control.js": ("tgif-control.js", "application/javascript; charset=utf-8"),
+                "/tgif-control.css": ("tgif-control.css", "text/css; charset=utf-8"),
                 "/control-theme.css": ("control-theme.css", "text/css; charset=utf-8"),
                 "/update.css": ("update.css", "text/css; charset=utf-8"),
                 "/update-branch.css": ("update-branch.css", "text/css; charset=utf-8"),

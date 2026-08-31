@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Source-only regression for the RC4 vocoder-manager foundation.
+
+No RF service, package manager, backend socket, compiler, systemd unit, or live
+vocoder binary is modified by this smoke.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+LIB = ROOT / "lib"
+sys.path.insert(0, str(LIB))
+
+import maintenance_coordinator as mc
+import vocoder_manager as vm
+
+
+def expect_state(snapshot: dict, wanted: str) -> dict:
+    got = vm.classify_snapshot(snapshot)
+    assert got.get("state") == wanted, f"expected {wanted}, got {got}"
+    return got
+
+
+def complete_backend(*, enabled="enabled", service="inactive", policy_ok=True):
+    return {
+        "binary_present": True,
+        "service_exists": True,
+        "socket_exists": True,
+        "service_state": service,
+        "socket_state": "active",
+        "socket_enabled": enabled,
+        "policy": {"available": True, "ok": policy_ok},
+    }
+
+
+with tempfile.TemporaryDirectory(prefix="ywd-maint-smoke-") as td:
+    root = Path(td)
+    old = (mc.VAR, mc.LEASE, mc.LOCK, mc.LAST, mc.BOOT_ID)
+    try:
+        mc.VAR = root
+        mc.LEASE = root / "maintenance-lease.json"
+        mc.LOCK = root / "maintenance-lease.lock"
+        mc.LAST = root / "maintenance-last.json"
+        mc.BOOT_ID = root / "boot-id"
+        mc.BOOT_ID.write_text("boot-smoke\n", encoding="utf-8")
+
+        assert mc.inspect() == {"active": False, "stale": False}
+        first = mc.claim("vocoder-smoke-1", "vocoder-install", "preparing", owner_pid=os.getpid())
+        assert first["active"] is True and first["phase"] == "preparing"
+
+        # Same live owner/job is idempotent and may advance its phase without
+        # recursively acquiring flock.
+        same = mc.claim("vocoder-smoke-1", "vocoder-install", "building", owner_pid=os.getpid())
+        assert same["active"] is True and same["phase"] == "building"
+
+        try:
+            mc.claim("other-smoke-2", "channel-switch", "preparing", owner_pid=os.getpid())
+        except mc.MaintenanceBusy as exc:
+            assert exc.lease.get("job_id") == "vocoder-smoke-1"
+        else:
+            raise AssertionError("conflicting maintenance claim must be rejected")
+
+        updated = mc.update("vocoder-smoke-1", phase="activation-started", cancellable=False, owner_pid=os.getpid())
+        assert updated["phase"] == "activation-started" and updated["cancellable"] is False
+        mc.release("vocoder-smoke-1", outcome="complete", owner_pid=os.getpid())
+        assert mc.inspect() == {"active": False, "stale": False}
+        assert mc.LAST.is_file()
+
+        stale = {
+            "schema": 1,
+            "job_id": "stale-smoke",
+            "job_type": "vocoder-install",
+            "owner_pid": 99999999,
+            "boot_id": "boot-smoke",
+            "started_at": 1,
+            "updated_at": 1,
+            "phase": "building",
+            "cancellable": True,
+            "secret": "must-not-project",
+        }
+        mc.LEASE.write_text(json.dumps(stale), encoding="utf-8")
+        seen = mc.inspect()
+        assert seen["stale"] is True and seen["stale_reason"] == "owner-not-running"
+        public = mc.public_status(seen)
+        assert "secret" not in public
+        recovered = mc.recover_stale()
+        assert recovered["recovered"] is True
+        assert not mc.LEASE.exists()
+    finally:
+        mc.VAR, mc.LEASE, mc.LOCK, mc.LAST, mc.BOOT_ID = old
+
+recipe = {"id": vm.BACKEND_RECIPE, "version": vm.BACKEND_RECIPE_VERSION, "protocol": vm.PROTOCOL_VERSION, "mbelib_commit": vm.APPROVED_MBELIB_COMMIT}
+ready_runtime = {
+    "ready": True,
+    "variant": "ywd-extended",
+    "in_sync": True,
+    "extension_api": 2,
+    "capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES),
+    "missing_capabilities": [],
+    "upgrade_required": False,
+}
+not_ready_runtime = {**ready_runtime, "ready": False, "variant": "upstream", "capabilities": [], "missing_capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES)}
+idle_job = {"active": False, "state": "IDLE", "phase": "idle"}
+
+expect_state({"backend": {}, "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "NOT_INSTALLED")
+expect_state({"backend": {"binary_present": True}, "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "REPAIR_REQUIRED")
+expect_state({"backend": complete_backend(), "runtime": not_ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "YWD_EXTENDED_REQUIRED")
+expect_state({"backend": complete_backend(enabled="disabled"), "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "DISABLED")
+expect_state({"backend": complete_backend(policy_ok=False), "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "REPAIR_REQUIRED")
+expect_state({
+    "backend": complete_backend(),
+    "runtime": ready_runtime,
+    "recipe": recipe,
+    "provenance": {"recipe_version": vm.BACKEND_RECIPE_VERSION - 1, "protocol_version": vm.PROTOCOL_VERSION, "mbelib_commit": vm.APPROVED_MBELIB_COMMIT},
+    "job": idle_job,
+}, "UPDATE_REQUIRED")
+ready = expect_state({"backend": complete_backend(service="inactive"), "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "READY")
+assert ready.get("process_mode") == "DORMANT"
+expect_state({"backend": {}, "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": {"active": True, "state": "BUILDING", "phase": "building"}}, "BUILDING")
+
+manager_src = (LIB / "vocoder_manager.py").read_text(encoding="utf-8")
+dashboard_src = (LIB / "dashboard_vocoder_manager.py").read_text(encoding="utf-8")
+update_src = (LIB / "dashboard_update.py").read_text(encoding="utf-8")
+ui_src = (ROOT / "web" / "vocoder-manager.js").read_text(encoding="utf-8")
+css_src = (ROOT / "web" / "vocoder-manager.css").read_text(encoding="utf-8")
+
+assert "import vocoder_client" not in manager_src
+assert "vocoder_client.status" not in manager_src
+assert '"mutations_enabled": False' in manager_src
+assert 'path != "/api/system/vocoder"' in dashboard_src
+assert "vocoder-manager.js?v=rc4-vocoder-foundation1" in update_src
+assert '"/vocoder-manager.css"' in update_src
+assert "DMR AUDIO VOCODER" in ui_src
+assert "REFRESH STATUS" in ui_src
+assert "fetch('/api/system/vocoder'" in ui_src
+assert "method:'POST'" not in ui_src and 'method: "POST"' not in ui_src
+assert "Build/install/update controls remain intentionally disabled" in ui_src
+assert "@media(max-width:620px)" in css_src
+assert ".vocoder-actions .btn{width:100%;min-width:0}" in css_src
+
+print("[OK] appliance maintenance lease rejects conflicting live jobs")
+print("[OK] maintenance lease supports idempotent owner updates and stale recovery")
+print("[OK] maintenance public status strips unapproved metadata")
+print("[OK] vocoder manager classifies not-installed/repair/prerequisite/disabled/update/ready states")
+print("[OK] dormant socket-activated backend is represented as READY / DORMANT")
+print("[OK] passive System polling does not wake the vocoder Protocol backend")
+print("[OK] vocoder foundation exposes read-only status only; mutation controls remain gated off")
+print("[OK] System card and mobile layout assets are wired into the dashboard")

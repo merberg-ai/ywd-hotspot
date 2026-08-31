@@ -4,10 +4,11 @@ This list tracks presentation/usability polish after the hardware-proven RC4 sca
 
 Baseline for this polish pass:
 
-- `dev` at `a0414d37ec65c27ac49b8c49f3a72cd6044c4513`;
+- hardware-proven TGIF scanner/watchlist runtime;
 - TGIF Control Center action feedback visually accepted on the Raspberry Pi Zero;
 - Status-page TGIF scanner sweep/hold presentation visually accepted on the Raspberry Pi Zero;
-- scanner/runtime/routing behavior remains hardware-proven and unchanged by the presentation overlay.
+- terminal/TGIF presentation checkpoint accepted at `27fd5ed46abdd56fa2f126482376ddcf9824b633`;
+- `dev` and `dev-plugins` were aligned at that checkpoint before scanner-aware updater work began.
 
 ## 1. Navigation bar overflow / ugly horizontal scrollbar
 
@@ -44,9 +45,9 @@ At the normal desktop browser width used for RC4 testing:
 
 ## 2. Compact terminal YWD-HOTSPOT wordmark
 
-**Status:** IMPLEMENTED - awaiting appliance acceptance
+**Status:** ACCEPTED
 
-Replace the older radio/letter banner and plain box headings with one compact ASCII wordmark inspired by the YWD-Plug Windows console style. The wordmark must fit an ordinary 80-column SSH/local terminal.
+The installer/updater and login presentation use the compact `$`-character YWD-HOTSPOT wordmark accepted on the Raspberry Pi Zero/PuTTY hardware gate.
 
 Presentation owners:
 
@@ -55,13 +56,15 @@ Presentation owners:
 - `/etc/motd` through `lib/branding/motd`;
 - dynamic SSH/local login panel in `lib/console/ywd-system-info.py`.
 
-The static and dynamic terminal surfaces should identify the appliance as **Raspberry Pi DMR Hotspot Appliance** and **BrandMeister + TGIF**.
+The static and dynamic terminal surfaces identify the appliance as **Raspberry Pi DMR Hotspot Appliance** and **BrandMeister + TGIF**.
+
+Accepted checkpoint: `27fd5ed46abdd56fa2f126482376ddcf9824b633`.
 
 ## 3. TGIF parity in GitHub/source install wizard
 
-**Status:** IMPLEMENTED - awaiting source/appliance acceptance
+**Status:** IMPLEMENTED - fresh source/image acceptance pending
 
-The interactive source installer configuration path now asks whether TGIF Network should be enabled. When enabled it asks for:
+The interactive source installer configuration path asks whether TGIF Network should be enabled. When enabled it asks for:
 
 - TGIF master/host;
 - TGIF UDP port;
@@ -69,19 +72,51 @@ The interactive source installer configuration path now asks whether TGIF Networ
 
 Existing TGIF credentials are preserved when TGIF is disabled during a recovery/reconfiguration pass. The canonical config model remains the validator/source of truth.
 
+Source regression coverage passes; the final physical fresh-install/first-run exercise remains part of the RC4 image/fresh-install gate rather than mutating the mature accepted hotspot.
+
 ## 4. TGIF details in SSH/login appliance panel
 
-**Status:** IMPLEMENTED - awaiting appliance acceptance
+**Status:** ACCEPTED
 
-The dynamic login panel should show, without exposing credentials:
+The dynamic login panel shows, without exposing credentials:
 
 - BrandMeister state and master endpoint;
 - TGIF `ACTIVE`, `ENABLED`, or `DISABLED` state;
 - TGIF master endpoint when enabled;
 - TGIF scanner runtime state/current TG when scanning;
-- the plain-HTTP first-boot setup URL if setup is still required.
+- the plain-HTTP RC4 first-boot setup URL if setup is still required.
 
 The login hook reads only local config/runtime/systemd state; it does not make an external or dashboard HTTP request during SSH login.
+
+Accepted checkpoint: `27fd5ed46abdd56fa2f126482376ddcf9824b633`.
+
+## 5. TGIF scanner-aware updater / dashboard / terminal
+
+**Status:** IMPLEMENTED - hardware update acceptance pending
+
+Treat the hardware-proven TGIF watchlist scanner as explicit runtime state during software updates instead of an invisible sidecar.
+
+### Runtime policy
+
+- candidate fetch/validation does **not** disturb the scanner;
+- an inactive scanner remains inactive;
+- an actively scanning scanner is captured and stopped immediately before live application replacement;
+- after a successful compatible update, scanning is restored automatically;
+- an explicit manual HOLD restores the same watched TG and manual HOLD state;
+- traffic/post-call HOLD is not resurrected from stale traffic after an update and resumes as normal scanning;
+- rollback restores the same pre-update scanner intent;
+- a target that does not support TGIF scanning, has TGIF disabled, or has no usable watchlist leaves the scanner stopped with a warning rather than failing an otherwise successful core update;
+- scanner update preservation never keys RF and does not alter DMRGateway routing.
+
+### Presentation
+
+The terminal GitHub updater reports whether scanning is active and that it will be paused/restored. The WebUI software-update card and confirmation dialog show scanner state/current TG and explain the preservation behavior. Update progress has explicit scanner-paused/scanner-restored phases, and completion reports whether the scanner actually resumed. The Change Channel UI uses the same policy.
+
+### Validation
+
+`tools/tgif-update-safety-smoke.py` simulates capture/quiesce/restore, manual-HOLD preservation, unsupported-target fail-soft behavior, updater ownership, dashboard status projection, and terminal presentation without external TGIF traffic or live service changes.
+
+Hardware acceptance must deliberately perform an update **with the scanner running**. A stronger gate is to place the scanner in manual HOLD on a watched TG before updating and require it to return active on the same TG in manual HOLD afterward.
 
 ## Queue
 

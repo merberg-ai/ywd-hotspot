@@ -1,4 +1,4 @@
-/* RC4 DMR Audio Vocoder manager status card. */
+/* RC4 DMR Audio Vocoder manager status / guarded job card. */
 .system-vocoder-card{
   grid-column:1/-1;
   border-color:#315268;
@@ -63,6 +63,7 @@
   background:#06131a;
 }
 .vocoder-actions{margin-top:10px}
+.vocoder-actions .btn{min-width:132px}
 .vocoder-console{
   margin-top:11px;
   border:1px solid #173b45;
@@ -89,8 +90,7 @@
   color:#9bb2bd;
   font:9px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
 }
-.vocoder-refresh{min-width:132px}
-.vocoder-refresh.ywd-working::before{
+.vocoder-actions .ywd-working::before{
   content:"";
   display:inline-block;
   width:9px;
@@ -103,7 +103,7 @@
   animation:ywdVocoderSpin .7s linear infinite;
 }
 @keyframes ywdVocoderSpin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.vocoder-refresh.ywd-working::before{animation:none;border-right-color:currentColor}}
+@media(prefers-reduced-motion:reduce){.vocoder-actions .ywd-working::before{animation:none;border-right-color:currentColor}}
 @media(max-width:620px){
   .system-vocoder-card{padding:12px}
   .vocoder-grid{grid-template-columns:1fr}

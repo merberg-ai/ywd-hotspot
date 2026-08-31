@@ -86,6 +86,23 @@ with tempfile.TemporaryDirectory(prefix="ywd-vocoder-job-smoke-") as td:
         mc.BOOT_ID = root / "boot-id"
         mc.BOOT_ID.write_text("boot-vocoder-job-smoke\n", encoding="utf-8")
 
+        # Server-side launch reservation must block any competing job before the
+        # background worker has started, then atomically transfer to the worker.
+        reserved = mc.reserve_launch("vocoder-reserved", "vocoder-preflight", "ywd-vocoder-job.service")
+        assert reserved["active"] is True and reserved["phase"] == "launching" and reserved["owner_pid"] == 1
+        try:
+            mc.claim("competing-job", "channel-switch", "preparing", owner_pid=os.getpid())
+        except mc.MaintenanceBusy:
+            pass
+        else:
+            raise AssertionError("launch reservation must reject competing maintenance")
+        adopted = mc.claim(
+            "vocoder-reserved", "vocoder-preflight", "checking",
+            owner_pid=os.getpid(), service="ywd-vocoder-job.service",
+        )
+        assert adopted["owner_pid"] == os.getpid() and adopted["phase"] == "checking"
+        mc.release("vocoder-reserved", owner_pid=os.getpid())
+
         runner.collect_facts = lambda: facts()
         job = {"job_id": "vocoder-smoke-pass", "job_type": "vocoder-preflight", "operation": "preflight", "started_at": 1}
         assert runner.run_preflight(job) == 0
@@ -128,7 +145,7 @@ assert "vocoder job runner must not run as root" in runner_src
 assert "MAX_LOG_BYTES = 64 * 1024" in runner_src
 assert "MAX_LOG_LINES = 80" in runner_src
 assert 'action != "vocoder-preflight-start"' in admin_src
-assert "payload" in admin_src and "payload:" not in admin_src
+assert "maintenance_coordinator.reserve_launch(job_id, JOB_TYPE, SERVICE)" in admin_src
 assert 'core.admin_call("vocoder-preflight-start", {}, 20)' in dashboard_src
 assert "require_control()" in dashboard_src
 assert "vocoder-preflight-start)" in dispatch_src
@@ -137,15 +154,18 @@ assert "User=ywd-hotspot" in unit_src and "User=root" not in unit_src
 assert "NoNewPrivileges=true" in unit_src
 assert "ProtectSystem=strict" in unit_src
 assert "ReadWritePaths=/var/lib/ywd-hotspot" in unit_src
+assert "SuccessExitStatus=0 3" in unit_src
 assert "Nice=10" in unit_src and "CPUWeight=50" in unit_src and "IOSchedulingClass=idle" in unit_src
 assert "CHECK INSTALL READINESS" in ui_src
 assert "post('/api/system/vocoder/preflight', {})" in ui_src
 assert "jobActive ? 1500 : 30000" in ui_src
 assert "os.O_RDWR | os.O_CREAT, 0o660" in mc_src
+assert "LAUNCH_TIMEOUT_S = 60" in mc_src
 
 print("[OK] readiness evaluation distinguishes hard failures, temporary blockers, and YWD Extended prerequisite")
+print("[OK] launch reservation blocks competing maintenance before worker adoption")
 print("[OK] persistent preflight job completes/failed-safes with lease release and bounded transcript")
 print("[OK] background worker is unprivileged, low-priority, and filesystem-confined")
 print("[OK] readiness API is dashboard-authenticated and exposes no browser-controlled build options")
 print("[OK] gated worker contains no package install, source clone, compile, RF restart, or activation path")
-print("[OK] maintenance flock is shared safely across root launcher and unprivileged worker")
+print("[OK] expected readiness blockers do not leave a failed systemd unit")

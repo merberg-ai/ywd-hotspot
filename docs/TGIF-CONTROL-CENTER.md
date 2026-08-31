@@ -4,7 +4,7 @@
 
 The TGIF Control Center is YWD-Hotspot's network-specific operating page for TGIF Network. The **TGIF** tab appears only when TGIF is enabled in Settings.
 
-It does not replace the existing BrandMeister Talkgroup Manager and it does not change the proven DMRGateway routing model.
+It does not replace the existing BrandMeister Talkgroup Manager and it does not change the proven DMRGateway routing model. In the dashboard navigation the BrandMeister page is labeled **BM TALKGROUPS** so it is visually distinct from the dedicated TGIF page.
 
 ## What the page provides
 
@@ -66,6 +66,13 @@ Supported scanner/directory talkgroups are TGIF `1..999999`, except TG `4000`, w
 
 Talkgroups above `999999` are still outside the current fixed seven-digit RF prefix scheme and are not fabricated into false RF destinations.
 
+TGIF's public directory can omit service destinations such as Parrot. YWD supplements the directory with its small known-service list and permits an exact numeric search to produce a usable row for an otherwise valid TGIF talkgroup. For example:
+
+```text
+TGIF Parrot       9990
+Radio destination 5009990
+```
+
 ## Favorites
 
 Favorites are saved on the hotspot rather than in browser `localStorage`.
@@ -78,7 +85,7 @@ Current state file:
 
 This means phone and desktop browsers see the same TGIF favorites/watchlist on that appliance, and normal YWD application updates preserve them.
 
-The first scanner hardware slice intentionally does **not** add this new state file to `.ywdsettings` yet. Portable backup/restore support will be added separately after the scanner runtime is physically proven, so scanner validation is not mixed with restore-transaction changes.
+The first scanner hardware slice intentionally did **not** add this new state file to `.ywdsettings`. Portable backup/restore support remains a separate follow-up so scanner validation is not mixed with restore-transaction changes.
 
 ## Watchlist
 
@@ -151,6 +158,42 @@ Stops the scanner and sends TGIF talkgroup `4000` through the session-update mec
 
 This changes TGIF session state only. It does not disable TGIF in YWD Settings and does not disconnect BrandMeister.
 
+## Pi Zero control feedback
+
+Scanner/session actions can take long enough on an original Pi Zero that a button with no immediate visual change feels broken even when the request is working normally.
+
+The Control Center therefore gives immediate presentation feedback for these buttons:
+
+```text
+SAVE SETTINGS    → SAVING…
+START SCAN       → STARTING…
+HOLD             → HOLDING…
+RESUME           → RESUMING…
+NEXT             → NEXT…
+STOP             → STOPPING…
+DISCONNECT TGIF  → DISCONNECTING…
+```
+
+A small spinner appears immediately and duplicate clicks are suppressed while that request is in flight. The existing toast remains the completion/error notification. This feedback layer observes the already-existing authenticated API calls; it does not own or change scanner/network behavior.
+
+## Status-page scanner display
+
+While `ywd-tgif-scanner.service` is actively scanning, the main **STATUS** page displays a TGIF SCANNER card using the existing read-only scanner-status endpoint.
+
+During normal scanning the card shows:
+
+- **SCANNING** state;
+- current TGIF talkgroup and friendly name;
+- current RF `5xxxxxx` destination and timeslot;
+- dwell time remaining;
+- a cyan moving scanner/scope sweep.
+
+When the scanner holds, the card changes to **HOLDING**, identifies traffic, post-call, or manual hold, and changes the moving sweep into an amber lock/pulse presentation. The card hides when the scanner service is not active so the Status page is not permanently occupied by an idle scanner.
+
+Status polling runs only when the browser is visible and the Status page is selected. The animation includes a `prefers-reduced-motion` fallback.
+
+This is a presentation-only layer. It reads `/api/tgif/control/status` and does not call the TGIF session-update endpoint, privileged helper, DMRGateway, MMDVM-Host, or RF controls.
+
 ## Boot/update behavior
 
 The watchlist and favorites persist, but the scanner itself is **runtime-only** and is not enabled at boot.
@@ -173,25 +216,18 @@ The operation is validated server-side. The scanner daemon itself runs unprivile
 
 Read-only scanner status and TGIF directory search remain available without unlocking controls. Starting/stopping/tuning, changing favorites/watchlist, forced directory refreshes, and other mutations require an unlocked WebUI control session.
 
-## First hardware validation
+## Hardware validation status
 
-For the first test, use a known working TGIF hotspot and keep normal BrandMeister/TGIF routing unchanged.
+The scanner runtime has been physically accepted on the mature simplex appliance. Validation included:
 
-Recommended order:
+- TGIF Parrot `9990` TUNE/session control with RF destination `5009990`;
+- two-entry watchlist rotation;
+- five-second dwell behavior;
+- manual HOLD/RESUME/NEXT;
+- automatic hold on watched TGIF network traffic;
+- three-second post-call hold;
+- simultaneous BrandMeister and TGIF connectivity;
+- active MMDVMHost and DMRGateway services;
+- zero failed systemd units.
 
-1. update to the scanner candidate;
-2. run the RC4 hardening + TGIF scanner source smokes;
-3. confirm the TGIF tab appears only because TGIF is enabled;
-4. use **TUNE** on TGIF Parrot `9990` and confirm the backend reports RF `5009990` without a local RF key-up;
-5. perform the ordinary radio-side TGIF Parrot test to prove normal routing still works;
-6. add two or three known TGIF groups to the watchlist;
-7. enable Open RX / Promiscuous / Digital Monitor on the test radio;
-8. start the scanner and verify it rotates at the selected dwell time;
-9. verify HOLD, RESUME and NEXT;
-10. observe a real inbound call on the current TG and confirm traffic/post-call hold;
-11. STOP and confirm the session remains on the current TG;
-12. DISCONNECT and verify TG4000 is sent;
-13. repeat BrandMeister Parrot and TGIF Parrot regression checks;
-14. confirm `ywd-tgif-scanner.service` is **not enabled at boot** and there are zero failed systemd units.
-
-Do not treat the feature as accepted until those network/hardware checks pass.
+The responsive-button and Status-page animation layer is a later presentation-only polish slice and receives its own browser acceptance without reopening the already-proven scanner routing/runtime contract.

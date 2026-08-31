@@ -14,6 +14,8 @@ import dashboard_plugin_wasm
 import dashboard_plugins
 
 STATUS = core.VAR / "update-status.json"
+SETUP_STATE = core.VAR / "setup-state.json"
+M4_GATE = core.Path("/etc/ywd-hotspot/m4-safety.txt")
 PUBLIC_KEYS = {
     "state", "phase", "progress", "message",
     "installed_version", "current_commit", "target_version",
@@ -38,6 +40,17 @@ _RELEASE_UI_BOOTSTRAP = b"""
   loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
 })();
 """
+
+
+def setup_required():
+    """Mirror the base dashboard's first-run gate before it can emit a stale URL."""
+    if not M4_GATE.is_file():
+        return False
+    try:
+        doc = json.loads(SETUP_STATE.read_text(encoding="utf-8"))
+        return not (isinstance(doc, dict) and doc.get("state") == "complete")
+    except Exception:
+        return True
 
 
 def public_status():
@@ -65,10 +78,10 @@ def public_status():
 def startup_theme():
     """Return the validated presentation-only startup theme for first paint."""
     try:
-        value = str(core.canonical_cfg().get("web", {}).get("loading_animation", "rf_sweep"))
+        value = str(core.canonical_cfg().get("web", {}).get("loading_animation", "digital_waterfall"))
     except Exception:
-        value = "rf_sweep"
-    return value if value in _LOADING_THEMES else "rf_sweep"
+        value = "digital_waterfall"
+    return value if value in _LOADING_THEMES else "digital_waterfall"
 
 
 def _asset_bytes(name, limit=512 * 1024):
@@ -83,6 +96,16 @@ def wrap_handler(base):
     class UpdateHandler(base):
         def do_GET(self):
             path = urlparse(self.path).path
+
+            # The factory/setup portal is intentionally plain HTTP. Intercept the
+            # first-run root request here before an older base-handler redirect can
+            # point a browser back at the retired self-signed HTTPS listener.
+            if path in ("/", "/index.html") and setup_required():
+                self.send_response(302)
+                self.send_header("Location", "http://ywd-hotspot.local:8443/")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
 
             # First-paint startup presentation is bundled into the two assets the
             # base index already requests. This avoids a config round-trip and,

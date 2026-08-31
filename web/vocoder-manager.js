@@ -110,12 +110,12 @@
     renderConsole(doc?.job || {});
   }
 
-  async function loadStatus(showError = false) {
+  async function loadStatus({showError = false, showButtonBusy = false} = {}) {
     if (loading) return;
     loading = true;
     const button = el('vocoderRefresh');
     const old = button?.textContent;
-    if (button) {
+    if (button && showButtonBusy) {
       button.disabled = true;
       button.classList.add('ywd-working');
       button.setAttribute('aria-busy', 'true');
@@ -134,7 +134,7 @@
       if (showError && typeof toast === 'function') toast(`Vocoder status failed: ${err?.message || err}`, true);
     } finally {
       loading = false;
-      if (button) {
+      if (button && showButtonBusy) {
         button.classList.remove('ywd-working');
         button.removeAttribute('aria-busy');
         button.disabled = false;
@@ -174,9 +174,9 @@
     `;
     const host = el('hostPowerCard');
     grid.insertBefore(card, host || null);
-    el('vocoderRefresh').onclick = () => loadStatus(true);
+    el('vocoderRefresh').onclick = () => loadStatus({showError:true, showButtonBusy:true});
     installed = true;
-    loadStatus(false);
+    loadStatus();
     return true;
   }
 
@@ -192,8 +192,8 @@
       window.__ywdVocoderStatusPoll = setInterval(() => {
         const page = el('system');
         if (!installed || document.hidden || !page?.classList.contains('on')) return;
-        loadStatus(false);
-      }, 12000);
+        loadStatus();
+      }, 30000);
     }
   }
 

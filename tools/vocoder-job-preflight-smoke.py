@@ -86,8 +86,6 @@ with tempfile.TemporaryDirectory(prefix="ywd-vocoder-job-smoke-") as td:
         mc.BOOT_ID = root / "boot-id"
         mc.BOOT_ID.write_text("boot-vocoder-job-smoke\n", encoding="utf-8")
 
-        # Server-side launch reservation must block any competing job before the
-        # background worker has started, then atomically transfer to the worker.
         reserved = mc.reserve_launch("vocoder-reserved", "vocoder-preflight", "ywd-vocoder-job.service")
         assert reserved["active"] is True and reserved["phase"] == "launching" and reserved["owner_pid"] == 1
         try:
@@ -158,7 +156,8 @@ assert "SuccessExitStatus=0 3" in unit_src
 assert "Nice=10" in unit_src and "CPUWeight=50" in unit_src and "IOSchedulingClass=idle" in unit_src
 assert "CHECK INSTALL READINESS" in ui_src
 assert "post('/api/system/vocoder/preflight', {})" in ui_src
-assert "jobActive ? 1500 : 30000" in ui_src
+assert "jobActive || maintenanceActive ? 1500 : 30000" in ui_src
+assert "check.disabled = !unlocked || maintenanceActive || jobActive || localBusy" in ui_src
 assert "os.O_RDWR | os.O_CREAT, 0o660" in mc_src
 assert "LAUNCH_TIMEOUT_S = 60" in mc_src
 

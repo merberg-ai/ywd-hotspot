@@ -199,7 +199,13 @@ def claim(
         reason = _stale_reason(existing)
         if existing and reason is None:
             if str(existing.get("job_id")) == job_id and int(existing.get("owner_pid") or -1) == pid:
-                return update(job_id, phase=phase, cancellable=cancellable, owner_pid=pid)
+                existing["phase"] = phase
+                existing["updated_at"] = now
+                existing["cancellable"] = bool(cancellable)
+                if service is not None:
+                    existing["service"] = service
+                _atomic(LEASE, existing)
+                return public_status({**existing, "active": True, "stale": False})
             raise MaintenanceBusy(existing)
         if existing:
             archived = dict(existing)
@@ -235,9 +241,6 @@ def update(job_id: str, *, phase: str, cancellable: bool | None = None, owner_pi
     phase = str(phase or "").strip().lower()
     if not ID_RE.fullmatch(job_id) or not PHASE_RE.fullmatch(phase):
         raise ValueError("invalid maintenance lease update")
-    # claim() may call update while already holding the lock only for same-owner
-    # idempotence. Avoid recursive flock by implementing that case inline there
-    # in future; for now normal callers enter here independently.
     with _locked():
         existing = _read(LEASE)
         _owned(existing, job_id, owner_pid)

@@ -11,6 +11,7 @@ from pathlib import Path
 CFG = Path('/etc/ywd-hotspot/config.json')
 BUILD = Path('/etc/ywd-hotspot/build-info.json')
 SETUP = Path('/var/lib/ywd-hotspot/setup-state.json')
+TGIF_SCANNER = Path('/run/ywd-hotspot/tgif-scanner.json')
 M4_GATE = Path('/etc/ywd-hotspot/m4-safety.txt')
 OS_VERSION = Path('/etc/ywd-hotspot/os-version')
 APP_VERSION = Path('/opt/ywd-hotspot/app/VERSION')
@@ -26,6 +27,7 @@ UNITS = [
     ('Activity', 'ywd-activity.service'),
     ('MMDVM-Host', 'ywd-mmdvmhost.service'),
     ('DMRGateway', 'ywd-dmrgateway.service'),
+    ('TGIF Scanner', 'ywd-tgif-scanner.service'),
 ]
 
 
@@ -142,6 +144,34 @@ def os_label():
     return data.get('PRETTY_NAME', 'Linux')
 
 
+def configured_state(enabled, gateway_active):
+    if not enabled:
+        return 'DISABLED'
+    return 'ACTIVE' if gateway_active else 'ENABLED'
+
+
+def endpoint(network):
+    if not isinstance(network, dict) or not network.get('enabled'):
+        return '-'
+    host = str(network.get('master') or '-').strip()
+    try:
+        port = int(network.get('port', 62031))
+    except Exception:
+        port = 62031
+    return f'{host}:{port}'
+
+
+def scanner_label(svc):
+    if svc.get('ywd-tgif-scanner.service') != 'active':
+        return 'STOPPED'
+    runtime = read_json(TGIF_SCANNER, {})
+    state = str(runtime.get('state') or 'running').strip().upper()
+    tg = runtime.get('current_tg')
+    if tg:
+        return f'{state}  TG {tg}'
+    return state
+
+
 def collect(public_only=False):
     cfg = {} if public_only else read_json(CFG, {})
     build = read_json(BUILD, {})
@@ -150,10 +180,11 @@ def collect(public_only=False):
     station = cfg.get('station', {}) if isinstance(cfg, dict) else {}
     radio = cfg.get('radio', {}) if isinstance(cfg, dict) else {}
     bm = cfg.get('brandmeister', {}) if isinstance(cfg, dict) else {}
+    tgif = cfg.get('tgif', {}) if isinstance(cfg, dict) else {}
     maintenance = cfg.get('maintenance', {}) if isinstance(cfg, dict) else {}
     setup_text, setup_required = setup_status()
-    rf_active = (svc.get('ywd-mmdvmhost.service') == 'active' or
-                 svc.get('ywd-dmrgateway.service') == 'active')
+    gateway_active = svc.get('ywd-dmrgateway.service') == 'active'
+    rf_active = (svc.get('ywd-mmdvmhost.service') == 'active' or gateway_active)
     core_ok = svc.get('ywd-dashboard.service') == 'active'
     network_state = svc.get('ywd-network-manager.service')
     network_ok = network_state in ('active', 'inactive', 'unknown')
@@ -175,11 +206,19 @@ def collect(public_only=False):
         dmr_id = 'protected'
         freq = 'protected'
         bm_state = 'protected'
+        bm_master = 'protected'
+        tgif_state = 'protected'
+        tgif_master = 'protected'
+        tgif_scanner = 'protected'
     else:
         callsign = station.get('callsign') or 'NOCALL'
         dmr_id = station.get('base_dmr_id') or '-'
-        bm_state = ('ACTIVE' if svc.get('ywd-dmrgateway.service') == 'active'
-                    else ('ENABLED' if bm.get('enabled') else 'DISABLED'))
+        bm_state = configured_state(bool(bm.get('enabled', True)), gateway_active)
+        bm_master = endpoint(bm)
+        tgif_enabled = bool(tgif.get('enabled', False))
+        tgif_state = configured_state(tgif_enabled, gateway_active)
+        tgif_master = endpoint(tgif)
+        tgif_scanner = scanner_label(svc) if tgif_enabled else '-'
     return {
         'build': build if isinstance(build, dict) else {},
         'svc': svc,
@@ -192,6 +231,10 @@ def collect(public_only=False):
         'dmr_id': dmr_id,
         'frequency': freq,
         'bm_state': bm_state,
+        'bm_master': bm_master,
+        'tgif_state': tgif_state,
+        'tgif_master': tgif_master,
+        'tgif_scanner': tgif_scanner,
         'rf_autostart': bool(maintenance.get('rf_autostart', False)),
         'setup_text': setup_text,
         'setup_required': setup_required,
@@ -203,10 +246,14 @@ def collect(public_only=False):
 
 def banner():
     return [
-        '+----------------------------------------------------------------+',
-        '|                        YWD-HOTSPOT                             |',
-        '|             Raspberry Pi DMR Hotspot Appliance                |',
-        '+----------------------------------------------------------------+',
+        '__   __ __        __ ____        _   _  ___  _____ ____  ____   ___  _____',
+        '\\ \\ / / \\ \\      / /|  _ \\ ___ | | | |/ _ \\|_   _/ ___||  _ \\ / _ \\|_   _|',
+        ' \\ V /   \\ \\ /\\ / / | | | |___|| |_| | | | | | | \\___ \\| |_) | | | | | |',
+        '  | |     \\ V  V /  | |_| |    |  _  | |_| | | |  ___) |  __/| |_| | | |',
+        '  |_|      \\_/\\_/   |____/     |_| |_|\\___/  |_| |____/|_|    \\___/  |_|',
+        '',
+        ' Raspberry Pi DMR Hotspot Appliance  //  BrandMeister + TGIF',
+        ' --------------------------------------------------------------------------',
     ]
 
 
@@ -217,7 +264,7 @@ def kv(label, value):
 def print_services(s=None):
     s = s or collect()
     print(' SERVICES')
-    print(' ----------------------------------------------------------------')
+    print(' --------------------------------------------------------------------------')
     for label, unit in UNITS:
         st = s['svc'].get(unit, 'unknown')
         mark = '[+]' if st == 'active' else ('[-]' if st in ('inactive', 'failed') else '[?]')
@@ -232,7 +279,7 @@ def print_build(s=None):
     pins = parse_env(PINS)
     commit = b.get('commit_short') or str(b.get('commit') or '-')[:10]
     print(' BUILD')
-    print(' ----------------------------------------------------------------')
+    print(' --------------------------------------------------------------------------')
     print(kv('OS', s['os_version']))
     print(kv('App', b.get('version') or s['app_version']))
     print(kv('Channel', b.get('update_channel') or '-'))
@@ -247,7 +294,7 @@ def print_build(s=None):
 def print_network(s=None):
     s = s or collect(public_only=True)
     print(' NETWORK')
-    print(' ----------------------------------------------------------------')
+    print(' --------------------------------------------------------------------------')
     print(kv('WiFi', s['ssid']))
     print(kv('Signal', s['signal'] or '-'))
     print(kv('IPv4', s['ip']))
@@ -270,16 +317,20 @@ def print_info(s, motd=False, all_sections=False):
     print(kv('IP', s['ip']))
     print()
     print(' HOTSPOT')
-    print(' ----------------------------------------------------------------')
+    print(' --------------------------------------------------------------------------')
     print(kv('Setup', s['setup_text']))
     print(kv('Callsign', s['callsign']))
     print(kv('DMR ID', s['dmr_id']))
     print(kv('Frequency', s['frequency']))
     print(kv('RF', 'ACTIVE' if s['rf_active'] else 'OFF'))
     print(kv('BrandMeister', s['bm_state']))
+    print(kv('BM Master', s['bm_master']))
+    print(kv('TGIF', s['tgif_state']))
+    print(kv('TGIF Master', s['tgif_master']))
+    print(kv('TGIF Scanner', s['tgif_scanner']))
     print(kv('WebUI', 'http://ywd-hotspot.local:8080/'))
     if s['setup_required']:
-        print(kv('Setup URL', 'https://ywd-hotspot.local:8443/'))
+        print(kv('Setup URL', 'http://ywd-hotspot.local:8443/'))
     if s['public_only']:
         print(kv('Protected', 'run sudo ywd-info for full station details'))
     if all_sections:

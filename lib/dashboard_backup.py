@@ -61,6 +61,12 @@ def wrap_handler(base):
                 except Exception as exc:
                     self.send_json({"error": str(exc)[:1000]}, 502)
                 return
+            if path == "/api/tgif/control/status":
+                try:
+                    self.send_json(core.admin_call("tgif-control", {"operation": "status"}, 15))
+                except Exception as exc:
+                    self.send_json({"error": str(exc)[:800]}, 502)
+                return
             if path == "/api/tgif/talkgroups/search":
                 qs = parse_qs(parsed.query, keep_blank_values=False)
                 query = str((qs.get("q") or [""])[0])[:80]
@@ -89,20 +95,28 @@ def wrap_handler(base):
         def do_POST(self):
             path = urlparse(self.path).path
             routes = {
-                "/api/settings/export": ("settings-export", 150),
-                "/api/settings/preview": ("settings-preview", 150),
-                "/api/settings/import": ("settings-import", 150),
-                "/api/ssh/status": ("ssh-status", 30),
-                "/api/ssh/configure": ("ssh-configure", 45),
-                "/api/ssh/password": ("ssh-password-set", 30),
-                "/api/ssh-keys/export": ("ssh-keys-export", 30),
-                "/api/ssh-client-key/create": ("ssh-client-key-create", 30),
-                "/api/tgif/configure": ("tgif-configure", 60),
-                "/api/tgif/password": ("set-tgif-password", 60),
-                "/api/diagnostics/create": ("diagnostics", 150),
-                "/api/update/branches": ("update-branches", 120),
-                "/api/update/branch/check": ("update-branch-check", 260),
-                "/api/update/branch/switch": ("update-branch-switch", 360),
+                "/api/settings/export": ("settings-export", 150, None),
+                "/api/settings/preview": ("settings-preview", 150, None),
+                "/api/settings/import": ("settings-import", 150, None),
+                "/api/ssh/status": ("ssh-status", 30, None),
+                "/api/ssh/configure": ("ssh-configure", 45, None),
+                "/api/ssh/password": ("ssh-password-set", 30, None),
+                "/api/ssh-keys/export": ("ssh-keys-export", 30, None),
+                "/api/ssh-client-key/create": ("ssh-client-key-create", 30, None),
+                "/api/tgif/configure": ("tgif-configure", 60, None),
+                "/api/tgif/password": ("set-tgif-password", 60, None),
+                "/api/tgif/control/save": ("tgif-control", 30, "save"),
+                "/api/tgif/control/start": ("tgif-control", 30, "start"),
+                "/api/tgif/control/stop": ("tgif-control", 30, "stop"),
+                "/api/tgif/control/hold": ("tgif-control", 30, "hold"),
+                "/api/tgif/control/resume": ("tgif-control", 30, "resume"),
+                "/api/tgif/control/next": ("tgif-control", 30, "next"),
+                "/api/tgif/control/tune": ("tgif-control", 30, "tune"),
+                "/api/tgif/control/disconnect": ("tgif-control", 30, "disconnect"),
+                "/api/diagnostics/create": ("diagnostics", 150, None),
+                "/api/update/branches": ("update-branches", 120, None),
+                "/api/update/branch/check": ("update-branch-check", 260, None),
+                "/api/update/branch/switch": ("update-branch-switch", 360, None),
             }
             route = routes.get(path)
             if route is None:
@@ -111,7 +125,10 @@ def wrap_handler(base):
                 return
             try:
                 body = self._large_json()
-                action, timeout = route
+                action, timeout, operation = route
+                if operation is not None:
+                    body = dict(body)
+                    body["operation"] = operation
                 self.send_json(core.admin_call(action, body, timeout))
             except ValueError as exc:
                 self.send_json({"error": str(exc)[:800]}, 400)

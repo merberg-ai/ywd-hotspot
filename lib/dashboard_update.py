@@ -21,6 +21,8 @@ PUBLIC_KEYS = {
     "installed_version", "current_commit", "target_version",
     "target_commit", "target_date", "channel", "available", "up_to_date",
     "validated", "started_at", "completed_at", "updated_at", "backup", "error",
+    "scanner_was_active", "scanner_before_state", "scanner_before_tg",
+    "scanner_active", "scanner_state", "scanner_tg", "scanner_restore",
 }
 _LOADING_THEMES = {
     "rf_sweep", "radar_scan", "packet_burst", "digital_waterfall", "rf_orbit",
@@ -99,9 +101,6 @@ def wrap_handler(base):
         def do_GET(self):
             path = urlparse(self.path).path
 
-            # The factory/setup portal is intentionally plain HTTP. Intercept the
-            # first-run root request here before an older base-handler redirect can
-            # point a browser back at the retired self-signed HTTPS listener.
             if path in ("/", "/index.html") and setup_required():
                 self.send_response(302)
                 self.send_header("Location", "http://ywd-hotspot.local:8443/")
@@ -109,11 +108,6 @@ def wrap_handler(base):
                 self.end_headers()
                 return
 
-            # First-paint startup presentation is bundled into the two assets the
-            # base index already requests. This avoids a config round-trip and,
-            # more importantly, avoids painting the historical spinner before the
-            # selected startup theme is known. Late-RC3/RC4 extension modules are
-            # bootstrapped explicitly so an unrelated bundle cannot orphan them.
             if path == "/style.css":
                 base_css = _asset_bytes("style.css")
                 theme_css = _asset_bytes("startup-themes.css")
@@ -146,8 +140,6 @@ def wrap_handler(base):
                     return
                 hint = ("window.__YWD_LOADING_ANIMATION=" + json.dumps(startup_theme()) + ";\n").encode("utf-8")
                 body = hint + (theme_js + b"\n;\n" if theme_js else b"") + app_js + _RELEASE_UI_BOOTSTRAP
-                # The response contains the current saved presentation preference,
-                # so never let a stale cached app.js carry an old theme choice.
                 self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
                 return
 
@@ -176,9 +168,6 @@ def wrap_handler(base):
                 self.serve_static(name, mime)
                 return
             if path == "/api/update/status":
-                # Deliberately public and sanitized: a successful update restarts
-                # the dashboard, which destroys the in-memory control session.
-                # The browser still needs to report completion/reconnect state.
                 self.send_json({"ok": True, "update": public_status()})
                 return
             super().do_GET()

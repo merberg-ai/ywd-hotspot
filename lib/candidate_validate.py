@@ -93,6 +93,10 @@ CORE_REQUIRED = (
     "web/instrumentation-layout.css",
     "web/startup-themes.js",
     "web/startup-themes.css",
+    "web/tgif-control.js",
+    "web/tgif-control.css",
+    "web/tgif-polish.js",
+    "web/tgif-polish.css",
 )
 
 PLUGIN_MARKERS = (
@@ -290,10 +294,9 @@ def validate(root: Path) -> list[str]:
         errors,
     )
 
-    # Late-RC3 release UI must be explicitly served and bootstrapped. Do not hide
-    # unrelated modules inside the settings-backup asset; that previously allowed
-    # a candidate to validate while the About channel switcher and MMDVM card were
-    # absent from the live dashboard.
+    # Late-RC3/RC4 release UI must be explicitly served and bootstrapped. Do not
+    # hide unrelated modules inside another asset; that previously allowed a
+    # candidate to validate while late UI features were absent from the browser.
     _require_text_markers(
         root,
         "release UI bootstrap",
@@ -301,10 +304,28 @@ def validate(root: Path) -> list[str]:
         (
             "/update-branch.js?v=rc3-wire1",
             "/modem-ui.js?v=rc3-wire1",
+            "/tgif-control.js?v=rc4-tgif1",
+            "/tgif-polish.js?v=rc4-tgif-polish1",
             '"/update-branch.js":',
             '"/modem-ui.js":',
+            '"/tgif-polish.js":',
             "update-branch.css",
             "modem-ui.css",
+            "tgif-polish.css",
+        ),
+        errors,
+    )
+    _require_text_markers(
+        root,
+        "TGIF scanner presentation polish",
+        "web/tgif-polish.js",
+        (
+            "BM TALKGROUPS",
+            "/api/tgif/control/status",
+            "tgifScannerStatusCard",
+            "STARTING…",
+            "HOLDING…",
+            "DISCONNECTING…",
         ),
         errors,
     )

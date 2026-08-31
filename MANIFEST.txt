@@ -48,6 +48,7 @@ docs/RC3-UI-CSP-STYLING.md
 docs/RC3-UI-POLISH.md
 docs/RC4-CHANGE-LIST.md
 docs/RC4-DEV-CHECKPOINT-2026-08-30.md
+docs/RC4-POLISH-LIST.md
 docs/RELEASE-NOTES-0.2.0-rc1.md
 docs/RELEASE-NOTES-0.2.0-rc2.md
 docs/RELEASE-NOTES-0.2.0-rc3.md
@@ -199,6 +200,7 @@ tools/source-oled-install-smoke.py
 tools/ssh-policy-smoke.py
 tools/startup-theme-config-smoke.py
 tools/telemetry-config-smoke.py
+tools/terminal-branding-tgif-smoke.py
 tools/tgif-directory-smoke.py
 tools/tgif-polish-smoke.py
 tools/tgif-routing-smoke.py

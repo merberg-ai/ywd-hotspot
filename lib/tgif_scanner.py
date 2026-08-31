@@ -21,6 +21,7 @@ PREFS = Path(os.environ.get("YWD_TGIF_CONTROL", "/var/lib/ywd-hotspot/tgif-contr
 ACTIVITY = Path(os.environ.get("YWD_ACTIVITY_STATE", "/run/ywd-hotspot/activity.json"))
 RUNTIME = Path(os.environ.get("YWD_TGIF_SCANNER_STATE", "/run/ywd-hotspot/tgif-scanner.json"))
 COMMAND = Path(os.environ.get("YWD_TGIF_SCANNER_COMMAND", "/run/ywd-hotspot/tgif-scanner-command.json"))
+RESTORE_HINT = Path(os.environ.get("YWD_TGIF_SCANNER_RESTORE", "/run/ywd-hotspot/tgif-scanner-restore.json"))
 SESSION_API = os.environ.get(
     "YWD_TGIF_SESSION_API",
     "http://tgif.network:5040/api/sessions/update",
@@ -249,6 +250,18 @@ def read_command():
     return doc if isinstance(doc, dict) else None
 
 
+def read_restore_hint():
+    try:
+        doc = json.loads(RESTORE_HINT.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    try:
+        RESTORE_HINT.unlink()
+    except Exception:
+        pass
+    return doc if isinstance(doc, dict) else None
+
+
 def _signal_stop(_signum, _frame):
     global STOP_REQUESTED
     STOP_REQUESTED = True
@@ -279,15 +292,42 @@ def main() -> int:
     manual_hold = False
     last_error = None
 
+    # An application update can stop the daemon while leaving the TGIF network
+    # session pinned to the current talkgroup. A one-shot restore hint lets the
+    # new daemon resume on that same watchlist entry. Manual HOLD is preserved;
+    # traffic/post-call HOLD is deliberately not resurrected after stale traffic.
+    hint = read_restore_hint()
+    if isinstance(hint, dict):
+        hint_tg = valid_tg(hint.get("talkgroup"))
+        ids = [int(row["id"]) for row in watch]
+        if hint_tg in ids:
+            current_tg = hint_tg
+            current_index = ids.index(hint_tg)
+            current_name = str(watch[current_index].get("name") or "")
+            try:
+                session_update(hotspot_id, prefs["slot"], current_tg)
+                tuned_at = time.time()
+                dwell_until = tuned_at + prefs["dwell_s"]
+                manual_hold = bool(hint.get("manual_hold"))
+            except Exception as exc:
+                current_tg = None
+                current_name = ""
+                current_index = -1
+                last_error = f"update restore hint failed: {exc}"[:500]
+
     runtime_state(
-        state="starting",
+        state="holding" if current_tg is not None and manual_hold else "starting",
         active=True,
         hotspot_id=hotspot_id,
         slot=prefs["slot"],
-        current_tg=None,
-        current_rf_tg=None,
-        manual_hold=False,
-        error=None,
+        current_tg=current_tg,
+        current_name=current_name,
+        current_rf_tg=(RF_BASE + current_tg) if current_tg else None,
+        manual_hold=manual_hold,
+        hold_reason="manual" if manual_hold else None,
+        tuned_at=tuned_at,
+        dwell_until=dwell_until,
+        error=last_error,
     )
 
     while not STOP_REQUESTED:

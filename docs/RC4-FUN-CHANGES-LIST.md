@@ -110,6 +110,26 @@ Embedded build/install console:
 - Poll/stream efficiently enough for a Pi Zero and allow the browser to be closed/reopened without losing job state or the transcript.
 - Prevent duplicate conflicting jobs. Allow cancellation only during safe/pre-activation phases; once final activation begins, finish or roll back rather than leaving a half-installed runtime.
 
+Vocoder installation/distribution model:
+
+- Retire the manual `.tar.gz` upload/extract/chmod/installer workflow as the normal operator path. The WebUI manager must be the standard installation path.
+- Move the YWD-owned adapter source, installer/build recipe, unit templates, backend-management logic, and Protocol v1 test tooling into the normal version-controlled YWD-Hotspot application tree.
+- Keep third-party mbelib outside the shipped application/plugin payload. On explicit operator approval, fetch the exact YWD-approved upstream mbelib repository and pinned commit defined by the installed YWD release.
+- Do not expose arbitrary source URLs, branches, commits, compiler flags, or shell commands in the normal WebUI. The installed YWD release owns the approved recipe and source pin.
+- Record backend recipe version, mbelib commit, architecture, compiler/build identity, installed binary hash, protocol version, and installation/test provenance so status/update/repair decisions are deterministic.
+- Installation starts as a persistent managed background job rather than a long HTTP request. Closing/reloading the browser must not interrupt it; reopening System reconnects to the same phase/state/transcript.
+- The install confirmation explains that Internet access is required, the approved mbelib source will be downloaded and built locally, and RF will remain online during preparation whenever safe.
+- Preflight checks should include architecture/support, free disk space, required YWD core/protocol files, YWD Extended capability status, Internet/source access, package-manager availability/lock state, and build prerequisites before changing runtime state.
+- Missing approved Debian build dependencies may be installed by the managed job. If apt/dpkg is already busy, wait/report truthfully rather than forcing or corrupting package-manager state. Do not automatically remove shared build dependencies during vocoder uninstall.
+- Build locally with Pi-friendly scheduling and cache successful verified artifacts using an identity that includes at least architecture, mbelib commit, YWD adapter/backend recipe version, protocol version, compiler identity, and relevant build flags. A compatible verified cache hit may skip an expensive rebuild.
+- Build/stage/test the vocoder candidate alongside any currently working backend. Do not replace the active backend until the candidate and Protocol v1 sanity checks pass.
+- Successful final install places the YWD adapter/backend binary and managed socket/service units in their canonical locations, enables the socket-activation unit, verifies effective scheduling policy, runs Protocol v1 STATUS and decode sanity tests, and then reports `READY` even when the decoder process itself is dormant.
+- Backend update uses the same transactional model: fetch/build/test the recommended candidate while the current backend remains available, switch only after validation, and restore the prior backend if final activation fails.
+- Backend uninstall disables/stops socket activation and removes the managed external backend binary/units, but does not remove RX Monitor, YWD Extended, shared build dependencies, or unrelated core state.
+- If YWD Extended must be built first, the single managed job chains `CHECK APPLIANCE -> BUILD/STAGE YWD EXTENDED -> BUILD/STAGE VOCODER -> ACTIVATE REQUIRED RUNTIME -> VERIFY RF/SCANNER -> ENABLE/TEST VOCODER -> COMPLETE` rather than making the operator run separate manual procedures.
+- Safe preparation phases (download/build/stage) may offer cancellation. Once final runtime/backend activation begins, cancellation is disabled; the job must either finish successfully or automatically roll back.
+- Normal YWD application updates preserve the external vocoder backend and only check/report compatibility; they must never surprise the operator by downloading/compiling mbelib as a side effect of an ordinary hotspot update.
+
 RX Monitor integration:
 
 - When live audio is unavailable, RX Monitor should present a simple actionable reason (`VOCODER NOT INSTALLED`, `VOCODER DISABLED`, `YWD EXTENDED REQUIRED`, `VOCODER UPDATE REQUIRED`, etc.) and offer `OPEN VOCODER SETUP` instead of exposing backend implementation jargon.
@@ -123,8 +143,9 @@ Update/restore behavior:
 
 Acceptance intent:
 
-- A normal operator can go from RX Monitor installed to working browser audio through the WebUI without manually invoking compiler/build/backend commands.
+- A normal operator can go from RX Monitor installed to working browser audio through the WebUI without downloading/uploading/extracting a deployment archive or manually invoking compiler/build/backend commands.
 - When YWD Extended is already present, backend installation does not interrupt live hotspot RF/network service.
 - When YWD Extended must be built, RF continues during download/compile and is interrupted only for the shortest verified activation window, with automatic rollback on failure.
 - Closing/reloading the dashboard during a long Pi Zero build does not lose or duplicate the job.
+- Reinstall/update can use a verified cache when the exact backend build identity matches instead of recompiling unnecessarily.
 - Dashboard lock, updater preservation, RF priority, and existing plugin sandbox boundaries remain intact.

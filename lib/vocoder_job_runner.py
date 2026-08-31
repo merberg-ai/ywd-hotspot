@@ -167,8 +167,11 @@ def _source_reachable() -> tuple[bool, str]:
 
 
 def collect_facts() -> dict:
+    # The dashboard uses only the cheap persisted current-pin identity. A real
+    # preparation gate must prove the exact installed binary/runtime generation,
+    # so the background worker deliberately performs the expensive verification.
     snapshot = vocoder_manager.passive_snapshot()
-    runtime = snapshot.get("runtime") if isinstance(snapshot.get("runtime"), dict) else {}
+    runtime = vocoder_manager.verified_runtime()
     usage = shutil.disk_usage(VAR)
     tools = {name: bool(shutil.which(name)) for name in ("git", "cmake", "make", "g++", "python3", "dpkg", "apt-get")}
     dpkg = _run(["dpkg", "--audit"], timeout=12) if tools.get("dpkg") else subprocess.CompletedProcess([], 127, "", "dpkg missing")
@@ -178,6 +181,8 @@ def collect_facts() -> dict:
         "architecture_supported": bool(snapshot.get("architecture_supported")),
         "runtime_ready": bool(runtime.get("ready")),
         "runtime_variant": str(runtime.get("variant") or "unknown"),
+        "runtime_in_sync": bool(runtime.get("in_sync")),
+        "runtime_verification": str(runtime.get("verification") or "unknown"),
         "runtime_missing_capabilities": list(runtime.get("missing_capabilities") or []),
         "backend_present": bool((snapshot.get("backend") or {}).get("binary_present")),
         "free_bytes": int(usage.free),
@@ -273,13 +278,14 @@ def run_preflight(job: dict) -> int:
         lease_claimed = True
         log("Starting DMR Audio Vocoder install-readiness preflight")
         log("This gated job does not install packages, download source, compile, or restart RF")
-        write_state(job, state="CHECKING", phase="checking", progress=8,
-                    message="Checking appliance and vocoder prerequisites")
+        log("Verifying exact installed YWD Extended runtime identity; this can take a little while on a Pi Zero")
+        write_state(job, state="CHECKING", phase="checking", progress=12,
+                    message="Verifying exact installed runtime and appliance prerequisites")
 
         facts = collect_facts()
         log(f"Architecture: {facts['architecture']} ({'supported' if facts['architecture_supported'] else 'unsupported'})")
         log(f"Free disk: {facts['free_bytes'] // (1024 * 1024)} MiB")
-        log(f"YWD Extended: {'ready' if facts['runtime_ready'] else 'required'} ({facts['runtime_variant']})")
+        log(f"YWD Extended: {'ready' if facts['runtime_ready'] else 'required'} ({facts['runtime_variant']}; {facts['runtime_verification']})")
         if facts["runtime_missing_capabilities"]:
             log("Missing runtime capabilities: " + ", ".join(facts["runtime_missing_capabilities"]))
         log("Build tools present: " + ", ".join(name for name, ok in facts["tools"].items() if ok))

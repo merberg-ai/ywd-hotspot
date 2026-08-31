@@ -69,6 +69,7 @@
     } else {
       lines.push('MAIN is the stable channel, but when the currently installed development build is newer than MAIN, selecting MAIN is still a downgrade.');
     }
+    lines.push('If the TGIF watchlist scanner is active, YWD pauses it immediately before live replacement and restores it when the selected target still supports scanning. Manual HOLD is preserved; stale traffic/post-call HOLD resumes as normal scanning.');
     lines.push('A branch switch never flashes the physical MMDVM HAT and normal app switching does not intentionally rebuild MMDVM-Host/DMRGateway. Dashboard and RF/network services may restart briefly.');
     return lines.join('\n\n');
   }
@@ -235,7 +236,7 @@
           ? 'The selected branch already points at the installed commit, so only the managed checkout/update channel needs to change.'
           : 'The selected branch will be fetched and fully validated before live application files are changed.',
       '',
-      'Configuration and normal appliance state are preserved by the updater. RF/dashboard services may restart briefly. Physical MMDVM HAT firmware is not flashed.',
+      'Configuration and normal appliance state are preserved by the updater. An active TGIF scanner is paused for live replacement and restored when supported by the target. RF/dashboard services may restart briefly. Physical MMDVM HAT firmware is not flashed.',
     ].join('\n');
 
     const confirmFn = typeof window.ywdConfirm === 'function' ? window.ywdConfirm : null;
@@ -261,7 +262,7 @@
     status.hidden = false;
     status.textContent = selected.same_installed_commit
       ? `Adopting ${branch} as the managed checkout/update channel…`
-      : `Validating ${branch} and preparing the protected branch switch. The live RF stack remains untouched during validation…`;
+      : `Validating ${branch} and preparing the protected branch switch. The live RF stack and TGIF scanner remain untouched during validation…`;
     try {
       const result = await postJson('/api/update/branch/switch', {branch});
       closeModal();
@@ -272,8 +273,6 @@
       }
       if (result.started) {
         toast(`Protected switch to ${branch} started`);
-        // Reload once so the existing update-progress bootstrap sees the shared
-        // detached update-status document and takes over reconnect/progress UI.
         setTimeout(() => location.reload(), 350);
         return;
       }

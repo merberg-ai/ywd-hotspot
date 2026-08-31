@@ -303,6 +303,7 @@ def main() -> int:
             last_error = "TGIF watchlist is empty"
             break
 
+        force_next = False
         command = read_command()
         if command:
             op = str(command.get("operation") or "").strip().lower()
@@ -313,52 +314,62 @@ def main() -> int:
                 dwell_until = time.time() + prefs["dwell_s"]
             elif op == "next":
                 manual_hold = False
-                dwell_until = 0.0
+                force_next = True
 
         ids = [int(row["id"]) for row in watch]
         if current_tg not in ids:
             current_index = -1
             current_tg = None
+        else:
+            # Re-anchor to the live watchlist order so editing/reordering the list
+            # while scanning cannot leave the next-step index pointing elsewhere.
+            current_index = ids.index(current_tg)
 
         now = time.time()
-        if current_tg is None or (not manual_hold and now >= dwell_until):
-            current_index = (current_index + 1) % len(watch)
-            row = watch[current_index]
-            current_tg = int(row["id"])
-            current_name = str(row.get("name") or "")
-            try:
-                session_update(hotspot_id, prefs["slot"], current_tg)
-                tuned_at = time.time()
-                dwell_until = tuned_at + prefs["dwell_s"]
-                last_error = None
-            except Exception as exc:
-                last_error = str(exc)[:500]
-                runtime_state(
-                    state="error",
-                    active=True,
-                    current_tg=current_tg,
-                    current_name=current_name,
-                    current_rf_tg=RF_BASE + current_tg,
-                    slot=prefs["slot"],
-                    manual_hold=manual_hold,
-                    error=last_error,
-                )
-                time.sleep(2.0)
-                dwell_until = 0.0
-                continue
+        holding = False
+        hold_reason = None
+        hold_until = None
+        if current_tg is not None:
+            holding, hold_reason, hold_until = traffic_hold(
+                current_tg, prefs["slot"], tuned_at, prefs["hold_s"], now=now
+            )
 
-        holding, hold_reason, hold_until = traffic_hold(
-            current_tg, prefs["slot"], tuned_at, prefs["hold_s"], now=time.time()
-        )
+        # Traffic wins the dwell race. A call that appears at the exact end of a
+        # dwell must be heard/held instead of being discarded by a timer advance.
         if manual_hold:
             state = "holding"
             reason = "manual"
-        elif holding:
+        elif holding and not force_next:
             state = "holding"
             reason = hold_reason
             if hold_until is not None:
                 dwell_until = max(dwell_until, float(hold_until))
         else:
+            if current_tg is None or force_next or now >= dwell_until:
+                current_index = (current_index + 1) % len(watch)
+                row = watch[current_index]
+                current_tg = int(row["id"])
+                current_name = str(row.get("name") or "")
+                try:
+                    session_update(hotspot_id, prefs["slot"], current_tg)
+                    tuned_at = time.time()
+                    dwell_until = tuned_at + prefs["dwell_s"]
+                    last_error = None
+                except Exception as exc:
+                    last_error = str(exc)[:500]
+                    runtime_state(
+                        state="error",
+                        active=True,
+                        current_tg=current_tg,
+                        current_name=current_name,
+                        current_rf_tg=RF_BASE + current_tg,
+                        slot=prefs["slot"],
+                        manual_hold=manual_hold,
+                        error=last_error,
+                    )
+                    time.sleep(2.0)
+                    dwell_until = 0.0
+                    continue
             state = "scanning"
             reason = None
 

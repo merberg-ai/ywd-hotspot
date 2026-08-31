@@ -44,15 +44,22 @@ assert "Inventory loads when the System page is opened." in modem
 # automatically exposes a half-built dashboard.
 assert "startup-readiness.js" in update
 assert "readiness_js + b\"\\n;\\n\" + app_js" in update
-assert "window.__YWD_RELEASE_UI_READY = true" in update
+assert "window.__YWD_RELEASE_UI_READY = false" in update
+assert "window.__YWD_RELEASE_UI_READY = ok" in update
 assert "window.__YWD_RELEASE_UI_PROGRESS" in update
+assert "failed:0" in update and ".failed += 1" in update
 assert "systemExtensionsMounted" in readiness
 assert "hero.complete && hero.naturalWidth > 0" in readiness
 assert "hostPowerCard" in readiness
 assert "__YWD_RELEASE_UI_READY" in readiness
+assert "__YWD_RELEASE_UI_PROGRESS" in readiness
+assert "RC4 interface module load failed" in readiness
 assert "Element.prototype.remove" in readiness
 assert "45000" in readiness and "CONTINUE" in readiness
 assert "fullyReady()" in readiness
+assert "document.createElement('style')" not in readiness
+assert 'document.createElement("style")' not in readiness
+assert "#ywdStartupOverlay.ywd-startup-held" in css
 
 # The browser server is threaded and static release assets are explicitly
 # revalidated, so this strategy does not depend on stale browser cache or
@@ -78,7 +85,9 @@ assert "prefers-reduced-motion:reduce" in css
 print("[OK] System extensions wait for the completed System layout without a fixed mount deadline")
 print("[OK] MMDVM and vocoder inventory are lazy and do not burden initial Status-page startup")
 print("[OK] startup splash stays up until base data, hero, System layout, release modules, and System cards are assembled")
+print("[OK] failed release UI modules keep the splash covered instead of reporting false readiness")
 print("[OK] slow startup offers manual CONTINUE instead of auto-exposing a partial dashboard")
+print("[OK] startup readiness styling remains CSP-safe")
 print("[OK] vocoder readiness action stays disabled until its matching job reaches a terminal state")
 print("[OK] vocoder CHECKING state has motion plus reduced-motion fallback")
 print("[OK] dashboard static assets are revalidated and HTTP serving remains threaded")

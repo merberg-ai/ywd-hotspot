@@ -11,22 +11,17 @@
   };
   const BY_PATH = Object.fromEntries(Object.entries(ACTIONS).map(([id,row]) => [row.path,id]));
   const busyTimers = new Map();
-  let pollTimer = null;
   let pollBusy = false;
 
   const el = id => document.getElementById(id);
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({
-    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
-  }[c]));
 
   function setBusy(id) {
     const button = el(id), spec = ACTIONS[id];
     if (!button || !spec || button.dataset.ywdBusy === '1') return;
     button.dataset.ywdBusy = '1';
     button.dataset.ywdBusyLabel = button.textContent;
-    button.dataset.ywdBusyWasDisabled = button.disabled ? '1' : '0';
     button.setAttribute('aria-busy','true');
-    button.disabled = true;
+    button.setAttribute('aria-disabled','true');
     button.innerHTML = `<span class="tgif-action-spinner" aria-hidden="true"></span><span>${spec.label}</span>`;
     clearTimeout(busyTimers.get(id));
     busyTimers.set(id, setTimeout(() => clearBusy(id), 20000));
@@ -36,15 +31,13 @@
     const button = el(id);
     if (!button || button.dataset.ywdBusy !== '1') return;
     const label = button.dataset.ywdBusyLabel || button.textContent;
-    const wasDisabled = button.dataset.ywdBusyWasDisabled === '1';
     clearTimeout(busyTimers.get(id));
     busyTimers.delete(id);
     button.textContent = label;
-    button.disabled = wasDisabled;
     button.removeAttribute('aria-busy');
+    button.removeAttribute('aria-disabled');
     delete button.dataset.ywdBusy;
     delete button.dataset.ywdBusyLabel;
-    delete button.dataset.ywdBusyWasDisabled;
   }
 
   function pathOf(input) {
@@ -74,6 +67,16 @@
     document.addEventListener('click', event => {
       const button = event.target.closest('button');
       if (!button || !ACTIONS[button.id] || button.disabled) return;
+      if (button.dataset.ywdBusy === '1') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      // Do not set the native disabled property here. This listener runs during
+      // capture, and disabling the target before its own click handler executes
+      // can suppress the real control action in some browsers. aria-busy plus
+      // pointer-events/duplicate-click suppression gives immediate feedback
+      // without stealing the first click from the proven Control Center code.
       setBusy(button.id);
     }, true);
   }
@@ -181,7 +184,7 @@
   function installStatusPolling() {
     ensureStatusCard();
     pollStatus();
-    pollTimer = setInterval(pollStatus, 1200);
+    setInterval(pollStatus, 1200);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) pollStatus(); });
     document.querySelector('.tabs [data-tab="status"]')?.addEventListener('click', () => setTimeout(pollStatus, 0));
   }

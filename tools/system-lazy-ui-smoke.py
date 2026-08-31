@@ -39,9 +39,10 @@ assert "Inventory loads when the System page is opened." in modem
 
 # The old splash owns a 12-second force-close timer. The first-paint readiness
 # gate is intentionally loaded before app.js and intercepts that removal until
-# base data, hero image, final System layout, release scripts, and System cards
-# have all assembled. A 45-second slow-path offers CONTINUE but never
-# automatically exposes a half-built dashboard.
+# functional dashboard structure, release scripts, and System cards are ready.
+# The hero/banner is a late cosmetic transform: if present its image must load,
+# but absence alone cannot deadlock the appliance UI. A short settle window
+# gives normal final transforms time to land before the splash leaves.
 assert "startup-readiness.js" in update
 assert "readiness_js + b\"\\n;\\n\" + app_js" in update
 assert "window.__YWD_RELEASE_UI_READY = false" in update
@@ -49,7 +50,12 @@ assert "window.__YWD_RELEASE_UI_READY = ok" in update
 assert "window.__YWD_RELEASE_UI_PROGRESS" in update
 assert "failed:0" in update and ".failed += 1" in update
 assert "systemExtensionsMounted" in readiness
+assert "structuralReady" in readiness
+assert "SETTLE_MS = 500" in readiness
 assert "hero.complete && hero.naturalWidth > 0" in readiness
+assert "never let a missing decorative image deadlock startup" in readiness
+assert "Loading dashboard modules and building interface" in readiness
+assert "Finalizing dashboard interface" in readiness
 assert "hostPowerCard" in readiness
 assert "__YWD_RELEASE_UI_READY" in readiness
 assert "__YWD_RELEASE_UI_PROGRESS" in readiness
@@ -84,7 +90,8 @@ assert "prefers-reduced-motion:reduce" in css
 
 print("[OK] System extensions wait for the completed System layout without a fixed mount deadline")
 print("[OK] MMDVM and vocoder inventory are lazy and do not burden initial Status-page startup")
-print("[OK] startup splash stays up until base data, hero, System layout, release modules, and System cards are assembled")
+print("[OK] startup splash waits for functional dashboard structure and release/System modules")
+print("[OK] late hero artwork is allowed to settle but cannot deadlock dashboard startup")
 print("[OK] failed release UI modules keep the splash covered instead of reporting false readiness")
 print("[OK] slow startup offers manual CONTINUE instead of auto-exposing a partial dashboard")
 print("[OK] startup readiness styling remains CSP-safe")

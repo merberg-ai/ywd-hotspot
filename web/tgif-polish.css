@@ -1,6 +1,6 @@
 /* TGIF Control Center responsiveness + Status scanner presentation */
 .tgif-action-spinner{display:inline-block;width:.78em;height:.78em;margin-right:.48em;vertical-align:-.04em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:tgif-action-spin .72s linear infinite}
-#tgifControlPage button[aria-busy="true"]{position:relative;cursor:wait;opacity:.82;box-shadow:0 0 0 1px rgba(76,219,255,.18),0 0 18px rgba(36,186,226,.12)}
+#tgifControlPage button[aria-busy="true"]{position:relative;cursor:wait;pointer-events:none;user-select:none;opacity:.82;box-shadow:0 0 0 1px rgba(76,219,255,.18),0 0 18px rgba(36,186,226,.12)}
 @keyframes tgif-action-spin{to{transform:rotate(360deg)}}
 
 .tgif-status-scanner{overflow:hidden;position:relative;margin:14px 0;border-color:#23566e;background:linear-gradient(135deg,rgba(5,21,29,.98),rgba(4,13,19,.98))}

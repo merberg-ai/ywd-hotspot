@@ -38,9 +38,12 @@ raw = {
     "slot": 1,
     "favorites": [{"id": 31665, "name": "TGIF"}, {"id": 31665, "name": "duplicate"}, {"id": 4000}],
     "watchlist": [
-        {"id": i, "name": f"TG {i}", "priority": i, "enabled": True}
-        for i in range(1, 14)
-    ] + [{"id": 4000, "name": "disconnect"}],
+        {"id": 4000, "name": "disconnect", "priority": 1, "enabled": True},
+        *[
+            {"id": i, "name": f"TG {i}", "priority": i + 1, "enabled": True}
+            for i in range(1, 14)
+        ],
+    ],
 }
 simplex = tgif_scanner.normalize_preferences(raw, "simplex")
 ok("simplex scanner is forced to TS2", simplex["slot"] == 2)
@@ -48,7 +51,7 @@ ok("dwell is bounded to 60 seconds", simplex["dwell_s"] == 60)
 ok("post-call hold is bounded to zero", simplex["hold_s"] == 0)
 ok("favorites are de-duplicated and TG4000 is excluded", [r["id"] for r in simplex["favorites"]] == [31665])
 ok("watchlist is limited to ten entries", len(simplex["watchlist"]) == 10)
-ok("TG4000 cannot enter the scanner watchlist", all(r["id"] != 4000 for r in simplex["watchlist"]))
+ok("TG4000 is rejected before watchlist truncation", all(r["id"] != 4000 for r in simplex["watchlist"]))
 
 duplex = tgif_scanner.normalize_preferences({"slot":1,"watchlist":[{"id":31665}]}, "duplex")
 ok("duplex scanner preserves explicit TS1", duplex["slot"] == 1)
@@ -129,22 +132,26 @@ admin = source("lib/tgif_scanner_admin.py")
 ui = source("web/tgif-control.js")
 css = source("web/tgif-control.css")
 dashboard = source("lib/dashboard_backup.py")
+status_projection = source("lib/dashboard_tgif_control.py")
 dispatch = source("lib/admin_dispatch.sh")
 sudoers = source("sudoers/ywd-hotspot")
 unit = source("systemd/ywd-tgif-scanner.service")
 
 ok("scanner uses TGIF session-update endpoint", "http://tgif.network:5040/api/sessions/update" in worker)
 ok("scanner contains no RF start/restart action", "rf-start" not in worker and "rf-restart" not in worker)
+ok("traffic is evaluated before an expired dwell can advance", "Traffic wins the dwell race" in worker and "holding and not force_next" in worker)
 ok("scanner service runs unprivileged", "User=ywd-hotspot" in unit and "Group=ywd-hotspot" in unit)
 ok("scanner service is runtime-only", "Restart=no" in unit and "WantedBy=" not in unit)
 ok("scanner privileged bridge is one validated action", "tgif-control)" in dispatch and "ywd-hotspot-admin tgif-control" in sudoers)
 ok("dashboard exposes read-only scanner status", 'path == "/api/tgif/control/status"' in dashboard)
+ok("read-only scanner status bypasses sudo/admin mutation bridge", "dashboard_tgif_control.public_status()" in dashboard and "admin_call" not in status_projection)
 for endpoint in ("save","start","stop","hold","resume","next","tune","disconnect"):
     ok(f"dashboard exposes authenticated scanner {endpoint}", f'"/api/tgif/control/{endpoint}"' in dashboard)
 ok("TGIF tab is conditional on TGIF enablement", "tgifEnabled()" in ui and "tab.hidden = !enabled" in ui)
 ok("Control Center states the no-RF session behavior", "without keying RF" in ui)
 ok("Control Center exposes radio promiscuous/Open RX guidance", "Promiscuous" in ui and "Digital Monitor" in ui)
 ok("Control Center exposes max-10 watchlist", "limited to 10 talkgroups" in ui and "max 10" in ui)
+ok("dedicated Control Center owns TGIF directory/favorites presentation", "#tgifDirectoryCard,#tgifFavoritesCard" in css)
 ok("Control Center styles are bundled separately", "TGIF Control Center" in css)
 
 print("\nTGIF scanner smoke: PASS")

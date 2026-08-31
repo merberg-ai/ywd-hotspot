@@ -26,6 +26,22 @@
     return !!b && !b.hidden;
   }
 
+  function scannerText(info = {}) {
+    if (info.scanner_restore && info.state === 'complete') {
+      if (info.scanner_restore === 'restored') {
+        const state = String(info.scanner_state || 'scanning').toUpperCase();
+        return `${state}${info.scanner_tg ? ` · TG ${info.scanner_tg}` : ''} · RESTORED`;
+      }
+      if (info.scanner_was_active && info.scanner_restore === 'not-restored') return 'STOPPED · RESTORE NEEDS ATTENTION';
+    }
+    const state = String(info.scanner_before_state || info.scanner_state || 'stopped').toUpperCase();
+    const tg = info.scanner_before_tg ?? info.scanner_tg;
+    const active = info.scanner_was_active ?? info.scanner_active;
+    if (active) return `${state}${tg ? ` · TG ${tg}` : ''} · WILL RESUME`;
+    if (state === 'TUNED' && tg) return `TUNED · TG ${tg} · SCANNER STOPPED`;
+    return 'STOPPED';
+  }
+
   function ensureUi() {
     const about = el('about');
     if (!about || el('softwareUpdateCard')) return;
@@ -55,7 +71,8 @@
     modal.innerHTML = `<div class="dialog update-dialog">
       <div class="card-title">INSTALL YWD-HOTSPOT UPDATE?</div>
       <div id="updateConfirmRows" class="update-confirm"></div>
-      <p class="hint">The updater creates a protected rollback backup, preserves configuration/credentials and RF policy, and does not recompile MMDVM-Host or DMRGateway. The dashboard and DMR traffic may be interrupted briefly.</p>
+      <div id="updateScannerNotice" class="notice" hidden></div>
+      <p class="hint">The updater creates a protected rollback backup, preserves configuration/credentials, RF policy, plugin runtime, and TGIF scanner intent, and does not recompile MMDVM-Host or DMRGateway. The dashboard and DMR traffic may be interrupted briefly.</p>
       <div class="buttonrow"><button class="btn" id="cancelUpdate">CANCEL</button><button class="btn primary" id="confirmUpdate">INSTALL UPDATE</button></div>
     </div>`;
     document.body.appendChild(modal);
@@ -79,7 +96,8 @@
       <div class="row"><span>Channel</span><span>${escu(channel)}</span></div>
       <div class="row"><span>Current commit</span><span>${escu(short(currentCommit))}</span></div>
       <div class="row"><span>Available</span><span>${escu(targetVersion)}</span></div>
-      <div class="row"><span>Target commit</span><span>${escu(short(targetCommit))}</span></div>`;
+      <div class="row"><span>Target commit</span><span>${escu(short(targetCommit))}</span></div>
+      <div class="row"><span>TGIF scanner</span><span>${escu(scannerText(info))}</span></div>`;
   }
 
   function render(info = {}) {
@@ -97,7 +115,7 @@
 
     if (state === 'running') {
       badge.textContent = 'UPDATING'; badge.classList.add('warn');
-      msg.textContent = 'Update is running. The dashboard may disappear briefly; this page will keep reconnecting.';
+      msg.textContent = info.message || 'Update is running. The dashboard may disappear briefly; this page will keep reconnecting.';
       el('checkUpdate').disabled = true;
       return;
     }
@@ -109,7 +127,15 @@
     }
     if (state === 'complete') {
       badge.textContent = info.phase === 'up-to-date' ? 'UP TO DATE' : 'COMPLETE'; badge.classList.add('good');
-      msg.textContent = info.phase === 'up-to-date' ? 'This hotspot is already current.' : 'Update complete. Reload to use the newly installed dashboard assets.';
+      if (info.phase === 'up-to-date') {
+        msg.textContent = 'This hotspot is already current.';
+      } else if (info.scanner_was_active && info.scanner_restore === 'restored') {
+        msg.textContent = 'Update complete. TGIF scanner runtime was restored automatically. Reload to use the newly installed dashboard assets.';
+      } else if (info.scanner_was_active && info.scanner_restore === 'not-restored') {
+        msg.textContent = 'Update complete, but the previously active TGIF scanner did not resume. Check the TGIF tab before relying on scanning.';
+      } else {
+        msg.textContent = 'Update complete. Reload to use the newly installed dashboard assets.';
+      }
       reloadBtn.hidden = info.phase === 'up-to-date';
       el('checkUpdate').disabled = !controlsUnlocked();
       return;
@@ -120,6 +146,9 @@
         msg.textContent = info.blocked_reason || 'Apply or revert pending configuration changes before updating.';
       } else if (unsavedForm()) {
         msg.textContent = 'Save or discard the unsaved Settings form before updating.';
+      } else if (info.scanner_was_active) {
+        msg.textContent = `Validated update available: ${info.target_version || 'new build'} @ ${short(info.target_commit)}. TGIF scanner will pause only during live replacement and resume automatically.`;
+        installBtn.hidden = false;
       } else {
         msg.textContent = `Validated update available: ${info.target_version || 'new build'} @ ${short(info.target_commit)}.`;
         installBtn.hidden = false;
@@ -183,7 +212,16 @@
       <div class="row"><span>Channel</span><span>${escu(lastCheck.channel)}</span></div>
       <div class="row"><span>Current</span><span>${escu(short(lastCheck.current_commit))}</span></div>
       <div class="row"><span>Target</span><span>${escu(short(lastCheck.target_commit))}</span></div>
-      <div class="row"><span>Version</span><span>${escu(lastCheck.target_version)}</span></div>`;
+      <div class="row"><span>Version</span><span>${escu(lastCheck.target_version)}</span></div>
+      <div class="row"><span>TGIF scanner</span><span>${escu(scannerText(lastCheck))}</span></div>`;
+    const notice = el('updateScannerNotice');
+    if (lastCheck.scanner_was_active) {
+      notice.hidden = false;
+      notice.textContent = `TGIF scanner is currently ${String(lastCheck.scanner_before_state || 'active').toUpperCase()}${lastCheck.scanner_before_tg ? ` on TG ${lastCheck.scanner_before_tg}` : ''}. It will be stopped immediately before live replacement and restored afterward. Manual HOLD is preserved; traffic/post-call HOLD resumes as normal scanning.`;
+    } else {
+      notice.hidden = true;
+      notice.textContent = '';
+    }
     el('updateModal').classList.add('on');
   }
 

@@ -15,7 +15,7 @@ else
 fi
 
 _ywd_p(){ printf '%b\n' "$*"; }
-ywd_rule(){ _ywd_p "${YWD_BLUE}------------------------------------------------------------${YWD_RESET}"; }
+ywd_rule(){ _ywd_p "${YWD_BLUE}--------------------------------------------------------------------------${YWD_RESET}"; }
 ywd_section(){ printf '\n%b:: %s%b\n' "${YWD_CYAN}${YWD_BOLD}" "$*" "$YWD_RESET"; }
 ywd_info(){ _ywd_p "${YWD_BLUE}[i]${YWD_RESET} $*"; }
 ywd_step(){ _ywd_p "${YWD_CYAN}[>]${YWD_RESET} $*"; }
@@ -26,17 +26,17 @@ ywd_kv(){ printf '%b%-18s%b %s\n' "${YWD_DIM}" "$1" "$YWD_RESET" "${2:-}"; }
 
 ywd_banner(){
   local mode="${1:-CONTROL CONSOLE}" version="${2:-unknown}"
-  printf '\n'
-  printf '%b' "${YWD_MAGENTA}${YWD_BOLD}"
+  printf '\n%b' "${YWD_CYAN}${YWD_BOLD}"
   cat <<'EOF'
-        )))        Y   Y  W   W  DDD
-      )))          Y   Y  W   W  D  D
-    [ RF ]          Y Y   W W W  D  D
-      | |            Y    WW WW  DDD
+__   __ __        __ ____        _   _  ___  _____ ____  ____   ___  _____
+\ \ / / \ \      / /|  _ \ ___ | | | |/ _ \|_   _/ ___||  _ \ / _ \|_   _|
+ \ V /   \ \ /\ / / | | | |___|| |_| | | | | | | \___ \| |_) | | | | | |
+  | |     \ V  V /  | |_| |    |  _  | |_| | | |  ___) |  __/| |_| | | |
+  |_|      \_/\_/   |____/     |_| |_|\___/  |_| |____/|_|    \___/  |_|
 EOF
   printf '%b' "$YWD_RESET"
-  printf '                    %b// HOTSPOT%b\n' "${YWD_CYAN}${YWD_BOLD}" "$YWD_RESET"
-  printf '                       %bKJ6YWD%b\n' "${YWD_WHITE}${YWD_BOLD}" "$YWD_RESET"
+  printf ' %bRaspberry Pi DMR Hotspot Appliance%b\n' "${YWD_MAGENTA}${YWD_BOLD}" "$YWD_RESET"
+  printf ' %bBrandMeister + TGIF%b\n' "${YWD_WHITE}" "$YWD_RESET"
   ywd_rule
   printf ' %b%-18s%b %s\n' "${YWD_CYAN}${YWD_BOLD}" "$mode" "$YWD_RESET" "$version"
   ywd_rule

@@ -29,6 +29,8 @@ STATUS = VAR / "update-status.json"
 BUILD = ETC / "build-info.json"
 CHANNEL = ETC / "update-channel"
 UPDATER = APP / "GITHUB-UPDATE.sh"
+SCANNER_RUNTIME = Path("/run/ywd-hotspot/tgif-scanner.json")
+SCANNER_SERVICE = "ywd-tgif-scanner.service"
 REPO_URLS = {
     "https://github.com/merberg-ai/ywd-hotspot.git",
     "https://github.com/merberg-ai/ywd-hotspot",
@@ -86,6 +88,34 @@ def run(args, timeout=30, input_text=None):
                           stderr=subprocess.STDOUT, timeout=timeout, check=False)
 
 
+def scanner_current():
+    active = run(["systemctl", "is-active", "--quiet", SCANNER_SERVICE], timeout=5).returncode == 0
+    runtime = read_json(SCANNER_RUNTIME, {})
+    if not isinstance(runtime, dict):
+        runtime = {}
+    state = str(runtime.get("state") or ("scanning" if active else "stopped")).strip().lower()
+    try:
+        tg = int(runtime.get("current_tg")) if runtime.get("current_tg") is not None else None
+    except Exception:
+        tg = None
+    return {"scanner_active": active, "scanner_state": state, "scanner_tg": tg}
+
+
+def scanner_before():
+    now = scanner_current()
+    return {
+        "scanner_was_active": bool(now.get("scanner_active")),
+        "scanner_before_state": now.get("scanner_state"),
+        "scanner_before_tg": now.get("scanner_tg"),
+    }
+
+
+def scanner_restore_result(before: dict, after: dict):
+    if not before.get("scanner_was_active"):
+        return "not-needed"
+    return "restored" if after.get("scanner_active") else "not-restored"
+
+
 def git(*args, timeout=20):
     p = run(["git", "-C", str(REPO), *args], timeout=timeout)
     if p.returncode != 0:
@@ -115,8 +145,6 @@ def ensure_source():
     dirty = git("status", "--porcelain")
     if dirty:
         raise RuntimeError("managed Git checkout has local modifications")
-    # Older OS images were cloned with narrow branch refspecs. Keep the managed
-    # checkout able to fetch all first-party channels, including dev-plugins.
     p = run(["git", "-C", str(REPO), "config", "--replace-all", "remote.origin.fetch",
              "+refs/heads/*:refs/remotes/origin/*"], timeout=10)
     if p.returncode != 0:
@@ -167,6 +195,7 @@ def check_candidate(write=True, live_progress=False):
         progress(18, "fetching", "Fetching and validating the candidate from GitHub…")
     p = run(["bash", str(UPDATER), "--dry-run"], timeout=180)
     info = parse_check(p.stdout)
+    info.update(scanner_before())
     if p.returncode != 0:
         msg = clean(p.stdout).strip().splitlines()
         raise RuntimeError((msg[-1] if msg else "update candidate check failed")[:800])
@@ -197,11 +226,13 @@ def stream_update(info):
     milestones = [
         ("Fetching YWD-Hotspot from GitHub", 42, "fetching", "Refreshing GitHub source…"),
         ("Candidate validation: OK", 52, "validated", "Live candidate re-validation passed."),
+        ("TGIF scanner quiesced", 56, "scanner-paused", "TGIF scanner paused for protected application replacement…"),
         ("Applying validated candidate", 58, "starting", "Starting protected application update…"),
         ("Protected pre-update backup:", 66, "backup", "Protected rollback backup created."),
         ("Installing ", 74, "installing", "Installing updated YWD-Hotspot runtime files…"),
         ("Persistent journal:", 84, "services", "Runtime files installed. Restoring service policy…"),
         ("Updated to ", 91, "restarting", "Application updated. Restarting and verifying services…"),
+        ("TGIF scanner restored", 95, "scanner-restored", "TGIF scanner runtime restored after update."),
         ("GitHub source checkout updated successfully", 97, "finalizing", "Finalizing GitHub source state…"),
     ]
     seen = set()
@@ -230,7 +261,7 @@ def install_update():
         if info.get("up_to_date") or not info.get("available"):
             write_status(state="complete", phase="up-to-date", progress=100,
                          message="This hotspot is already up to date.", error=None,
-                         completed_at=now_iso(), **info)
+                         completed_at=now_iso(), **info, **scanner_current(), scanner_restore="not-needed")
             return 0
 
         progress(38, "queued", "Launching validated update workflow…", **info)
@@ -238,10 +269,12 @@ def install_update():
         text = clean(output)
         tail = "\n".join(text.strip().splitlines()[-24:])[-5000:]
         if rc != 0:
+            after = scanner_current()
             write_status(state="failed", phase="failed", progress=100,
                          message="Update failed; rollback handling has completed or is in progress.",
                          error=(tail or "update failed")[-1200:], completed_at=now_iso(),
-                         output_tail=tail, **info)
+                         output_tail=tail, **info, **after,
+                         scanner_restore=scanner_restore_result(info, after))
             return rc or 1
 
         built = read_json(BUILD, {})
@@ -249,6 +282,7 @@ def install_update():
         m = re.findall(r"Backup retained:\s*(\S+)", text)
         if m:
             backup = m[-1]
+        after = scanner_current()
         write_status(
             state="complete", phase="complete", progress=100,
             message="Update complete. The new dashboard is ready.",
@@ -258,11 +292,14 @@ def install_update():
             target_version=info.get("target_version"), target_commit=info.get("target_commit"),
             target_date=info.get("target_date"), channel=built.get("update_channel") or info.get("channel"),
             available=False, up_to_date=True, validated=True, backup=backup, output_tail=tail,
+            **{k: v for k, v in info.items() if k.startswith("scanner_before_") or k == "scanner_was_active"},
+            **after, scanner_restore=scanner_restore_result(info, after),
         )
         return 0
     except Exception as exc:
         write_status(state="failed", phase="failed", progress=100,
-                     message="Update failed.", error=str(exc)[:1200], completed_at=now_iso())
+                     message="Update failed.", error=str(exc)[:1200], completed_at=now_iso(),
+                     **scanner_current())
         return 1
 
 

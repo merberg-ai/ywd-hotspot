@@ -85,7 +85,7 @@ def write(c):
 
 def main():
     if os.geteuid()!=0: raise SystemExit("Run with sudo/root.")
-    c=load(); st=c["station"]; rf=c["radio"]; bm=c["brandmeister"]; web=c["web"]; disp=c["display"]; m=c["maintenance"]
+    c=load(); st=c["station"]; rf=c["radio"]; bm=c["brandmeister"]; tgif=c["tgif"]; web=c["web"]; disp=c["display"]; m=c["maintenance"]
     print("\n============================================================")
     print(f" YWD-Hotspot {VERSION} configuration")
     print("============================================================")
@@ -101,14 +101,33 @@ def main():
         print("  Enter the assigned numeric DMR ID.")
     essid=ask("Hotspot ESSID suffix 01-99 (blank for none)",st.get("essid","01"))
     freq=ask_frequency(rf.get("frequency_hz",446525000)); cc=ask_int("DMR Color Code",rf.get("color_code",1),0,15)
+
+    print("\nNetwork configuration")
     master=ask("BrandMeister master",bm.get("master"),True); port=ask_int("BrandMeister UDP port",bm.get("port",62031),1,65535)
     oldpw=bm.get("password","")
     if oldpw:
-        pw=getpass.getpass("Hotspot Security password [Enter keeps existing]: ") or oldpw
+        pw=getpass.getpass("BrandMeister Hotspot Security password [Enter keeps existing]: ") or oldpw
     else:
         while True:
             pw=getpass.getpass("BrandMeister Hotspot Security password: ")
             if pw: break
+
+    tgif_enabled=ask_bool("Enable TGIF Network",bool(tgif.get("enabled",False)))
+    tgif_master=tgif.get("master","tgif.network") or "tgif.network"
+    tgif_port=int(tgif.get("port",62031) or 62031)
+    tgif_pw=tgif.get("password","")
+    if tgif_enabled:
+        tgif_master=ask("TGIF master",tgif_master,True)
+        tgif_port=ask_int("TGIF UDP port",tgif_port,1,65535)
+        if tgif_pw:
+            tgif_pw=getpass.getpass("TGIF Hotspot Security password [Enter keeps existing]: ") or tgif_pw
+        else:
+            while True:
+                tgif_pw=getpass.getpass("TGIF Hotspot Security password: ")
+                if tgif_pw: break
+    else:
+        print("  TGIF disabled; existing TGIF connection details are preserved.")
+
     location=ask("Location text",st.get("location","Hotspot")); description=ask("Description",st.get("description","YWD Hotspot"))
     lat=ask_float("Latitude",st.get("latitude",0)); lon=ask_float("Longitude",st.get("longitude",0)); height=ask_int("Antenna height meters",st.get("height",0),0,9999); url=ask("Station URL",st.get("url",f"https://www.qrz.com/db/{callsign}"))
     print("\nModem calibration / advanced values")
@@ -119,10 +138,11 @@ def main():
     brightness=ask_int("OLED brightness 1-255",disp.get("brightness",127),1,255); idle=ask_int("OLED idle timeout seconds (0=always on)",disp.get("idle_timeout_s",0),0,86400)
     autostart=ask_bool("RF services enabled at boot",m.get("rf_autostart",True)); persistent=ask_bool("Persistent crash journal",m.get("persistent_journal",True))
     candidate={
-      "schema":3,
+      "schema":config_model.SCHEMA,
       "station":{**st,"callsign":callsign,"base_dmr_id":base,"essid":essid,"location":location,"description":description,"latitude":lat,"longitude":lon,"height":height,"url":url},
       "radio":{**rf,"frequency_hz":freq,"color_code":cc,"rx_offset":rxoff,"tx_offset":txoff,"rx_level":rxlvl,"tx_level":txlvl,"rf_level":rflvl,"jitter_ms":jitter},
       "brandmeister":{**bm,"master":master,"port":port,"password":pw},
+      "tgif":{**tgif,"enabled":tgif_enabled,"master":tgif_master,"port":tgif_port,"password":tgif_pw},
       "display":{**disp,"brightness":brightness,"idle_timeout_s":idle},
       "web":{**web,"port":webport},
       "maintenance":{**m,"rf_autostart":autostart,"persistent_journal":persistent},
@@ -137,7 +157,7 @@ def main():
         print("\n============================================================")
         print(" DASHBOARD CONTROL PASSWORD")
         print("============================================================")
-        print("This is separate from the BrandMeister Hotspot Security password.")
+        print("This is separate from the BrandMeister/TGIF network passwords.")
         print("It unlocks WRITE/control actions in the YWD-Hotspot WebUI.")
         web_auth.set_password()
     else:

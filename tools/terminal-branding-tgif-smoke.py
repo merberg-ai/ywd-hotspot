@@ -21,20 +21,20 @@ def main() -> int:
     issue = text("lib/branding/issue")
     motd = text("lib/branding/motd")
     ui = text("bin/ywd-ui.sh")
-    wordmark = issue.splitlines()[:5]
-    assert len(wordmark) == 5 and all(line.strip() for line in wordmark)
+    wordmark = issue.splitlines()[:7]
+    assert len(wordmark) == 7 and all(line.strip() for line in wordmark)
     for line in wordmark:
         assert line in motd, f"motd missing wordmark line: {line}"
         assert line in ui, f"terminal UI missing wordmark line: {line}"
-        assert len(line) <= 78, f"wordmark line exceeds compact-terminal budget: {len(line)}"
-    assert max(len(line) for line in issue.splitlines()) <= 78
-    assert max(len(line) for line in motd.splitlines()) <= 78
+        assert len(line) <= 88, f"wordmark line exceeds compact-terminal budget: {len(line)}"
+    assert max(len(line) for line in issue.splitlines()) <= 88
+    assert max(len(line) for line in motd.splitlines()) <= 88
     require(
         "lib/console/ywd-system-info.py",
-        "'__   __ __        __ ____        _   _  ___  _____",
+        "'$$   $$ $$   $$ $$$$$$       $$   $$",
         "Raspberry Pi DMR Hotspot Appliance  //  BrandMeister + TGIF",
     )
-    print("[OK] compact YWD-HOTSPOT wordmark is shared by installer/update/static + dynamic login branding")
+    print("[OK] dollar-block YWD-HOTSPOT wordmark is shared by installer/update/static + dynamic login branding")
 
     require(
         "lib/configure.py",

@@ -8,6 +8,7 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin set-hotspot-password, \
  /usr/local/libexec/ywd-hotspot-admin set-tgif-password, \
  /usr/local/libexec/ywd-hotspot-admin tgif-configure, \
+ /usr/local/libexec/ywd-hotspot-admin tgif-control, \
  /usr/local/libexec/ywd-hotspot-admin set-bm-api-key, \
  /usr/local/libexec/ywd-hotspot-admin set-web-password, \
  /usr/local/libexec/ywd-hotspot-admin setup-finish, \

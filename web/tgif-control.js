@@ -238,7 +238,10 @@
     if (!control) return;
     const runtime = control.runtime || {};
     const active = !!control.service_active;
-    let scannerState = active ? String(runtime.state || 'starting').toUpperCase() : 'STOPPED';
+    const inactiveState = ['tuned','disconnected'].includes(String(runtime.state || '').toLowerCase())
+      ? String(runtime.state).toUpperCase()
+      : 'STOPPED';
+    let scannerState = active ? String(runtime.state || 'starting').toUpperCase() : inactiveState;
     const stateNode = el('tgifCcScannerState');
     if (stateNode) {
       stateNode.textContent = scannerState;
@@ -248,7 +251,10 @@
     if (el('tgifCcScannerTg')) el('tgifCcScannerTg').textContent = tg ? `TG ${tg}${runtime.current_name?' · '+runtime.current_name:''}` : 'No talkgroup selected';
     if (el('tgifCcScannerRf')) el('tgifCcScannerRf').textContent = runtime.current_rf_tg ? `Radio destination ${runtime.current_rf_tg} · TS${runtime.slot || control.preferences?.slot || 2}` : 'Scanner is idle';
     if (el('tgifCcScannerDetail')) {
-      let detail = runtime.hold_reason ? `Hold: ${String(runtime.hold_reason).replace('-',' ')}` : active ? `${Math.ceil(Number(runtime.dwell_remaining_s || 0))}s dwell remaining` : 'Start scan when ready';
+      let detail;
+      if (!active && String(runtime.state || '').toLowerCase() === 'tuned') detail = 'TGIF session pinned · scanner stopped';
+      else if (!active && String(runtime.state || '').toLowerCase() === 'disconnected') detail = 'TGIF session disconnected with TG 4000';
+      else detail = runtime.hold_reason ? `Hold: ${String(runtime.hold_reason).replace('-',' ')}` : active ? `${Math.ceil(Number(runtime.dwell_remaining_s || 0))}s dwell remaining` : 'Start scan when ready';
       if (runtime.error) detail = runtime.error;
       el('tgifCcScannerDetail').textContent = detail;
     }

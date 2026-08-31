@@ -34,6 +34,9 @@ require(
     "web/tgif-polish.js",
     "BM TALKGROUPS",
     "BrandMeister Talkgroups",
+    "installBmTabRename",
+    "MutationObserver",
+    "__ywdBmTalkgroupObserver",
     "tgifCcSave",
     "SAVING…",
     "tgifCcStart",
@@ -64,12 +67,18 @@ require(
     "document.hidden",
 )
 ok("TGIF action buttons get immediate busy labels and spinner feedback")
-ok("BrandMeister talkgroup tab is renamed without changing manager ownership")
+ok("BrandMeister talkgroup tab rename survives late dynamic tab insertion")
 ok("Status page receives a read-only live TGIF scanner projection")
 ok("Status polling is visibility-gated and modest for Pi Zero")
 
 require(
     "web/tgif-polish.css",
+    ".tabs{",
+    "overflow-x:auto",
+    "overflow-y:hidden",
+    "scrollbar-width:none",
+    ".tabs::-webkit-scrollbar",
+    ".tabs button{flex:0 0 auto;padding:8px 9px;font-size:12px}",
     "@keyframes tgif-action-spin",
     "@keyframes tgif-scope-sweep",
     "@keyframes tgif-lock-pulse",
@@ -78,17 +87,18 @@ require(
     ".tgif-status-lock",
     "prefers-reduced-motion:reduce",
 )
+ok("navigation uses compact tabs and hides native scrollbar chrome without clipping horizontal access")
 ok("scanner sweep/hold animations and reduced-motion fallback are styled")
 
 require(
     "lib/dashboard_update.py",
-    "loadReleaseUi('/tgif-polish.js?v=rc4-tgif-polish1')",
+    "loadReleaseUi('/tgif-polish.js?v=rc4-tgif-polish2')",
     'tgif_polish_css = _asset_bytes("tgif-polish.css")',
     'body += b"\\n\\n/* TGIF Control Center polish */\\n" + tgif_polish_css',
     '"/tgif-polish.js": ("tgif-polish.js"',
     '"/tgif-polish.css": ("tgif-polish.css"',
 )
-ok("dashboard bundles and serves the TGIF polish layer")
+ok("dashboard bundles the nav/TGIF polish and cache-busts the revised browser asset")
 
 # The polish slice must not modify scanner/network semantics. It is allowed to
 # read the already-proven status endpoint and observe existing control requests,

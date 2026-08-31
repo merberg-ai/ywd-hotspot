@@ -8,31 +8,24 @@ Baseline for this polish pass:
 - TGIF Control Center action feedback visually accepted on the Raspberry Pi Zero;
 - Status-page TGIF scanner sweep/hold presentation visually accepted on the Raspberry Pi Zero;
 - terminal/TGIF presentation checkpoint accepted at `27fd5ed46abdd56fa2f126482376ddcf9824b633`;
-- `dev` and `dev-plugins` were aligned at that checkpoint before scanner-aware updater work began.
+- scanner-aware updater hardware gate accepted on the mature Pi Zero on 2026-08-31.
 
 ## 1. Navigation bar overflow / ugly horizontal scrollbar
 
-**Status:** TODO
+**Status:** IMPLEMENTED - browser acceptance pending
 
-The main tab row now contains enough RC4 sections that the desktop layout can overflow by a small amount, exposing the browser's native horizontal scrollbar directly under the navigation buttons.
+The main tab row now contains enough RC4 sections that the desktop layout can overflow by a small amount, exposing the browser's native horizontal scrollbar directly under the navigation buttons. A mobile test also exposed a race where the late-created BrandMeister Talkgroups tab could remain labeled `TALKGROUPS` instead of `BM TALKGROUPS`.
 
-Current cause in `web/style.css`:
+### Implemented polish
 
-```css
-.tabs{display:flex;gap:7px;overflow:auto;padding:12px 0 10px}
-.tabs button,.btn{padding:9px 11px;white-space:nowrap}
-```
-
-The desktop tab buttons also inherit the normal monospace font size; only the existing `max-width:760px` media rule explicitly reduces tab font size.
-
-### Planned polish
-
-- slightly reduce desktop tab font size;
-- slightly tighten horizontal button padding and inter-tab gap;
+- reduce desktop tab font to 12px;
+- tighten horizontal button padding and inter-tab gap;
 - keep labels on one line;
-- remove the visible native scrollbar chrome;
-- preserve horizontal wheel/touch/trackpad scrolling as a fallback on narrow displays instead of clipping inaccessible tabs;
-- keep mobile tap targets usable and avoid shrinking text excessively.
+- hide native horizontal scrollbar chrome in Firefox/WebKit/Blink while preserving horizontal scrolling;
+- use 10px nav text and compact padding on narrow/mobile displays;
+- keep every tab horizontally reachable by touch/trackpad/wheel fallback;
+- make the `BM TALKGROUPS` rename persistent with a MutationObserver so a late dynamic Talkgroups tab cannot miss a short startup polling window;
+- bump the TGIF polish browser cache identity to `rc4-tgif-polish2` so mobile browsers do not retain the earlier presentation layer.
 
 ### Acceptance
 
@@ -41,7 +34,8 @@ At the normal desktop browser width used for RC4 testing:
 - all tabs should fit without a visible horizontal scrollbar;
 - labels such as **BM TALKGROUPS**, **RX MONITOR**, and **DIAGNOSTICS** must remain readable;
 - active/hover styling must remain unchanged;
-- at narrow/mobile widths, every tab must remain reachable by horizontal swipe/scroll even though the scrollbar itself is visually hidden.
+- at narrow/mobile widths, every tab must remain reachable by horizontal swipe/scroll even though the scrollbar itself is visually hidden;
+- the BrandMeister tab must remain **BM TALKGROUPS** even on slower Pi Zero/mobile startup paths.
 
 ## 2. Compact terminal YWD-HOTSPOT wordmark
 
@@ -92,7 +86,7 @@ Accepted checkpoint: `27fd5ed46abdd56fa2f126482376ddcf9824b633`.
 
 ## 5. TGIF scanner-aware updater / dashboard / terminal
 
-**Status:** IMPLEMENTED - hardware update acceptance pending
+**Status:** ACCEPTED
 
 Treat the hardware-proven TGIF watchlist scanner as explicit runtime state during software updates instead of an invisible sidecar.
 
@@ -114,9 +108,9 @@ The terminal GitHub updater reports whether scanning is active and that it will 
 
 ### Validation
 
-`tools/tgif-update-safety-smoke.py` simulates capture/quiesce/restore, manual-HOLD preservation, unsupported-target fail-soft behavior, updater ownership, dashboard status projection, and terminal presentation without external TGIF traffic or live service changes.
+The mature Pi Zero successfully updated with the scanner running and returned to the expected scanner state with no appliance issues. `tools/tgif-update-safety-smoke.py` covers capture/quiesce/restore, manual-HOLD preservation, unsupported-target fail-soft behavior, updater ownership, dashboard status projection, and terminal presentation without external TGIF traffic or live service changes.
 
-Hardware acceptance must deliberately perform an update **with the scanner running**. A stronger gate is to place the scanner in manual HOLD on a watched TG before updating and require it to return active on the same TG in manual HOLD afterward.
+Checkpoint: `docs/checkpoints/rc4-tgif-scanner-update-awareness-hardware-pass.md`.
 
 ## Queue
 

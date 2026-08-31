@@ -146,7 +146,8 @@ assert "INSTALL VOCODER" not in ui_src
 assert "BUILD YWD EXTENDED" not in ui_src
 assert "showButtonBusy" in ui_src
 assert "if (button && showButtonBusy)" in ui_src
-assert "jobActive ? 1500 : 30000" in ui_src
+assert "jobActive || maintenanceActive ? 1500 : 30000" in ui_src
+assert "check.disabled = !unlocked || maintenanceActive || jobActive || localBusy" in ui_src
 assert "@media(max-width:620px)" in css_src
 assert ".vocoder-actions .btn{width:100%;min-width:0}" in css_src
 assert "BUILD / UPDATE YWD-EXTENDED" not in modem_ui_src
@@ -160,6 +161,7 @@ print("[OK] vocoder manager classifies not-installed/repair/prerequisite/disable
 print("[OK] dormant socket-activated backend is represented as READY / DORMANT")
 print("[OK] passive System polling does not wake the vocoder Protocol backend")
 print("[OK] background polling is silent; only explicit refresh owns button busy feedback")
+print("[OK] maintenance reservation immediately gates the readiness action")
 print("[OK] MODEM / MMDVM remains passive inventory; guarded YWD Extended work belongs to Vocoder")
 print("[OK] readiness launch is dashboard-authenticated while install/build/activation remain absent")
 print("[OK] System card and mobile layout assets are wired into the dashboard")

@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 import dashboard_core as core
 import dashboard_tgif
+import dashboard_tgif_control
 
 dashboard_tgif.install(core)
 
@@ -63,7 +64,7 @@ def wrap_handler(base):
                 return
             if path == "/api/tgif/control/status":
                 try:
-                    self.send_json(core.admin_call("tgif-control", {"operation": "status"}, 15))
+                    self.send_json(dashboard_tgif_control.public_status())
                 except Exception as exc:
                     self.send_json({"error": str(exc)[:800]}, 502)
                 return

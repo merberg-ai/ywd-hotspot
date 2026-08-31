@@ -5,6 +5,8 @@
   let statusLoaded = false;
   let jobActive = false;
   let maintenanceActive = false;
+  let launchPending = false;
+  let launchedJobId = null;
   let pollTimer = null;
   let visibilityObserver = null;
 
@@ -77,10 +79,23 @@
     if (!check) return;
     const unlocked = typeof state !== 'undefined' && !!state?.controls?.authenticated;
     const localBusy = check.dataset.ywdVocoderBusy === '1';
-    check.disabled = !unlocked || maintenanceActive || jobActive || localBusy;
+    const vocoderBusy = launchPending || jobActive;
+    const blocked = maintenanceActive || vocoderBusy || localBusy;
+    check.disabled = !unlocked || blocked;
+
+    if (vocoderBusy && !localBusy) {
+      check.classList.add('ywd-working');
+      check.setAttribute('aria-busy', 'true');
+      check.textContent = 'CHECKING…';
+    } else if (!localBusy) {
+      check.classList.remove('ywd-working');
+      check.removeAttribute('aria-busy');
+      check.textContent = 'CHECK INSTALL READINESS';
+    }
+
     check.title = !unlocked
       ? 'Unlock the dashboard to run the install-readiness check.'
-      : maintenanceActive || jobActive
+      : maintenanceActive || vocoderBusy
         ? 'Appliance maintenance is already in progress.'
         : 'Check install/build prerequisites without changing the live RF runtime.';
   }
@@ -101,6 +116,8 @@
   }
 
   function renderLaunch(out) {
+    launchedJobId = String(out?.job_id || '');
+    launchPending = true;
     jobActive = true;
     maintenanceActive = true;
     const badge = el('vocoderState');
@@ -113,7 +130,7 @@
     text('vocoderCollected', 'JOB ACCEPTED · waiting for worker status');
     const pre = el('vocoderConsoleLog');
     if (pre) {
-      const id = String(out?.job_id || 'managed job');
+      const id = launchedJobId || 'managed job';
       pre.textContent = `[JOB] ${id}\n[>>] Readiness check accepted by YWD-Hotspot\n[>>] Starting background worker…\n[>>] Exact runtime verification may take a little while on a Pi Zero.`;
     }
     el('vocoderConsoleDetails')?.setAttribute('open', '');
@@ -128,8 +145,19 @@
     const runtime = doc?.runtime || {};
     const job = doc?.job || {};
     const maintenance = doc?.maintenance || {};
-    jobActive = !!job.active;
+    const serverJobActive = !!job.active;
     maintenanceActive = !!maintenance.active;
+
+    const jobState = String(job.state || '').toUpperCase();
+    const sameLaunchedJob = !!launchedJobId && String(job.job_id || '') === launchedJobId;
+    const launchedTerminal = sameLaunchedJob && !maintenanceActive && ['COMPLETE','FAILED_SAFE'].includes(jobState);
+    if (launchedTerminal) {
+      launchPending = false;
+      launchedJobId = null;
+    }
+    jobActive = launchPending ? true : serverJobActive;
+    if (launchPending) maintenanceActive = true;
+
     const badge = el('vocoderState');
     const name = String(stateDoc.state || 'UNKNOWN').toUpperCase();
     if (badge) {
@@ -196,17 +224,17 @@
   function schedulePoll(delay = null) {
     clearTimeout(pollTimer);
     if (!el('vocoderManagerCard')) return;
-    const next = delay == null ? (jobActive || maintenanceActive ? 1500 : 30000) : delay;
+    const next = delay == null ? (launchPending || jobActive || maintenanceActive ? 1500 : 30000) : delay;
     pollTimer = setTimeout(async () => {
       if (systemVisible()) await loadStatus();
-      schedulePoll(jobActive || maintenanceActive ? 1500 : 30000);
+      schedulePoll(launchPending || jobActive || maintenanceActive ? 1500 : 30000);
     }, next);
   }
 
   function activateWhenVisible() {
     if (!systemVisible() || !el('vocoderManagerCard')) return;
     if (!statusLoaded) loadStatus();
-    schedulePoll(jobActive || maintenanceActive ? 500 : 30000);
+    schedulePoll(launchPending || jobActive || maintenanceActive ? 500 : 30000);
   }
 
   function installVisibilityHook(page) {
@@ -219,7 +247,7 @@
   }
 
   async function startPreflight(button) {
-    if (!button || button.dataset.ywdVocoderBusy === '1' || jobActive || maintenanceActive) return;
+    if (!button || button.dataset.ywdVocoderBusy === '1' || launchPending || jobActive || maintenanceActive) return;
     button.dataset.ywdVocoderBusy = '1';
     const old = button.textContent;
     button.disabled = true;

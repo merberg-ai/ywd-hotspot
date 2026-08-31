@@ -4,6 +4,7 @@
   let installed = false;
   let loading = false;
   let jobActive = false;
+  let maintenanceActive = false;
   let pollTimer = null;
 
   const stateTone = state => {
@@ -70,11 +71,11 @@
     if (!check) return;
     const unlocked = typeof state !== 'undefined' && !!state?.controls?.authenticated;
     const localBusy = check.dataset.ywdVocoderBusy === '1';
-    check.disabled = !unlocked || jobActive || localBusy;
+    check.disabled = !unlocked || maintenanceActive || jobActive || localBusy;
     check.title = !unlocked
       ? 'Unlock the dashboard to run the install-readiness check.'
-      : jobActive
-        ? 'A managed vocoder job is already running.'
+      : maintenanceActive || jobActive
+        ? 'Appliance maintenance is already in progress.'
         : 'Check install/build prerequisites without changing the live RF runtime.';
   }
 
@@ -99,7 +100,9 @@
     const recipe = doc?.recipe || {};
     const runtime = doc?.runtime || {};
     const job = doc?.job || {};
+    const maintenance = doc?.maintenance || {};
     jobActive = !!job.active;
+    maintenanceActive = !!maintenance.active;
     const badge = el('vocoderState');
     const name = String(stateDoc.state || 'UNKNOWN').toUpperCase();
     if (badge) {
@@ -123,7 +126,7 @@
       foundation.textContent = 'Background job foundation is active. CHECK INSTALL READINESS performs guarded preflight only; package install, source build, and live runtime activation remain disabled in this slice.';
     }
     renderConsole(job);
-    if (jobActive) el('vocoderConsoleDetails')?.setAttribute('open', '');
+    if (jobActive || maintenanceActive) el('vocoderConsoleDetails')?.setAttribute('open', '');
     syncActionState();
   }
 
@@ -168,12 +171,12 @@
     pollTimer = setTimeout(async () => {
       const page = el('system');
       if (installed && !document.hidden && page?.classList.contains('on')) await loadStatus();
-      schedulePoll(jobActive ? 1500 : 30000);
-    }, delay == null ? (jobActive ? 1500 : 30000) : delay);
+      schedulePoll(jobActive || maintenanceActive ? 1500 : 30000);
+    }, delay == null ? (jobActive || maintenanceActive ? 1500 : 30000) : delay);
   }
 
   async function startPreflight(button) {
-    if (!button || button.dataset.ywdVocoderBusy === '1' || jobActive) return;
+    if (!button || button.dataset.ywdVocoderBusy === '1' || jobActive || maintenanceActive) return;
     button.dataset.ywdVocoderBusy = '1';
     const old = button.textContent;
     button.disabled = true;
@@ -184,7 +187,7 @@
       const out = await post('/api/system/vocoder/preflight', {});
       if (typeof toast === 'function') toast(out?.message || 'Vocoder readiness check started');
       el('vocoderConsoleDetails')?.setAttribute('open', '');
-      jobActive = true;
+      maintenanceActive = true;
       schedulePoll(300);
       setTimeout(() => loadStatus(), 250);
     } catch (err) {

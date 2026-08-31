@@ -61,6 +61,7 @@ docs/TGIF-CONTROL-CENTER.md
 docs/TGIF.md
 docs/UPGRADING.md
 docs/VOCODER.md
+docs/checkpoints/rc4-terminal-tgif-polish-hardware-pass.md
 docs/checkpoints/rc4-ui-setup-hardware-pass.md
 docs/checkpoints/tgif-control-center-scanner-hardware-pass.md
 docs/checkpoints/tgif-control-center-tune-hardware-pass.md
@@ -158,6 +159,7 @@ lib/telemetry_runtime.py
 lib/tgif_admin.py
 lib/tgif_scanner.py
 lib/tgif_scanner_admin.py
+lib/tgif_scanner_update_safety.py
 lib/update_admin.py
 lib/update_runner.py
 lib/vocoder_client.py
@@ -207,6 +209,7 @@ tools/tgif-routing-smoke.py
 tools/tgif-scanner-smoke.py
 tools/tgif-status-smoke.py
 tools/tgif-ui-smoke.py
+tools/tgif-update-safety-smoke.py
 tools/ywdplugin-build.py
 web/app-core.js
 web/app.js

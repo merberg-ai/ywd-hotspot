@@ -31,23 +31,44 @@ _LOADING_THEMES = {
 }
 _RELEASE_UI_BOOTSTRAP = b"""
 ;(() => {
-  const loadReleaseUi = src => {
+  const sources = [
+    '/update-branch.js?v=rc3-wire1',
+    '/modem-ui.js?v=rc3-wire1',
+    // Previous identity retained as documentation for the foundation gate:
+    // /vocoder-manager.js?v=rc4-vocoder-foundation1
+    '/vocoder-manager.js?v=rc4-vocoder-foundation3',
+    '/tgif-ui.js?v=dev-tgif4',
+    '/tgif-control.js?v=rc4-tgif1',
+    // Previous cache identity retained for candidate-validator compatibility:
+    // /tgif-polish.js?v=rc4-tgif-polish1
+    '/tgif-polish.js?v=rc4-tgif-polish2',
+  ];
+  window.__YWD_RELEASE_UI_READY = false;
+  window.__YWD_RELEASE_UI_PROGRESS = {loaded:0,total:sources.length,current:null};
+
+  const loadReleaseUi = src => new Promise(resolve => {
+    window.__YWD_RELEASE_UI_PROGRESS.current = src;
     const script = document.createElement('script');
     script.src = src;
     script.async = false;
-    script.onerror = () => console.error(`YWD-Hotspot failed to load ${src}`);
+    script.onload = () => {
+      window.__YWD_RELEASE_UI_PROGRESS.loaded += 1;
+      resolve(true);
+    };
+    script.onerror = () => {
+      console.error(`YWD-Hotspot failed to load ${src}`);
+      window.__YWD_RELEASE_UI_PROGRESS.loaded += 1;
+      resolve(false);
+    };
     document.head.appendChild(script);
-  };
-  loadReleaseUi('/update-branch.js?v=rc3-wire1');
-  loadReleaseUi('/modem-ui.js?v=rc3-wire1');
-  // Previous identity retained as documentation for the foundation gate:
-  // /vocoder-manager.js?v=rc4-vocoder-foundation1
-  loadReleaseUi('/vocoder-manager.js?v=rc4-vocoder-foundation2');
-  loadReleaseUi('/tgif-ui.js?v=dev-tgif4');
-  loadReleaseUi('/tgif-control.js?v=rc4-tgif1');
-  // Previous cache identity retained for candidate-validator compatibility:
-  // /tgif-polish.js?v=rc4-tgif-polish1
-  loadReleaseUi('/tgif-polish.js?v=rc4-tgif-polish2');
+  });
+
+  (async () => {
+    for (const src of sources) await loadReleaseUi(src);
+    window.__YWD_RELEASE_UI_PROGRESS.current = null;
+    window.__YWD_RELEASE_UI_READY = true;
+    window.dispatchEvent(new CustomEvent('ywd:release-ui-ready'));
+  })();
 })();
 """
 
@@ -143,11 +164,15 @@ def wrap_handler(base):
             if path == "/app.js":
                 app_js = _asset_bytes("app.js")
                 theme_js = _asset_bytes("startup-themes.js")
-                if not app_js:
+                readiness_js = _asset_bytes("startup-readiness.js")
+                if not app_js or not readiness_js:
                     self.send_json({"error": "application asset unavailable"}, 404)
                     return
                 hint = ("window.__YWD_LOADING_ANIMATION=" + json.dumps(startup_theme()) + ";\n").encode("utf-8")
-                body = hint + (theme_js + b"\n;\n" if theme_js else b"") + app_js + _RELEASE_UI_BOOTSTRAP
+                body = hint
+                if theme_js:
+                    body += theme_js + b"\n;\n"
+                body += readiness_js + b"\n;\n" + app_js + _RELEASE_UI_BOOTSTRAP
                 self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
                 return
 
@@ -169,9 +194,9 @@ def wrap_handler(base):
                 "/modem-ui.css": ("modem-ui.css", "text/css; charset=utf-8"),
                 "/instrumentation.js": ("instrumentation.js", "application/javascript; charset=utf-8"),
                 "/instrumentation-bootstrap.js": ("instrumentation-bootstrap.js", "application/javascript; charset=utf-8"),
-                "/instrumentation.css": ("instrumentation.css", "text/css; charset=utf-8"),
                 "/startup-themes.js": ("startup-themes.js", "application/javascript; charset=utf-8"),
                 "/startup-themes.css": ("startup-themes.css", "text/css; charset=utf-8"),
+                "/startup-readiness.js": ("startup-readiness.js", "application/javascript; charset=utf-8"),
             }
             if path in static:
                 name, mime = static[path]

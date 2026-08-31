@@ -1,0 +1,35 @@
+/* TGIF Control Center responsiveness + Status scanner presentation */
+.tgif-action-spinner{display:inline-block;width:.78em;height:.78em;margin-right:.48em;vertical-align:-.04em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:tgif-action-spin .72s linear infinite}
+#tgifControlPage button[aria-busy="true"]{position:relative;cursor:wait;opacity:.82;box-shadow:0 0 0 1px rgba(76,219,255,.18),0 0 18px rgba(36,186,226,.12)}
+@keyframes tgif-action-spin{to{transform:rotate(360deg)}}
+
+.tgif-status-scanner{overflow:hidden;position:relative;margin:14px 0;border-color:#23566e;background:linear-gradient(135deg,rgba(5,21,29,.98),rgba(4,13,19,.98))}
+.tgif-status-scanner[hidden]{display:none!important}
+.tgif-status-scanner::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(83,222,255,.025),transparent);animation:tgif-card-glint 4.8s linear infinite}
+.tgif-status-scanner.is-holding{border-color:#80692a;box-shadow:inset 0 0 24px rgba(255,204,91,.035)}
+.tgif-status-layout{display:grid;grid-template-columns:minmax(220px,.9fr) minmax(260px,1.1fr);gap:18px;align-items:center}
+.tgif-status-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #24708c;border-radius:999px;padding:4px 9px;color:var(--cyan);background:#071a23;font:800 11px/1 ui-monospace,monospace;letter-spacing:.08em}
+.tgif-status-scanner.is-holding .tgif-status-badge{border-color:#8c732d;color:#ffd166;background:#1b1709}
+.tgif-status-scope{position:relative;height:94px;overflow:hidden;border:1px solid #24495d;border-radius:9px;background:radial-gradient(circle at 50% 50%,rgba(18,95,124,.18),transparent 43%),linear-gradient(180deg,#06131b,#030a0e)}
+.tgif-status-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(71,173,207,.10) 1px,transparent 1px),linear-gradient(90deg,rgba(71,173,207,.10) 1px,transparent 1px);background-size:100% 23px,34px 100%}
+.tgif-status-centerline{position:absolute;left:50%;top:10%;bottom:10%;width:1px;background:rgba(136,235,255,.3);box-shadow:0 0 10px rgba(83,222,255,.2)}
+.tgif-status-sweep{position:absolute;top:-18%;bottom:-18%;width:18%;left:-20%;background:linear-gradient(90deg,transparent,rgba(65,210,250,.07),rgba(106,231,255,.36),rgba(65,210,250,.06),transparent);filter:blur(.2px);transform:skewX(-8deg);animation:tgif-scope-sweep 2.15s linear infinite}
+.tgif-status-sweep::after{content:"";position:absolute;right:38%;top:8%;bottom:8%;width:2px;background:#8deaff;box-shadow:0 0 6px #4bdcff,0 0 16px rgba(75,220,255,.75)}
+.tgif-status-lock{position:absolute;left:50%;top:50%;width:12px;height:12px;transform:translate(-50%,-50%);opacity:0}
+.tgif-status-lock::before{content:"";position:absolute;inset:2px;border:2px solid #ffd166;border-radius:50%;box-shadow:0 0 10px rgba(255,209,102,.7)}
+.tgif-status-lock i{position:absolute;inset:-3px;border:1px solid rgba(255,209,102,.58);border-radius:50%;animation:tgif-lock-pulse 1.25s ease-out infinite}
+.tgif-status-lock i:nth-child(2){animation-delay:.38s}.tgif-status-lock i:nth-child(3){animation-delay:.76s}
+.tgif-status-scanner.is-holding .tgif-status-sweep{left:41%;animation:none;width:18%;opacity:.34}
+.tgif-status-scanner.is-holding .tgif-status-lock{opacity:1}
+.tgif-status-copy{min-width:0}
+.tgif-status-tg{font:900 clamp(24px,4vw,36px)/1 ui-monospace,monospace;color:var(--cyan);letter-spacing:.02em}
+.tgif-status-scanner.is-holding .tgif-status-tg{color:#ffd166}
+.tgif-status-name{margin-top:7px;font:800 15px/1.2 ui-monospace,monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tgif-status-rf{margin-top:6px;color:#8eb4c4;font:12px/1.3 ui-monospace,monospace}
+.tgif-status-detail{margin-top:9px;color:var(--muted);font:12px/1.3 ui-monospace,monospace}
+.tgif-status-scanner.is-holding .tgif-status-detail{color:#d8bd72}
+@keyframes tgif-scope-sweep{0%{left:-20%}100%{left:102%}}
+@keyframes tgif-lock-pulse{0%{transform:scale(.7);opacity:.95}100%{transform:scale(3.2);opacity:0}}
+@keyframes tgif-card-glint{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@media(max-width:760px){.tgif-status-layout{grid-template-columns:1fr}.tgif-status-scope{height:76px}}
+@media(prefers-reduced-motion:reduce){.tgif-action-spinner,.tgif-status-scanner::after,.tgif-status-sweep,.tgif-status-lock i{animation:none!important}.tgif-status-sweep{left:41%;opacity:.38}}

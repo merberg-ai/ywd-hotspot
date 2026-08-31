@@ -166,6 +166,16 @@ if [[ -f "$stage/lib/plugin_ui_manager.py" || -f "$stage/lib/plugin_package_upda
     web/backup-restore.js web/backup-restore.css systemd/ywd-plugin@.service
   )
 fi
+
+scanner_target=0
+if [[ -f "$stage/lib/tgif_scanner.py" || -f "$stage/lib/tgif_scanner_admin.py" || -f "$stage/systemd/ywd-tgif-scanner.service" ]]; then
+  scanner_target=1
+  required+=(
+    lib/tgif_scanner.py lib/tgif_scanner_admin.py lib/tgif_scanner_update_safety.py
+    systemd/ywd-tgif-scanner.service
+  )
+fi
+
 for f in "${required[@]}"; do
   [[ -e "$stage/$f" ]] || { echo "[FAIL] Candidate is missing required file: $f"; exit 1; }
 done
@@ -247,6 +257,22 @@ if (( ! plugin_runtime_target )) && [[ -f /opt/ywd-hotspot/app/lib/plugin_update
   echo "Plugin services quiesced before leaving the plugin runtime."
 fi
 
+# Scanner preservation is owned by the currently installed GitHub updater so a
+# channel switch to an older/non-scanner target cannot leave the daemon running
+# while its application files are replaced. The copied helper survives target
+# replacement and can restore the old runtime after rollback or the new runtime
+# after success when the target still supports scanning.
+scanner_transition_helper=""
+scanner_transition_snapshot=""
+if [[ -f /opt/ywd-hotspot/app/lib/tgif_scanner_update_safety.py ]]; then
+  scanner_transition_helper="$stage/.ywd-tgif-scanner-update-safety.py"
+  scanner_transition_snapshot="$stage/.ywd-tgif-scanner-transition.json"
+  cp /opt/ywd-hotspot/app/lib/tgif_scanner_update_safety.py "$scanner_transition_helper"
+  chmod 0700 "$scanner_transition_helper"
+  python3 "$scanner_transition_helper" capture --snapshot "$scanner_transition_snapshot"
+  python3 "$scanner_transition_helper" quiesce --snapshot "$scanner_transition_snapshot"
+fi
+
 echo "Applying validated candidate. UPDATE.sh will preserve the current RF/service policy..."
 next_channel="$channel_display"
 [[ -z "$TAG" ]] && next_channel="$BRANCH"
@@ -257,6 +283,7 @@ YWD_GIT_BRANCH="$label" \
 YWD_GIT_COMMIT="$target_sha" \
 YWD_GIT_COMMIT_DATE="$target_date" \
 YWD_UPDATE_CHANNEL="$next_channel" \
+YWD_TGIF_SCANNER_OUTER=1 \
   bash "$stage/UPDATE.sh"
 update_rc=$?
 set -e
@@ -269,12 +296,23 @@ if (( update_rc != 0 )); then
     python3 "$transition_helper" restore --snapshot "$transition_snapshot" --lib /opt/ywd-hotspot/app/lib || \
       echo "[WARN] Plugin runtime restore needs manual review."
   fi
+  if [[ -n "$scanner_transition_helper" && -f "$scanner_transition_snapshot" ]]; then
+    echo "Restoring TGIF scanner runtime after target rollback..."
+    python3 "$scanner_transition_helper" restore --snapshot "$scanner_transition_snapshot" || \
+      echo "[WARN] TGIF scanner restore after rollback needs manual review."
+  fi
   exit "$update_rc"
 fi
 
 if [[ -n "$transition_helper" && -f "$transition_snapshot" ]]; then
   echo "Finalizing transition to plugin-free target..."
   python3 "$transition_helper" stable-cleanup --snapshot "$transition_snapshot" --lib /opt/ywd-hotspot/app/lib
+fi
+
+if [[ -n "$scanner_transition_helper" && -f "$scanner_transition_snapshot" ]]; then
+  echo "Reconciling TGIF scanner runtime with installed target..."
+  python3 "$scanner_transition_helper" restore --snapshot "$scanner_transition_snapshot" || \
+    echo "[WARN] TGIF scanner could not be restored automatically. Core hotspot operation is unaffected."
 fi
 
 if [[ -n "$TAG" ]]; then

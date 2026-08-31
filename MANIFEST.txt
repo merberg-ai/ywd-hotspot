@@ -61,6 +61,8 @@ docs/TGIF.md
 docs/UPGRADING.md
 docs/VOCODER.md
 docs/checkpoints/rc4-ui-setup-hardware-pass.md
+docs/checkpoints/tgif-control-center-scanner-hardware-pass.md
+docs/checkpoints/tgif-control-center-tune-hardware-pass.md
 docs/checkpoints/tgif-unified-settings-hardware-pass.md
 docs/history/README.md
 docs/history/ALPHA21-22-DEVELOPMENT-NOTES.md

@@ -1,0 +1,22 @@
+[Unit]
+Description=YWD-Hotspot TGIF watchlist scanner
+After=network-online.target ywd-dmrgateway.service ywd-activity.service
+Wants=network-online.target
+ConditionPathExists=/etc/ywd-hotspot/config.json
+
+[Service]
+Type=simple
+User=ywd-hotspot
+Group=ywd-hotspot
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/tgif_scanner.py
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run/ywd-hotspot
+MemoryMax=64M
+OOMScoreAdjust=300
+
+# Runtime-only by design. The watchlist persists, but active scanning must be
+# explicitly started after each boot from the authenticated dashboard.

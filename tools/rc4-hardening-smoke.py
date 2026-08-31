@@ -26,6 +26,7 @@ PY_SOURCES = (
     "lib/dashboard_tgif_control.py",
     "lib/tgif_scanner.py",
     "lib/tgif_scanner_admin.py",
+    "lib/console/ywd-system-info.py",
     "lib/oled.py",
     "lib/health.py",
     "tools/telemetry-config-smoke.py",
@@ -41,6 +42,7 @@ PY_SOURCES = (
     "tools/tgif-directory-smoke.py",
     "tools/tgif-scanner-smoke.py",
     "tools/tgif-polish-smoke.py",
+    "tools/terminal-branding-tgif-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
 )
@@ -52,6 +54,7 @@ SHELL_SOURCES = (
     "UPDATE-core.sh",
     "GITHUB-UPDATE.sh",
     "GITHUB-UPDATE-core.sh",
+    "bin/ywd-ui.sh",
     "lib/system_branding.sh",
     "lib/oled_owner.sh",
 )
@@ -70,6 +73,7 @@ SMOKES = (
     "tools/tgif-directory-smoke.py",
     "tools/tgif-scanner-smoke.py",
     "tools/tgif-polish-smoke.py",
+    "tools/terminal-branding-tgif-smoke.py",
     "tools/settings-restore-plugin-smoke.py",
     "tools/plugin-feature-runtime-smoke.py",
 )
@@ -122,6 +126,7 @@ def main() -> int:
     print("[OK] TGIF routing/UI/status/directory regressions")
     print("[OK] TGIF Control Center/watchlist scanner regression")
     print("[OK] TGIF Control Center responsiveness/status polish regression")
+    print("[OK] terminal branding + TGIF source-install/SSH status regression")
     print("[OK] plugin settings/runtime regressions")
     return 0
 

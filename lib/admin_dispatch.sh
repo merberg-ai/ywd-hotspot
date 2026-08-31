@@ -11,6 +11,9 @@ case "${1:-}" in
   config-save|tgif-configure|set-tgif-password)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/tgif_admin.py "$@"
     ;;
+  tgif-control)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/tgif_scanner_admin.py "$@"
+    ;;
   update-branches|update-branch-check|update-branch-switch)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/branch_update_admin.py "$@"
     ;;

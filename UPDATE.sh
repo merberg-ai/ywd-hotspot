@@ -7,6 +7,7 @@ if declare -F ywd_banner >/dev/null; then
   ywd_banner "APPLIANCE UPDATE" "$VERSION"
   ywd_info "Configuration, credentials and calibration data are preserved."
   ywd_info "MMDVM-Host / DMRGateway are not recompiled by normal app updates."
+  ywd_info "An active TGIF scanner is paused for live replacement and restored afterward."
 fi
 
 # The incoming candidate must prove that every runtime capability it contains is
@@ -27,6 +28,7 @@ for f in \
   lib/candidate_validate.py \
   lib/update_runner.py lib/update_admin.py lib/oled.py lib/oled_owner.sh \
   lib/mmdvm_runtime_state.py \
+  lib/tgif_scanner.py lib/tgif_scanner_admin.py lib/tgif_scanner_update_safety.py \
   lib/plugin_manifest.py lib/plugin_manager.py lib/plugin_package_manager.py lib/plugin_package_update.py lib/plugin_service_manager.py lib/plugin_ui_manager.py \
   lib/plugin_catalog_overlay.py lib/plugin_package_archive.py lib/plugin_service_runner.py lib/plugin_feature_runtime.py \
   lib/plugin_admin_common.py lib/plugin_admin_state.py lib/plugin_admin_packages.py lib/plugin_admin_upload.py lib/plugin_admin.py \
@@ -40,7 +42,7 @@ for f in \
   web/plugin-manager-render.js web/plugin-package-actions.js web/plugin-package-upload.js web/plugin-package-update.js web/plugin-manager.js web/plugin-manager.css web/plugin-config-actions.js \
   web/plugin-ui-host.js web/plugin-ui-runtime.js web/plugin-ui.css \
   web/backup-restore.js web/backup-restore.css \
-  systemd/ywd-update.service systemd/ywd-plugin@.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service \
+  systemd/ywd-update.service systemd/ywd-plugin@.service systemd/ywd-tgif-scanner.service systemd/ywd-mqtt.service systemd/ywd-mmdvm-telemetry.service \
   systemd/ywd-mmdvm-voice.service systemd/ywd-mmdvm-voice-build.service \
   systemd/ywd-vocoder-fake.service systemd/ywd-vocoder-fake.socket \
   systemd/ywd-vocoder-mbelib.service.d/20-ywd-hotspot-normal-priority.conf; do
@@ -102,13 +104,27 @@ repair_live_admin_bridge(){
 # application. State/config/package files are not changed here; services are
 # simply made inert for the duration of the core update.
 PLUGIN_UPDATE_SNAPSHOT="$(mktemp /run/ywd-hotspot-plugin-update.XXXXXX.json)"
-cleanup_plugin_snapshot(){ sudo rm -f "$PLUGIN_UPDATE_SNAPSHOT" 2>/dev/null || true; }
-trap cleanup_plugin_snapshot EXIT
+TGIF_UPDATE_SNAPSHOT=""
+cleanup_update_snapshots(){
+  sudo rm -f "$PLUGIN_UPDATE_SNAPSHOT" 2>/dev/null || true
+  [[ -n "$TGIF_UPDATE_SNAPSHOT" ]] && sudo rm -f "$TGIF_UPDATE_SNAPSHOT" 2>/dev/null || true
+}
+trap cleanup_update_snapshots EXIT
 sudo python3 "$SELF/lib/plugin_update_safety.py" capture \
   --snapshot "$PLUGIN_UPDATE_SNAPSHOT" --lib /opt/ywd-hotspot/app/lib >/dev/null
 sudo python3 "$SELF/lib/plugin_update_safety.py" quiesce \
   --snapshot "$PLUGIN_UPDATE_SNAPSHOT" --lib /opt/ywd-hotspot/app/lib >/dev/null
 echo "Plugin services quiesced for application update."
+
+# A GitHub-aware outer updater owns scanner preservation when available so it
+# can also handle switching to older targets. Direct UPDATE.sh invocations use
+# the incoming helper here, which also bootstraps preservation onto older RC4
+# scanner builds that did not yet know how to pause themselves during updates.
+if [[ "${YWD_TGIF_SCANNER_OUTER:-0}" != "1" ]]; then
+  TGIF_UPDATE_SNAPSHOT="$(mktemp /run/ywd-hotspot-tgif-update.XXXXXX.json)"
+  sudo python3 "$SELF/lib/tgif_scanner_update_safety.py" capture --snapshot "$TGIF_UPDATE_SNAPSHOT"
+  sudo python3 "$SELF/lib/tgif_scanner_update_safety.py" quiesce --snapshot "$TGIF_UPDATE_SNAPSHOT"
+fi
 
 # YWD-Hotspot OS already has one authoritative OLED owner. Ensure the legacy
 # app unit is off before the core updater captures service state so it cannot be
@@ -119,7 +135,7 @@ fi
 
 # Preserve the proven core updater/rollback engine. If it fails, it restores the
 # old app/config first; this wrapper repairs the restored split admin bridge and
-# then restores the captured plugin runtime against that old application.
+# then restores the captured plugin/scanner runtime against that old application.
 set +e
 if declare -F ywd_run_colored >/dev/null; then
   ywd_run_colored bash "$CORE" "$@"
@@ -136,6 +152,11 @@ if (( core_rc != 0 )); then
   sudo python3 "$SELF/lib/plugin_update_safety.py" restore \
     --snapshot "$PLUGIN_UPDATE_SNAPSHOT" --lib /opt/ywd-hotspot/app/lib || \
     echo "[WARN] Plugin runtime restore after rollback needs manual review."
+  if [[ -n "$TGIF_UPDATE_SNAPSHOT" ]]; then
+    echo "Restoring pre-update TGIF scanner runtime after target rollback..."
+    sudo python3 "$SELF/lib/tgif_scanner_update_safety.py" restore --snapshot "$TGIF_UPDATE_SNAPSHOT" || \
+      echo "[WARN] TGIF scanner restore after rollback needs manual review."
+  fi
   exit "$core_rc"
 fi
 
@@ -151,6 +172,12 @@ fi
 echo "Reconciling plugin runtime with updated application..."
 sudo python3 "$SELF/lib/plugin_update_safety.py" restore \
   --snapshot "$PLUGIN_UPDATE_SNAPSHOT" --lib /opt/ywd-hotspot/app/lib
+
+if [[ -n "$TGIF_UPDATE_SNAPSHOT" ]]; then
+  echo "Reconciling TGIF scanner runtime with updated application..."
+  sudo python3 "$SELF/lib/tgif_scanner_update_safety.py" restore --snapshot "$TGIF_UPDATE_SNAPSHOT" || \
+    echo "[WARN] TGIF scanner could not be restored automatically. Core hotspot operation is unaffected."
+fi
 
 # Persist first-party update channels from the invoking GitHub updater. This is
 # intentionally done by the incoming candidate so an older main/dev-only updater

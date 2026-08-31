@@ -89,6 +89,25 @@
     return true;
   }
 
+  function installBmTabRename() {
+    const attach = () => {
+      const tabs = document.querySelector('.tabs');
+      if (!tabs) return false;
+      renameBmTab();
+      if (!tabs.__ywdBmTalkgroupObserver) {
+        const observer = new MutationObserver(() => renameBmTab());
+        observer.observe(tabs, {childList:true, subtree:true});
+        tabs.__ywdBmTalkgroupObserver = observer;
+      }
+      return true;
+    };
+    if (attach()) return;
+    const retry = setInterval(() => {
+      if (attach()) clearInterval(retry);
+    }, 120);
+    setTimeout(() => clearInterval(retry), 60000);
+  }
+
   function ensureStatusCard() {
     const page = el('status');
     if (!page) return null;
@@ -192,12 +211,8 @@
   function install() {
     installFetchFeedback();
     installClickFeedback();
-    const wait = setInterval(() => {
-      const renamed = renameBmTab();
-      const card = ensureStatusCard();
-      if (renamed && card) clearInterval(wait);
-    }, 120);
-    setTimeout(() => clearInterval(wait), 15000);
+    installBmTabRename();
+    ensureStatusCard();
     installStatusPolling();
   }
 

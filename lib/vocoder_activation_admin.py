@@ -12,6 +12,7 @@ from pathlib import Path
 
 import maintenance_coordinator
 import vocoder_manager
+import vocoder_prepared
 
 PRIVATE = Path("/var/lib/ywd-hotspot/private")
 REQUEST = PRIVATE / "vocoder-activation-request.json"
@@ -55,7 +56,7 @@ def _candidate_ready() -> dict:
     # This is a lightweight pre-launch presentation check only. The root worker
     # independently revalidates path confinement, identity, SHA, self-test and
     # exact YWD Extended runtime before touching any live file.
-    prepared = vocoder_manager.prepared_status()
+    prepared = vocoder_prepared.status()
     if not prepared.get("valid"):
         raise RuntimeError(str(prepared.get("reason") or "no current verified prepared vocoder candidate is available"))
     runtime = vocoder_manager._runtime()

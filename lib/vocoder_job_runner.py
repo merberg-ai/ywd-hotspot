@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Persistent unprivileged job runner for RC4 vocoder maintenance.
 
-This first gated generation supports only the non-destructive `preflight`
-operation. It may inspect local/system/network readiness and write bounded state,
-logs, and staging reports under /var/lib/ywd-hotspot. It does not install
-packages, clone/build source, stop/restart RF, or activate runtime/backend files.
+Supported gated operations:
+- preflight: exact read-only appliance/build readiness verification;
+- prepare: fetch/build/self-test a candidate entirely under /var/lib/ywd-hotspot.
+
+Neither operation installs packages, changes the live vocoder socket/backend,
+stops/restarts RF, replaces MMDVMHost, or activates staged files.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ import json
 import os
 import platform
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -19,6 +22,7 @@ import time
 from pathlib import Path
 
 import maintenance_coordinator
+import vocoder_backend_build
 import vocoder_manager
 
 VAR = Path(os.environ.get("YWD_VAR", "/var/lib/ywd-hotspot"))
@@ -29,12 +33,32 @@ JOB_LOG = Path(os.environ.get("YWD_VOCODER_JOB_LOG", str(STATE_DIR / "job.log"))
 JOBS_DIR = Path(os.environ.get("YWD_VOCODER_JOBS_DIR", str(STATE_DIR / "jobs")))
 MAX_LOG_BYTES = 64 * 1024
 MAX_LOG_LINES = 80
+MAX_JOB_DIRS = 5
 VOCODER_ONLY_MIN_FREE = 768 * 1024 * 1024
 EXTENDED_AND_VOCODER_MIN_FREE = 1536 * 1024 * 1024
+_CANCEL_REQUESTED = False
+
+
+class JobCancelled(RuntimeError):
+    pass
 
 
 def _now() -> int:
     return int(time.time())
+
+
+def _signal_cancel(_signum, _frame) -> None:
+    global _CANCEL_REQUESTED
+    _CANCEL_REQUESTED = True
+
+
+def cancel_requested() -> bool:
+    return bool(_CANCEL_REQUESTED)
+
+
+def check_cancel() -> None:
+    if cancel_requested():
+        raise JobCancelled("vocoder job canceled")
 
 
 def _atomic_json(path: Path, doc: dict, mode: int = 0o640) -> None:
@@ -93,8 +117,8 @@ def write_state(job: dict, *, state: str, phase: str, progress: int, message: st
     doc = {
         "schema": 1,
         "job_id": str(job.get("job_id") or "")[:96],
-        "job_type": str(job.get("job_type") or "vocoder-preflight")[:64],
-        "operation": str(job.get("operation") or "preflight")[:32],
+        "job_type": str(job.get("job_type") or "vocoder-job")[:64],
+        "operation": str(job.get("operation") or "")[:32],
         "state": str(state or "CHECKING").upper()[:40],
         "phase": str(phase or "checking").lower()[:64],
         "progress": max(0, min(100, int(progress))),
@@ -167,9 +191,8 @@ def _source_reachable() -> tuple[bool, str]:
 
 
 def collect_facts() -> dict:
-    # The dashboard uses only the cheap persisted current-pin identity. A real
-    # preparation gate must prove the exact installed binary/runtime generation,
-    # so the background worker deliberately performs the expensive verification.
+    # Dashboard status uses cheap persisted identity. Jobs deliberately perform
+    # the expensive exact installed-runtime verification before build decisions.
     snapshot = vocoder_manager.passive_snapshot()
     runtime = vocoder_manager.verified_runtime()
     usage = shutil.disk_usage(VAR)
@@ -230,11 +253,10 @@ def evaluate_preflight(facts: dict) -> dict:
         pass
 
     if not runtime_ready:
-        warnings.append("YWD Extended must be prepared before vocoder installation")
+        warnings.append("YWD Extended must be prepared before live vocoder installation")
 
-    ready = not hard_failures and not temporary_blockers
     return {
-        "ready": ready,
+        "ready": not hard_failures and not temporary_blockers,
         "required_free_bytes": required_free,
         "hard_failures": hard_failures,
         "temporary_blockers": temporary_blockers,
@@ -249,8 +271,9 @@ def _read_request() -> dict:
         raise RuntimeError(f"vocoder job request unavailable: {exc}") from exc
     if not isinstance(doc, dict):
         raise RuntimeError("vocoder job request is invalid")
-    if str(doc.get("operation") or "") != "preflight":
-        raise RuntimeError("this gated job runner accepts only preflight")
+    operation = str(doc.get("operation") or "")
+    if operation not in {"preflight", "prepare"}:
+        raise RuntimeError("unsupported gated vocoder job operation")
     if not doc.get("job_id"):
         raise RuntimeError("vocoder job request has no job id")
     try:
@@ -260,61 +283,80 @@ def _read_request() -> dict:
     return doc
 
 
-def run_preflight(job: dict) -> int:
+def _prune_jobs(current: Path) -> None:
+    try:
+        rows = [p for p in JOBS_DIR.iterdir() if p.is_dir() and p != current]
+    except Exception:
+        return
+    rows.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+    for path in rows[max(0, MAX_JOB_DIRS - 1):]:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _begin(job: dict, job_type: str, phase: str = "checking") -> tuple[dict, Path]:
     job = dict(job)
-    job.setdefault("job_type", "vocoder-preflight")
+    job["job_type"] = job_type
     job.setdefault("started_at", _now())
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    job_dir = JOBS_DIR / str(job["job_id"])
+    job_dir.mkdir(parents=True, exist_ok=True)
+    _prune_jobs(job_dir)
     JOB_LOG.write_text("", encoding="utf-8")
     os.chmod(JOB_LOG, 0o640)
+    maintenance_coordinator.claim(
+        str(job["job_id"]), job_type, phase,
+        cancellable=True, owner_pid=os.getpid(), service="ywd-vocoder-job.service",
+    )
+    return job, job_dir
 
+
+def _log_facts(facts: dict) -> None:
+    log(f"Architecture: {facts['architecture']} ({'supported' if facts['architecture_supported'] else 'unsupported'})")
+    log(f"Free disk: {facts['free_bytes'] // (1024 * 1024)} MiB")
+    log(f"YWD Extended: {'ready' if facts['runtime_ready'] else 'required'} ({facts['runtime_variant']}; {facts['runtime_verification']})")
+    if facts["runtime_missing_capabilities"]:
+        log("Missing runtime capabilities: " + ", ".join(facts["runtime_missing_capabilities"]))
+    log("Build tools present: " + ", ".join(name for name, ok in facts["tools"].items() if ok))
+    if facts["missing_tools"]:
+        log("Build tools missing: " + ", ".join(facts["missing_tools"]))
+    log("Package manager: " + ("busy: " + ", ".join(facts["apt_busy"]) if facts["apt_busy"] else "idle"))
+    log("dpkg state: " + ("clean" if facts["dpkg_ok"] else facts["dpkg_detail"] or "check required"))
+    log("Source access: " + facts["source_detail"])
+    if facts["thermal_c"] is not None:
+        log(f"System temperature: {facts['thermal_c']:.1f} C")
+
+
+def _write_preflight_report(job: dict, job_dir: Path, facts: dict, result: dict) -> None:
+    _atomic_json(job_dir / "preflight.json", {
+        "schema": 1,
+        "job_id": job["job_id"],
+        "checked_at": _now(),
+        "facts": facts,
+        "result": result,
+    })
+
+
+def run_preflight(request: dict) -> int:
     lease_claimed = False
+    job = dict(request)
     try:
-        maintenance_coordinator.claim(
-            str(job["job_id"]), "vocoder-preflight", "checking",
-            cancellable=True, owner_pid=os.getpid(), service="ywd-vocoder-job.service",
-        )
+        job, job_dir = _begin(job, "vocoder-preflight")
         lease_claimed = True
         log("Starting DMR Audio Vocoder install-readiness preflight")
         log("This gated job does not install packages, download source, compile, or restart RF")
         log("Verifying exact installed YWD Extended runtime identity; this can take a little while on a Pi Zero")
         write_state(job, state="CHECKING", phase="checking", progress=12,
                     message="Verifying exact installed runtime and appliance prerequisites")
-
+        check_cancel()
         facts = collect_facts()
-        log(f"Architecture: {facts['architecture']} ({'supported' if facts['architecture_supported'] else 'unsupported'})")
-        log(f"Free disk: {facts['free_bytes'] // (1024 * 1024)} MiB")
-        log(f"YWD Extended: {'ready' if facts['runtime_ready'] else 'required'} ({facts['runtime_variant']}; {facts['runtime_verification']})")
-        if facts["runtime_missing_capabilities"]:
-            log("Missing runtime capabilities: " + ", ".join(facts["runtime_missing_capabilities"]))
-        log("Build tools present: " + ", ".join(name for name, ok in facts["tools"].items() if ok))
-        if facts["missing_tools"]:
-            log("Build tools missing: " + ", ".join(facts["missing_tools"]))
-        log("Package manager: " + ("busy: " + ", ".join(facts["apt_busy"]) if facts["apt_busy"] else "idle"))
-        log("dpkg state: " + ("clean" if facts["dpkg_ok"] else facts["dpkg_detail"] or "check required"))
-        log("Source access: " + facts["source_detail"])
-        if facts["thermal_c"] is not None:
-            log(f"System temperature: {facts['thermal_c']:.1f} C")
-
+        _log_facts(facts)
         result = evaluate_preflight(facts)
-        report = {
-            "schema": 1,
-            "job_id": job["job_id"],
-            "checked_at": _now(),
-            "facts": facts,
-            "result": result,
-        }
-        job_dir = JOBS_DIR / str(job["job_id"])
-        job_dir.mkdir(parents=True, exist_ok=True)
-        _atomic_json(job_dir / "preflight.json", report)
-
-        for warning in result["warnings"]:
-            log("WARN: " + warning)
-        for blocker in result["temporary_blockers"]:
-            log("WAIT: " + blocker)
-        for failure in result["hard_failures"]:
-            log("FAIL: " + failure)
+        _write_preflight_report(job, job_dir, facts, result)
+        for warning in result["warnings"]: log("WARN: " + warning)
+        for blocker in result["temporary_blockers"]: log("WAIT: " + blocker)
+        for failure in result["hard_failures"]: log("FAIL: " + failure)
+        check_cancel()
 
         if result["ready"]:
             log("Preflight PASS: appliance is ready for the later prepare/build stage")
@@ -325,16 +367,21 @@ def run_preflight(job: dict) -> int:
             lease_claimed = False
             return 0
 
-        if result["hard_failures"]:
-            message = "Install readiness check found blockers; no live runtime changes were made"
-        else:
-            message = "Install readiness check found temporary conditions to resolve before building"
+        message = "Install readiness check found blockers; no live runtime changes were made" if result["hard_failures"] else "Install readiness check found temporary conditions to resolve before building"
         log(message)
         write_state(job, state="FAILED_SAFE", phase="failed-safe", progress=100,
                     message=message, error="; ".join(result["hard_failures"] + result["temporary_blockers"]),
                     cancellable=False, completed=True)
         maintenance_coordinator.release(str(job["job_id"]), outcome="failed-safe", owner_pid=os.getpid())
         lease_claimed = False
+        return 3
+    except (JobCancelled, vocoder_backend_build.BuildCancelled) as exc:
+        log(f"CANCELED SAFE: {exc}")
+        write_state(job, state="FAILED_SAFE", phase="failed-safe", progress=100,
+                    message="Readiness check canceled safely; no live runtime changes were made",
+                    error="canceled", cancellable=False, completed=True)
+        if lease_claimed:
+            maintenance_coordinator.release(str(job["job_id"]), outcome="canceled", owner_pid=os.getpid())
         return 3
     except Exception as exc:
         log(f"FAILED SAFE: {exc}")
@@ -345,10 +392,77 @@ def run_preflight(job: dict) -> int:
         except Exception:
             pass
         if lease_claimed:
-            try:
-                maintenance_coordinator.release(str(job["job_id"]), outcome="failed-safe", owner_pid=os.getpid())
-            except Exception:
-                pass
+            try: maintenance_coordinator.release(str(job["job_id"]), outcome="failed-safe", owner_pid=os.getpid())
+            except Exception: pass
+        return 2
+
+
+def run_prepare(request: dict) -> int:
+    lease_claimed = False
+    job = dict(request)
+    try:
+        job, job_dir = _begin(job, "vocoder-prepare")
+        lease_claimed = True
+        log("Starting managed DMR Audio Vocoder candidate preparation")
+        log("Live RF, MMDVMHost, DMRGateway, vocoder socket units, and installed backend will not be changed")
+        write_state(job, state="CHECKING", phase="checking", progress=8,
+                    message="Running exact preflight before staged build")
+        facts = collect_facts()
+        _log_facts(facts)
+        result = evaluate_preflight(facts)
+        _write_preflight_report(job, job_dir, facts, result)
+        for warning in result["warnings"]: log("WARN: " + warning)
+        for blocker in result["temporary_blockers"]: log("WAIT: " + blocker)
+        for failure in result["hard_failures"]: log("FAIL: " + failure)
+        if not result["ready"]:
+            raise RuntimeError("preparation blocked: " + "; ".join(result["hard_failures"] + result["temporary_blockers"]))
+
+        required_build = [name for name in ("git", "cmake", "make", "g++", "python3") if not facts["tools"].get(name)]
+        if required_build:
+            raise RuntimeError("build dependencies are missing and managed package installation is not enabled in this gate: " + ", ".join(required_build))
+        check_cancel()
+
+        def progress(phase: str, pct: int, message: str) -> None:
+            check_cancel()
+            state = {"downloading": "DOWNLOADING", "building": "BUILDING", "staging": "STAGING"}.get(phase, "CHECKING")
+            maintenance_coordinator.update(str(job["job_id"]), phase=phase, cancellable=True, owner_pid=os.getpid())
+            write_state(job, state=state, phase=phase, progress=pct, message=message, cancellable=True)
+            log(message)
+
+        report = vocoder_backend_build.prepare_candidate(
+            job_id=str(job["job_id"]), job_dir=job_dir, log=log,
+            progress=progress, cancel=cancel_requested,
+        )
+        check_cancel()
+        log(f"Prepared candidate SHA-256: {report['binary_sha256']}")
+        log("Prepared candidate is staged/cache-only; live backend remains untouched")
+        write_state(job, state="COMPLETE", phase="complete", progress=100,
+                    message="Verified vocoder candidate prepared; live backend/runtime unchanged",
+                    cancellable=False, completed=True)
+        maintenance_coordinator.release(str(job["job_id"]), outcome="complete", owner_pid=os.getpid())
+        lease_claimed = False
+        return 0
+    except (JobCancelled, vocoder_backend_build.BuildCancelled) as exc:
+        log(f"CANCELED SAFE: {exc}")
+        try:
+            write_state(job, state="FAILED_SAFE", phase="failed-safe", progress=100,
+                        message="Vocoder preparation canceled safely; live backend/runtime unchanged",
+                        error="canceled", cancellable=False, completed=True)
+        except Exception: pass
+        if lease_claimed:
+            try: maintenance_coordinator.release(str(job["job_id"]), outcome="canceled", owner_pid=os.getpid())
+            except Exception: pass
+        return 3
+    except Exception as exc:
+        log(f"FAILED SAFE: {exc}")
+        try:
+            write_state(job, state="FAILED_SAFE", phase="failed-safe", progress=100,
+                        message="Vocoder preparation failed safely; live backend/runtime unchanged",
+                        error=str(exc), cancellable=False, completed=True)
+        except Exception: pass
+        if lease_claimed:
+            try: maintenance_coordinator.release(str(job["job_id"]), outcome="failed-safe", owner_pid=os.getpid())
+            except Exception: pass
         return 2
 
 
@@ -356,12 +470,14 @@ def main() -> int:
     if os.geteuid() == 0:
         print("vocoder job runner must not run as root", file=sys.stderr)
         return 2
+    signal.signal(signal.SIGTERM, _signal_cancel)
+    signal.signal(signal.SIGINT, _signal_cancel)
     try:
         request = _read_request()
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    return run_preflight(request)
+    return run_prepare(request) if str(request.get("operation")) == "prepare" else run_preflight(request)
 
 
 if __name__ == "__main__":

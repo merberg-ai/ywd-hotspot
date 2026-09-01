@@ -74,60 +74,6 @@ _RELEASE_UI_BOOTSTRAP = b"""
 })();
 """
 
-# These are the proven dependency-ordered RC3 dashboard modules.  Serving them
-# as one classic-script bundle preserves their existing global/script semantics
-# while avoiding 17 separate browser requests/revalidations on a Pi Zero.
-# plugin-package-upload.js has historically been served with the transactional
-# plugin-package-update.js overlay appended; keep that composition explicit.
-_LEGACY_UI_COMPONENTS = (
-    "app-core.js",
-    "backup-restore.js",
-    "talkgroups.js",
-    "ui-polish.js",
-    "update.js",
-    "update-progress.js",
-    "instrumentation.js",
-    "instrumentation-bootstrap.js",
-    "plugin-manager-render.js",
-    "plugin-package-actions.js",
-    "plugin-package-upload.js",
-    "plugin-package-update.js",
-    "plugin-manager.js",
-    "plugin-config-actions.js",
-    "plugin-telemetry.js",
-    "plugin-ui-host.js",
-    "system-ui.js",
-    "ssh-key-export.js",
-)
-_LEGACY_BUNDLE_SRC = "/legacy-ui-bundle.js?v=rc4-legacy-bundle1"
-
-# app.js contains the old nested network loader at its tail.  Replace only that
-# tail with one bundle load.  Keep the loader primitive itself intact so a
-# bundle fetch failure still takes the proven error path and remains visible in
-# browser diagnostics.
-def _patch_app_js(data: bytes) -> bytes:
-    if not data:
-        return b""
-    start = data.rfind(b"  load('/app-core.js'")
-    end = data.find(b"\n})();", start if start >= 0 else 0)
-    if start < 0 or end < 0:
-        # Already-patched source is acceptable for future source consolidation.
-        if _LEGACY_BUNDLE_SRC.encode("utf-8") in data:
-            return data
-        return b""
-    replacement = f"  load('{_LEGACY_BUNDLE_SRC}', applyAlpha21Polish);\n".encode("utf-8")
-    return data[:start] + replacement + data[end:]
-
-
-def _legacy_ui_bundle() -> bytes:
-    parts = []
-    for name in _LEGACY_UI_COMPONENTS:
-        data = _asset_bytes(name)
-        if not data:
-            return b""
-        parts.append(b"\n;/* YWD legacy module: " + name.encode("utf-8") + b" */\n" + data + b"\n")
-    return b"".join(parts)
-
 
 def setup_required():
     """Mirror the base dashboard's first-run gate before it can emit a stale URL."""
@@ -218,24 +164,16 @@ def wrap_handler(base):
                 self.send_bytes(200, body, "text/css; charset=utf-8", cache="no-cache")
                 return
             if path == "/app.js":
-                app_js = _patch_app_js(_asset_bytes("app.js"))
+                app_js = _asset_bytes("app.js")
                 theme_js = _asset_bytes("startup-themes.js")
-                readiness_js = _asset_bytes("startup-readiness.js")
-                if not app_js or not readiness_js:
+                if not app_js:
                     self.send_json({"error": "application asset unavailable"}, 404)
                     return
                 hint = ("window.__YWD_LOADING_ANIMATION=" + json.dumps(startup_theme()) + ";\n").encode("utf-8")
                 body = hint
                 if theme_js:
                     body += theme_js + b"\n;\n"
-                body += readiness_js + b"\n;\n" + app_js + _RELEASE_UI_BOOTSTRAP
-                self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
-                return
-            if path == "/legacy-ui-bundle.js":
-                body = _legacy_ui_bundle()
-                if not body:
-                    self.send_json({"error": "legacy UI bundle unavailable"}, 404)
-                    return
+                body += app_js + _RELEASE_UI_BOOTSTRAP
                 self.send_bytes(200, body, "application/javascript; charset=utf-8", cache="no-store")
                 return
 
@@ -257,6 +195,7 @@ def wrap_handler(base):
                 "/modem-ui.css": ("modem-ui.css", "text/css; charset=utf-8"),
                 "/instrumentation.js": ("instrumentation.js", "application/javascript; charset=utf-8"),
                 "/instrumentation-bootstrap.js": ("instrumentation-bootstrap.js", "application/javascript; charset=utf-8"),
+                "/instrumentation.css": ("instrumentation.css", "text/css; charset=utf-8"),
                 "/startup-themes.js": ("startup-themes.js", "application/javascript; charset=utf-8"),
                 "/startup-themes.css": ("startup-themes.css", "text/css; charset=utf-8"),
                 "/startup-readiness.js": ("startup-readiness.js", "application/javascript; charset=utf-8"),

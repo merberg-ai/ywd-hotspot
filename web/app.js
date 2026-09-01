@@ -17,98 +17,23 @@
 
   let startupPolishReady = false;
   let startupClosed = false;
-  let startupContinueOffered = false;
   const startupAt = Date.now();
-
   function startupDataReady() {
     return typeof state !== 'undefined' && !!state && typeof configDoc !== 'undefined' && !!configDoc;
   }
-
-  function startupReleaseReady() {
-    const p = window.__YWD_RELEASE_UI_PROGRESS;
-    return window.__YWD_RELEASE_UI_READY === true && (!p || Number(p.failed || 0) === 0);
-  }
-
-  function startupSystemReady() {
-    return !!document.getElementById('hostPowerCard')
-      && !!document.getElementById('mmdvmInfoCard')
-      && !!document.getElementById('vocoderManagerCard');
-  }
-
-  function startupHeroReady() {
-    const hero = document.querySelector('.ywd-hero-banner');
-    return !!hero && hero.complete && hero.naturalWidth > 0;
-  }
-
-  function startupFullyReady() {
-    return startupPolishReady
-      && startupDataReady()
-      && startupReleaseReady()
-      && startupSystemReady()
-      && startupHeroReady()
-      && Date.now() - startupAt >= 260;
-  }
-
-  function startupStatusText() {
-    if (!startupDataReady()) return 'Loading appliance status and configuration…';
-    if (!startupPolishReady) return 'Building dashboard interface…';
-    if (!startupReleaseReady()) {
-      const p = window.__YWD_RELEASE_UI_PROGRESS || {};
-      const loaded = Number(p.loaded || 0);
-      const total = Number(p.total || 0);
-      const failed = Number(p.failed || 0);
-      if (failed > 0) return `RC4 interface module load failed (${failed}). You can keep waiting or continue after the safety timeout.`;
-      const current = String(p.current || '').replace(/^\//, '').split('?')[0];
-      return current
-        ? `Loading RC4 interface modules… ${loaded}/${total || '?'} · ${current}`
-        : 'Loading RC4 interface modules…';
-    }
-    if (!startupSystemReady()) return 'Registering System tools…';
-    if (!startupHeroReady()) return 'Loading YWD dashboard artwork…';
-    return 'Finalizing dashboard interface…';
-  }
-
-  function updateStartupStatus() {
-    const status = document.getElementById('ywdStartupStatus');
-    if (!status) return;
-    const message = startupStatusText();
-    if (status.textContent !== message) status.textContent = message;
-  }
-
   function closeStartup(force = false) {
     if (startupClosed) return;
-    if (!force && !startupFullyReady()) {
-      updateStartupStatus();
-      return;
-    }
+    if (!force && (!startupPolishReady || !startupDataReady() || Date.now() - startupAt < 260)) return;
     startupClosed = true;
     clearInterval(startupWatch);
     startupOverlay.setAttribute('aria-busy', 'false');
     const status = document.getElementById('ywdStartupStatus');
-    if (status) status.textContent = force ? 'Continuing to dashboard…' : 'Dashboard ready';
+    if (force && status) status.textContent = 'Dashboard ready · some background data may still be loading';
     startupOverlay.classList.add('ywd-startup-out');
     setTimeout(() => startupOverlay.remove(), 220);
   }
-
-  function offerStartupContinue() {
-    if (startupClosed || startupContinueOffered || startupFullyReady()) return;
-    startupContinueOffered = true;
-    const status = document.getElementById('ywdStartupStatus');
-    if (status) status.textContent = 'Dashboard is taking longer than expected. Keep waiting, or continue to the partially loaded interface.';
-    const card = startupOverlay.querySelector('.ywd-startup-card');
-    if (!card || card.querySelector('.ywd-startup-continue')) return;
-    const button = document.createElement('button');
-    button.className = 'btn ywd-startup-continue';
-    button.type = 'button';
-    button.textContent = 'CONTINUE';
-    button.onclick = () => closeStartup(true);
-    card.appendChild(button);
-  }
-
-  const startupWatch = setInterval(() => {
-    closeStartup(false);
-    if (!startupClosed && Date.now() - startupAt >= 45000) offerStartupContinue();
-  }, 80);
+  const startupWatch = setInterval(() => closeStartup(false), 60);
+  setTimeout(() => closeStartup(true), 12000);
 
   function loadStyle(href) {
     const l = document.createElement('link');

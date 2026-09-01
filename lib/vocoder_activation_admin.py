@@ -15,6 +15,7 @@ import vocoder_manager
 import vocoder_prepared
 
 PRIVATE = Path("/var/lib/ywd-hotspot/private")
+BACKUP_ROOT = Path("/var/backups/ywd-hotspot/vocoder")
 REQUEST = PRIVATE / "vocoder-activation-request.json"
 JOURNAL = PRIVATE / "vocoder-activation-journal.json"
 SERVICE = "ywd-vocoder-activation.service"
@@ -77,6 +78,11 @@ def start_activation() -> dict:
     if JOURNAL.exists():
         raise RuntimeError("an incomplete vocoder activation journal exists; reboot or run recovery before retrying")
     _candidate_ready()
+
+    PRIVATE.mkdir(parents=True, exist_ok=True)
+    os.chmod(PRIVATE, 0o700)
+    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    os.chmod(BACKUP_ROOT, 0o700)
 
     # Recovery must already be enabled before the activation worker can mutate
     # live backend files. If power is lost afterward, boot recovery is armed.

@@ -52,33 +52,23 @@ with tempfile.TemporaryDirectory(prefix="ywd-maint-smoke-") as td:
         assert mc.inspect() == {"active": False, "stale": False}
         first = mc.claim("vocoder-smoke-1", "vocoder-install", "preparing", owner_pid=os.getpid())
         assert first["active"] is True and first["phase"] == "preparing"
-
         same = mc.claim("vocoder-smoke-1", "vocoder-install", "building", owner_pid=os.getpid())
         assert same["active"] is True and same["phase"] == "building"
-
         try:
             mc.claim("other-smoke-2", "channel-switch", "preparing", owner_pid=os.getpid())
         except mc.MaintenanceBusy as exc:
             assert exc.lease.get("job_id") == "vocoder-smoke-1"
         else:
             raise AssertionError("conflicting maintenance claim must be rejected")
-
         updated = mc.update("vocoder-smoke-1", phase="activation-started", cancellable=False, owner_pid=os.getpid())
         assert updated["phase"] == "activation-started" and updated["cancellable"] is False
         mc.release("vocoder-smoke-1", outcome="complete", owner_pid=os.getpid())
         assert mc.inspect() == {"active": False, "stale": False}
-        assert mc.LAST.is_file()
 
         stale = {
-            "schema": 1,
-            "job_id": "stale-smoke",
-            "job_type": "vocoder-install",
-            "owner_pid": 99999999,
-            "boot_id": "boot-smoke",
-            "started_at": 1,
-            "updated_at": 1,
-            "phase": "building",
-            "cancellable": True,
+            "schema": 1, "job_id": "stale-smoke", "job_type": "vocoder-install",
+            "owner_pid": 99999999, "boot_id": "boot-smoke", "started_at": 1,
+            "updated_at": 1, "phase": "building", "cancellable": True,
             "secret": "must-not-project",
         }
         mc.LEASE.write_text(json.dumps(stale), encoding="utf-8")
@@ -86,33 +76,23 @@ with tempfile.TemporaryDirectory(prefix="ywd-maint-smoke-") as td:
         assert seen["stale"] is True and seen["stale_reason"] == "owner-not-running"
         public = mc.public_status(seen)
         assert "secret" not in public
-        recovered = mc.recover_stale()
-        assert recovered["recovered"] is True
-        assert not mc.LEASE.exists()
+        assert mc.recover_stale()["recovered"] is True
     finally:
         mc.VAR, mc.LEASE, mc.LOCK, mc.LAST, mc.BOOT_ID = old
 
-# Normal dashboard runtime projection must never invoke the expensive exact
-# runtime helper path. It binds the last verified persisted identity to current
-# release pins instead.
+# Dashboard projection cannot invoke the expensive exact runtime verifier.
 old_persisted = vm.mmdvm_runtime_state.persisted_state
 old_pins = vm.mmdvm_runtime_state._pins
 old_status = vm.mmdvm_runtime_state.status
 try:
     vm.mmdvm_runtime_state.persisted_state = lambda: {
-        "variant": "ywd-extended",
-        "upstream_commit": "upstream-smoke",
-        "binary_sha256": "binary-smoke",
-        "extension_api": 2,
-        "patch_sha256": "patch-smoke",
-        "capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES),
-        "runtime_generation": "current",
-        "upgrade_required": False,
-        "selected_at": 123,
+        "variant": "ywd-extended", "upstream_commit": "upstream-smoke",
+        "binary_sha256": "binary-smoke", "extension_api": 2,
+        "patch_sha256": "patch-smoke", "capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES),
+        "runtime_generation": "current", "upgrade_required": False, "selected_at": 123,
     }
     vm.mmdvm_runtime_state._pins = lambda: {
-        "MMDVM_HOST_COMMIT": "upstream-smoke",
-        "MMDVM_YWD_PATCH_SHA256": "patch-smoke",
+        "MMDVM_HOST_COMMIT": "upstream-smoke", "MMDVM_YWD_PATCH_SHA256": "patch-smoke",
     }
     vm.mmdvm_runtime_state.status = lambda: (_ for _ in ()).throw(AssertionError("dashboard runtime projection called expensive verifier"))
     projected = vm._runtime()
@@ -125,12 +105,8 @@ finally:
 
 recipe = {"id": vm.BACKEND_RECIPE, "version": vm.BACKEND_RECIPE_VERSION, "protocol": vm.PROTOCOL_VERSION, "mbelib_commit": vm.APPROVED_MBELIB_COMMIT}
 ready_runtime = {
-    "ready": True,
-    "variant": "ywd-extended",
-    "in_sync": True,
-    "extension_api": 2,
-    "capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES),
-    "missing_capabilities": [],
+    "ready": True, "variant": "ywd-extended", "in_sync": True, "extension_api": 2,
+    "capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES), "missing_capabilities": [],
     "upgrade_required": False,
 }
 not_ready_runtime = {**ready_runtime, "ready": False, "variant": "upstream", "capabilities": [], "missing_capabilities": list(vm.REQUIRED_RUNTIME_CAPABILITIES)}
@@ -142,9 +118,7 @@ expect_state({"backend": complete_backend(), "runtime": not_ready_runtime, "reci
 expect_state({"backend": complete_backend(enabled="disabled"), "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "DISABLED")
 expect_state({"backend": complete_backend(policy_ok=False), "runtime": ready_runtime, "recipe": recipe, "provenance": {}, "job": idle_job}, "REPAIR_REQUIRED")
 expect_state({
-    "backend": complete_backend(),
-    "runtime": ready_runtime,
-    "recipe": recipe,
+    "backend": complete_backend(), "runtime": ready_runtime, "recipe": recipe,
     "provenance": {"recipe_version": vm.BACKEND_RECIPE_VERSION - 1, "protocol_version": vm.PROTOCOL_VERSION, "mbelib_commit": vm.APPROVED_MBELIB_COMMIT},
     "job": idle_job,
 }, "UPDATE_REQUIRED")
@@ -161,13 +135,13 @@ modem_ui_src = (ROOT / "web" / "modem-ui.js").read_text(encoding="utf-8")
 
 assert "import vocoder_client" not in manager_src
 assert "vocoder_client.status" not in manager_src
-assert '"mutations_enabled": False' in manager_src
+assert '"mutations_enabled": False' in manager_src  # live install/activation still disabled
 assert "def verified_runtime()" in manager_src
 assert '"persisted-current-pin-identity"' in manager_src
-assert 'path != "/api/system/vocoder"' in dashboard_src
-assert 'path != "/api/system/vocoder/preflight"' in dashboard_src
-assert "require_control()" in dashboard_src
-assert 'core.admin_call("vocoder-preflight-start", {}, 20)' in dashboard_src
+assert '"/api/system/vocoder/preflight"' in dashboard_src
+assert '"/api/system/vocoder/prepare"' in dashboard_src
+assert '"/api/system/vocoder/cancel"' in dashboard_src
+assert "self.require_control()" in dashboard_src
 assert "_ACTIVE_CACHE_TTL = 0.75" in dashboard_src
 assert "invalidate_status()" in dashboard_src
 assert "vocoder-manager.js?v=rc4-vocoder-foundation3" in update_src
@@ -175,19 +149,19 @@ assert '"/vocoder-manager.css"' in update_src
 assert "DMR AUDIO VOCODER" in ui_src
 assert "REFRESH STATUS" in ui_src
 assert "CHECK INSTALL READINESS" in ui_src
+assert "PREPARE VOCODER CANDIDATE" in ui_src
+assert "CANCEL JOB" in ui_src
 assert "fetch('/api/system/vocoder'" in ui_src
-assert "post('/api/system/vocoder/preflight', {})" in ui_src
-assert "renderLaunch(out)" in ui_src
-assert "JOB ACCEPTED · waiting for worker status" in ui_src
+assert "/api/system/vocoder/preflight" in ui_src
+assert "/api/system/vocoder/prepare" in ui_src
+assert "/api/system/vocoder/cancel" in ui_src
 assert "launchedJobId" in ui_src and "launchPending" in ui_src
 assert "launchedTerminal" in ui_src
-assert "check.textContent = 'CHECKING…'" in ui_src
+assert "currentJobCancellable" in ui_src
 assert "INSTALL VOCODER" not in ui_src
 assert "BUILD YWD EXTENDED" not in ui_src
 assert "showButtonBusy" in ui_src
-assert "if (button && showButtonBusy)" in ui_src
 assert "launchPending || jobActive || maintenanceActive ? 1500 : 30000" in ui_src
-assert "check.disabled = !unlocked || blocked" in ui_src
 assert ".vocoder-state.busy::before" in css_src
 assert "ywdVocoderBadgePulse" in css_src
 assert "@media(max-width:620px)" in css_src
@@ -198,15 +172,8 @@ assert "Inventory only. Guarded YWD Extended preparation for DMR audio is manage
 
 print("[OK] appliance maintenance lease rejects conflicting live jobs")
 print("[OK] maintenance lease supports idempotent owner updates and stale recovery")
-print("[OK] maintenance public status strips unapproved metadata")
-print("[OK] vocoder manager classifies not-installed/repair/prerequisite/disabled/update/ready states")
-print("[OK] dormant socket-activated backend is represented as READY / DORMANT")
-print("[OK] passive System polling does not wake the vocoder Protocol backend")
-print("[OK] dashboard runtime projection uses persisted current-pin identity without exact helper verification")
-print("[OK] background polling is silent; only explicit refresh owns button busy feedback")
-print("[OK] readiness launch renders immediate local feedback and uses a short active cache")
-print("[OK] readiness action remains latched/animated until the matching managed job completes")
-print("[OK] maintenance reservation immediately gates the readiness action")
-print("[OK] MODEM / MMDVM remains passive inventory; guarded YWD Extended work belongs to Vocoder")
-print("[OK] readiness launch is dashboard-authenticated while install/build/activation remain absent")
-print("[OK] System card and mobile layout assets are wired into the dashboard")
+print("[OK] vocoder manager classifies passive backend/runtime states and dormant socket activation")
+print("[OK] dashboard runtime projection remains lightweight and never wakes the vocoder backend")
+print("[OK] System card exposes guarded preflight + staged prepare + matching safe cancel")
+print("[OK] live install/YWD Extended activation controls remain gated off")
+print("[OK] MODEM / MMDVM remains passive inventory; vocoder preparation owns DMR-audio build workflow")

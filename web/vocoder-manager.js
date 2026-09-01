@@ -13,6 +13,7 @@
   let currentJobCancellable = false;
   let pollTimer = null;
   let visibilityObserver = null;
+  let controlObserver = null;
 
   const stateTone = state => {
     const s = String(state || '').toUpperCase();
@@ -277,6 +278,18 @@
     document.addEventListener('visibilitychange', activateWhenVisible);
   }
 
+  function installControlHook() {
+    if (controlObserver) return;
+    const targets = [el('loginBtn'), el('logoutBtn'), el('controlState')].filter(Boolean);
+    if (!targets.length) return;
+    controlObserver = new MutationObserver(() => syncActionState());
+    targets.forEach(node => controlObserver.observe(node, {
+      attributes: true,
+      attributeFilter: ['hidden'],
+      childList: true,
+    }));
+  }
+
   async function startAction(button, endpoint, operation, busyText) {
     if (!button || button.dataset.ywdVocoderBusy === '1' || launchPending || jobActive || maintenanceActive) return;
     button.dataset.ywdVocoderBusy = '1';
@@ -331,6 +344,7 @@
     const grid = host?.parentElement;
     if (!page || !host || !grid) return false;
     if (el('vocoderManagerCard')) {
+      installControlHook();
       installVisibilityHook(page);
       activateWhenVisible();
       return true;
@@ -356,9 +370,9 @@
       </div>
       <div class="notice vocoder-foundation-note" id="vocoderFoundationNote">Status foundation is loading…</div>
       <div class="buttonrow wrap vocoder-actions">
-        <button class="btn ctl" id="vocoderPreflight" type="button">CHECK INSTALL READINESS</button>
-        <button class="btn primary ctl" id="vocoderPrepare" type="button">PREPARE VOCODER CANDIDATE</button>
-        <button class="btn ctl" id="vocoderCancel" type="button" hidden disabled>CANCEL JOB</button>
+        <button class="btn" id="vocoderPreflight" type="button">CHECK INSTALL READINESS</button>
+        <button class="btn primary" id="vocoderPrepare" type="button">PREPARE VOCODER CANDIDATE</button>
+        <button class="btn" id="vocoderCancel" type="button" hidden disabled>CANCEL JOB</button>
         <button class="btn vocoder-refresh" id="vocoderRefresh" type="button">REFRESH STATUS</button>
         <span class="hint" id="vocoderCollected">—</span>
       </div>
@@ -369,7 +383,7 @@
     el('vocoderPreflight').onclick = event => startAction(event.currentTarget, '/api/system/vocoder/preflight', 'preflight', 'STARTING CHECK…');
     el('vocoderPrepare').onclick = event => startAction(event.currentTarget, '/api/system/vocoder/prepare', 'prepare', 'STARTING PREPARE…');
     el('vocoderCancel').onclick = event => cancelJob(event.currentTarget);
-    if (typeof setCtl === 'function') setCtl();
+    installControlHook();
     syncActionState();
     installVisibilityHook(page);
     activateWhenVisible();

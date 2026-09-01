@@ -1,0 +1,32 @@
+[Unit]
+Description=YWD-Hotspot transactional vocoder activation
+After=local-fs.target
+
+[Service]
+Type=exec
+User=root
+Group=root
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_activation_runner.py activate
+SuccessExitStatus=0 3
+Nice=5
+CPUWeight=100
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+ReadWritePaths=/usr/local/libexec /etc/systemd/system /var/lib/ywd-hotspot /var/backups/ywd-hotspot /run
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Runtime-only worker. Started only by the guarded vocoder admin helper.

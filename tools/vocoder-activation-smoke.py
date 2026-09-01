@@ -29,7 +29,6 @@ def blob_sha(path: Path) -> str:
     return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 
 
-# Never let vocoder work re-enter the dashboard startup experiment again.
 assert blob_sha(ROOT / "web/app.js") == "6934acc74f4489cdfe2536407de50e73516ed521"
 
 # Prepared status validates confinement, identity, SHA and self-test metadata.
@@ -81,8 +80,6 @@ backend_service = text("lib/vocoder_units/ywd-vocoder-mbelib.service")
 backend_socket = text("lib/vocoder_units/ywd-vocoder-mbelib.socket")
 backend_policy = text("lib/vocoder_units/20-ywd-hotspot-normal-priority.conf")
 
-# Root transaction worker has narrow authority and two independent exclusion
-# mechanisms: persistent YWD maintenance + the updater's existing flock.
 assert 'UPDATE_LOCK = Path("/run/ywd-hotspot-update.lock")' in runner
 assert 'fcntl.LOCK_EX | fcntl.LOCK_NB' in runner
 assert 'maintenance_coordinator.adopt(' in runner
@@ -102,8 +99,6 @@ assert 'activation copy SHA-256 mismatch' in runner
 assert '_atomic_install(Path(candidate["binary"]), LIVE_BINARY, 0o755, str(candidate["binary_sha256"]))' in runner
 assert '"sudo", "-u", "ywd-hotspot"' not in runner
 
-# Activation may touch only dedicated vocoder units/files. RF/network services
-# are named in operator messages but never passed to systemctl.
 for forbidden in (
     '["systemctl", "stop", "ywd-mmdvmhost.service"',
     '["systemctl", "restart", "ywd-mmdvmhost.service"',
@@ -116,11 +111,13 @@ assert '["systemctl", "stop", SERVICE_UNIT]' in runner
 assert '["systemctl", "stop", SOCKET_UNIT]' in runner
 assert 'vocoder_client.py' in runner and 'decode-test' in runner
 
-# Recovery is armed before activation launch, with protected write sandboxes.
+# Boot recovery is enabled before launch, and an unexpected activation-service
+# failure triggers the same journal recovery immediately in the current boot.
 assert admin.index('systemctl", "enable", RECOVERY_SERVICE') < admin.index('reserve_launch(job_id, "vocoder-activate"')
 assert 'BACKUP_ROOT.mkdir(parents=True, exist_ok=True)' in admin
 assert 'User=root' in activate_unit and 'ProtectSystem=strict' in activate_unit
 assert 'SuccessExitStatus=0 3' in activate_unit
+assert 'OnFailure=ywd-vocoder-recovery.service' in activate_unit
 assert 'ConditionPathExists=/var/lib/ywd-hotspot/private/vocoder-activation-journal.json' in recovery_unit
 assert 'Before=ywd-dashboard.service' in recovery_unit and 'ProtectSystem=strict' in recovery_unit
 
@@ -134,8 +131,6 @@ assert 'ListenStream=/run/ywd-vocoder.sock' in backend_socket
 assert 'SocketMode=0660' in backend_socket and 'WantedBy=sockets.target' in backend_socket
 assert 'Nice=0' in backend_policy and 'CPUWeight=200' in backend_policy
 
-# Dashboard authority is fixed/no-options and controls remain independent from
-# generic .ctl refreshes while a transaction is active.
 assert '"/api/system/vocoder/activate": ("vocoder-activate-start", False)' in dash
 assert 'vocoder-activate-start)' in dispatch
 assert '/usr/local/libexec/ywd-hotspot-admin vocoder-activate-start' in sudoers
@@ -147,8 +142,7 @@ assert '<button class="btn" id="vocoderPrepare"' in ui
 assert '<button class="btn primary" id="vocoderActivate"' in ui
 assert 'class="btn ctl" id="vocoder' not in ui
 
-# Live plugin mutations use the same persistent maintenance lease; uploads and
-# reviews remain staging/read-only relative to live capability state.
+# Live plugin mutations share the persistent maintenance lease.
 assert 'MAINTENANCE_ACTIONS' in plugin
 assert 'maintenance_coordinator.claim(' in plugin
 assert '"plugin-package-install"' in plugin and '"plugin-package-uninstall"' in plugin
@@ -159,6 +153,7 @@ print("[OK] prepared candidate projection rejects stale/tampered candidate conte
 print("[OK] activation is serialized against updater/channel and live plugin mutations")
 print("[OK] staged code never executes as root and atomic live copy is no-follow/SHA-verified")
 print("[OK] protected backup, power-loss journal, live verification and automatic rollback are wired")
+print("[OK] activation crash triggers same-boot recovery and boot recovery remains armed")
 print("[OK] activation cannot restart MMDVMHost/DMRGateway or install packages")
 print("[OK] managed backend unit templates are install-on-activation, not normal update payload")
 print("[OK] dashboard activation is unlocked/fixed-action only and job controls own their busy state")

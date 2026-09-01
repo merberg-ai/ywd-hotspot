@@ -46,31 +46,31 @@ _RELEASE_UI_BOOTSTRAP = b"""
   window.__YWD_RELEASE_UI_READY = false;
   window.__YWD_RELEASE_UI_PROGRESS = {loaded:0,total:sources.length,failed:0,current:null};
 
-  const loadReleaseUi = src => new Promise(resolve => {
-    window.__YWD_RELEASE_UI_PROGRESS.current = src;
+  const finish = (src, ok) => {
+    const progress = window.__YWD_RELEASE_UI_PROGRESS;
+    progress.loaded += 1;
+    if (!ok) progress.failed += 1;
+    if (progress.loaded >= progress.total) {
+      progress.current = null;
+      window.__YWD_RELEASE_UI_READY = progress.failed === 0;
+      window.dispatchEvent(new CustomEvent('ywd:release-ui-ready'));
+    }
+  };
+
+  // Preserve the accepted RC4 behavior: request all release-only UI assets
+  // immediately. Tracking completion must not serialize network startup on a
+  // Pi Zero; the base dashboard already has its own dependency-ordered chain.
+  sources.forEach(src => {
     const script = document.createElement('script');
     script.src = src;
     script.async = false;
-    script.onload = () => {
-      window.__YWD_RELEASE_UI_PROGRESS.loaded += 1;
-      resolve(true);
-    };
+    script.onload = () => finish(src, true);
     script.onerror = () => {
       console.error(`YWD-Hotspot failed to load ${src}`);
-      window.__YWD_RELEASE_UI_PROGRESS.loaded += 1;
-      window.__YWD_RELEASE_UI_PROGRESS.failed += 1;
-      resolve(false);
+      finish(src, false);
     };
     document.head.appendChild(script);
   });
-
-  (async () => {
-    let ok = true;
-    for (const src of sources) ok = (await loadReleaseUi(src)) && ok;
-    window.__YWD_RELEASE_UI_PROGRESS.current = null;
-    window.__YWD_RELEASE_UI_READY = ok && window.__YWD_RELEASE_UI_PROGRESS.failed === 0;
-    window.dispatchEvent(new CustomEvent('ywd:release-ui-ready'));
-  })();
 })();
 """
 

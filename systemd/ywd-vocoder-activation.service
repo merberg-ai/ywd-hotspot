@@ -1,6 +1,7 @@
 [Unit]
 Description=YWD-Hotspot transactional vocoder activation
 After=local-fs.target
+OnFailure=ywd-vocoder-recovery.service
 
 [Service]
 Type=exec

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Offline regression for the guarded vocoder readiness operation.
+"""Offline/source-only regression for the guarded vocoder readiness job.
 
-Synthetic facts are injected, so this performs no network access, package
-operation, source checkout, compilation, service restart, or RF mutation.
+The smoke injects synthetic preflight facts, so it performs no network access,
+package operation, source checkout, compiler invocation, service restart, live
+activation, or RF mutation.
 """
 from __future__ import annotations
 
@@ -52,10 +53,14 @@ needs_extended = runner.evaluate_preflight(facts(runtime_ready=False, runtime_va
 assert needs_extended["ready"] is True
 assert any("YWD Extended" in row for row in needs_extended["warnings"])
 assert needs_extended["required_free_bytes"] == runner.EXTENDED_AND_VOCODER_MIN_FREE
-assert runner.evaluate_preflight(facts(free_bytes=100 * 1024 * 1024))["ready"] is False
-assert runner.evaluate_preflight(facts(apt_busy=["dpkg"]))["ready"] is False
-assert runner.evaluate_preflight(facts(thermal_c=82.0))["ready"] is False
-assert runner.evaluate_preflight(facts(source_reachable=False))["ready"] is False
+low_disk = runner.evaluate_preflight(facts(free_bytes=100 * 1024 * 1024))
+assert low_disk["ready"] is False and any("disk" in row for row in low_disk["hard_failures"])
+apt_busy = runner.evaluate_preflight(facts(apt_busy=["dpkg"]))
+assert apt_busy["ready"] is False and any("package manager" in row for row in apt_busy["temporary_blockers"])
+hot = runner.evaluate_preflight(facts(thermal_c=82.0))
+assert hot["ready"] is False and any("temperature" in row for row in hot["temporary_blockers"])
+source_down = runner.evaluate_preflight(facts(source_reachable=False))
+assert source_down["ready"] is False and any("source" in row for row in source_down["hard_failures"])
 
 with tempfile.TemporaryDirectory(prefix="ywd-vocoder-job-smoke-") as td:
     root = Path(td)
@@ -76,20 +81,22 @@ with tempfile.TemporaryDirectory(prefix="ywd-vocoder-job-smoke-") as td:
         mc.BOOT_ID = root / "boot-id"
         mc.BOOT_ID.write_text("boot-vocoder-job-smoke\n", encoding="utf-8")
 
-        build.prepare_candidate = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("preflight invoked builder"))
-
         reserved = mc.reserve_launch("vocoder-reserved", "vocoder-preflight", "ywd-vocoder-job.service")
-        assert reserved["active"] is True and reserved["phase"] == "launching"
+        assert reserved["active"] is True and reserved["phase"] == "launching" and reserved["owner_pid"] == 1
         try:
             mc.claim("competing-job", "channel-switch", "preparing", owner_pid=os.getpid())
         except mc.MaintenanceBusy:
             pass
         else:
             raise AssertionError("launch reservation must reject competing maintenance")
-        adopted = mc.claim("vocoder-reserved", "vocoder-preflight", "checking", owner_pid=os.getpid(), service="ywd-vocoder-job.service")
-        assert adopted["owner_pid"] == os.getpid()
+        adopted = mc.claim(
+            "vocoder-reserved", "vocoder-preflight", "checking",
+            owner_pid=os.getpid(), service="ywd-vocoder-job.service",
+        )
+        assert adopted["owner_pid"] == os.getpid() and adopted["phase"] == "checking"
         mc.release("vocoder-reserved", owner_pid=os.getpid())
 
+        build.prepare_candidate = lambda *a, **k: (_ for _ in ()).throw(AssertionError("preflight must not build"))
         runner.collect_facts = lambda: facts()
         job = {"job_id": "vocoder-smoke-pass", "job_type": "vocoder-preflight", "operation": "preflight", "started_at": 1}
         assert runner.run_preflight(job) == 0
@@ -97,7 +104,6 @@ with tempfile.TemporaryDirectory(prefix="ywd-vocoder-job-smoke-") as td:
         assert state["state"] == "COMPLETE" and state["progress"] == 100
         assert not mc.LEASE.exists()
         report = runner.JOBS_DIR / job["job_id"] / "preflight.json"
-        assert report.is_file()
         report_doc = json.loads(report.read_text(encoding="utf-8"))
         assert report_doc["result"]["ready"] is True
         assert report_doc["facts"]["runtime_verification"] == "exact-installed-runtime"
@@ -136,12 +142,13 @@ assert "User=ywd-hotspot" in unit_src and "User=root" not in unit_src
 assert "NoNewPrivileges=true" in unit_src and "ProtectSystem=strict" in unit_src
 assert "ReadWritePaths=/var/lib/ywd-hotspot" in unit_src and "SuccessExitStatus=0 2 3" in unit_src
 assert "CHECK INSTALL READINESS" in ui_src and "/api/system/vocoder/preflight" in ui_src
-assert "launchPending || jobActive || maintenanceActive ? 1500 : 30000" in ui_src
+assert "launchPending || jobActive || maintenanceActive ? 1200 : 30000" in ui_src
 assert "launchedTerminal" in ui_src
+assert "ACTIVATE PREPARED CANDIDATE" in ui_src  # activation is separate from this read-only preflight worker
 
 print("[OK] readiness evaluation distinguishes hard failures, temporary blockers, and YWD Extended prerequisite")
 print("[OK] launch reservation blocks competing maintenance before worker adoption")
 print("[OK] persistent preflight completes/failed-safes with lease release and bounded transcript")
 print("[OK] preflight owns exact-runtime verification but cannot invoke the staged builder")
-print("[OK] readiness API remains dashboard-authenticated with no browser build options")
-print("[OK] background worker remains unprivileged, low-priority, and filesystem-confined")
+print("[OK] readiness worker remains unprivileged/read-only even after vocoder-only activation is enabled")
+print("[OK] readiness API remains dashboard-authenticated and background job polling stays bounded")

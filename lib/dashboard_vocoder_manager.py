@@ -29,13 +29,32 @@ def _cache_ttl(doc: dict | None) -> float:
     return _ACTIVE_CACHE_TTL if job.get("active") or maintenance.get("active") else _IDLE_CACHE_TTL
 
 
+def _apply_managed_integrity(doc: dict) -> dict:
+    if not isinstance(doc, dict) or not bool(doc.get("managed")):
+        return doc
+    backend = doc.get("backend") if isinstance(doc.get("backend"), dict) else {}
+    installed = doc.get("installed_provenance") if isinstance(doc.get("installed_provenance"), dict) else {}
+    actual = str(backend.get("binary_sha256") or "").lower()
+    expected = str(installed.get("binary_sha256") or "").lower()
+    if expected and actual != expected:
+        doc["state"] = {
+            "state": "REPAIR_REQUIRED",
+            "reason": "The managed vocoder binary no longer matches its recorded installed SHA-256.",
+            "recommended_action": "REPAIR / REINSTALL",
+        }
+        doc["integrity"] = {"ok": False, "reason": "managed-binary-sha-mismatch"}
+    else:
+        doc["integrity"] = {"ok": bool(expected and actual == expected), "reason": "managed-binary-sha-match" if expected else "managed-sha-unrecorded"}
+    return doc
+
+
 def cached_status(force: bool = False) -> dict:
     now = time.monotonic()
     with _CACHE_LOCK:
         cached = _CACHE["doc"]
         if not force and cached is not None and now - float(_CACHE["at"] or 0) < _cache_ttl(cached):
             return cached
-        doc = vocoder_manager.status()
+        doc = _apply_managed_integrity(vocoder_manager.status())
         doc["prepared"] = vocoder_prepared.status()
         _CACHE.update(at=now, doc=doc)
         return doc

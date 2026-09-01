@@ -11,7 +11,7 @@ UMask=0027
 Environment=PYTHONDONTWRITEBYTECODE=1
 WorkingDirectory=/var/lib/ywd-hotspot
 ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_job_runner.py
-SuccessExitStatus=0 3
+SuccessExitStatus=0 2 3
 Nice=10
 CPUWeight=50
 IOSchedulingClass=idle

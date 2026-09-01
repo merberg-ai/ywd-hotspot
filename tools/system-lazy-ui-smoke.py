@@ -2,32 +2,45 @@
 """Source-only regression for Pi Zero dashboard startup/System lazy loading.
 
 This smoke performs no HTTP requests, service actions, RF operations, or writes.
-It prevents System-only MMDVM/vocoder inventory from creeping back into the
-initial Status-page load, prevents fixed-deadline extension mount races, and
-keeps the startup splash visible until the assembled dashboard is actually
-ready.
+It protects the proven dependency-ordered dashboard loader while keeping the
+new MMDVM/vocoder inventory lazy. In particular, it forbids the RC4 preload /
+legacy-bundle experiments that caused dashboard startup regressions on Pi Zero.
 """
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+app = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 vocoder = (ROOT / "web" / "vocoder-manager.js").read_text(encoding="utf-8")
 modem = (ROOT / "web" / "modem-ui.js").read_text(encoding="utf-8")
-readiness = (ROOT / "web" / "startup-readiness.js").read_text(encoding="utf-8")
 update = (ROOT / "lib" / "dashboard_update.py").read_text(encoding="utf-8")
 core = (ROOT / "lib" / "dashboard_core.py").read_text(encoding="utf-8")
 css = (ROOT / "web" / "vocoder-manager.css").read_text(encoding="utf-8")
 
-# The authoritative System transformation creates hostPowerCard late in the
-# legacy UI bundle. Extensions must wait for that final anchor with no arbitrary
-# 12-second deadline.
-assert "hostPowerCard" in vocoder
-assert "hostPowerCard" in modem
-assert "tries >=" not in vocoder
-assert "tries >=" not in modem
-assert "setInterval" in vocoder and "setInterval" in modem
+# Restore and preserve the proven dashboard dependency chain. The browser must
+# not be forced through the RC4 preload experiment or a generated legacy bundle.
+assert "load('/app-core.js'" in app
+assert "load('/instrumentation.js?v=alpha12.1'" in app
+assert "load('/system-ui.js?v=dashboard1'" in app
+assert "load('/ssh-key-export.js?v=rc1-system2'" in app
+assert "legacy-ui-bundle" not in update
+assert "_LEGACY_UI_COMPONENTS" not in update
+assert "_patch_app_js" not in update
+assert "readiness_js +" not in update
+assert "link.rel = 'preload'" not in update
 
-# Neither System-only inventory path should run merely because the Status page
-# is starting. Their first automatic read belongs behind System visibility.
+# Release-only modules are still explicit first-party assets. Their loader is
+# tracked so a future splash refinement can observe completion without changing
+# the proven base loader itself.
+assert "window.__YWD_RELEASE_UI_READY = false" in update
+assert "window.__YWD_RELEASE_UI_PROGRESS" in update
+assert "window.__YWD_RELEASE_UI_READY = ok" in update
+assert "/update-branch.js?v=rc3-wire1" in update
+assert "/modem-ui.js?v=rc3-wire1" in update
+assert "/vocoder-manager.js?v=rc4-vocoder-foundation3" in update
+assert "/tgif-control.js?v=rc4-tgif1" in update
+
+# System-only inventory must remain lazy. Adding the vocoder manager must not
+# make initial Status-page startup perform MMDVM/vocoder verification work.
 assert "function systemVisible()" in vocoder
 assert "function activateWhenVisible()" in vocoder
 assert "if (!systemVisible()" in vocoder
@@ -37,82 +50,25 @@ assert "function activateWhenVisible()" in modem
 assert "if (systemVisible() && !loadedOnce) load(false);" in modem
 assert "Inventory loads when the System page is opened." in modem
 
-# Pi Zero startup must use one classic-script bundle rather than seventeen
-# serial/preload requests. The exact proven dependency order is explicit, and
-# the plugin package update overlay remains adjacent to its upload UI.
-assert "startup-readiness.js" in update
-assert "readiness_js + b\"\\n;\\n\" + app_js" in update
-assert "_LEGACY_UI_COMPONENTS" in update
-assert '"app-core.js"' in update
-assert '"instrumentation.js"' in update
-assert '"plugin-package-upload.js"' in update
-assert '"plugin-package-update.js"' in update
-assert '"system-ui.js"' in update
-assert '"ssh-key-export.js"' in update
-assert "_legacy_ui_bundle" in update
-assert "/legacy-ui-bundle.js?v=rc4-legacy-bundle1" in update
-assert 'path == "/legacy-ui-bundle.js"' in update
-assert "load('/legacy-ui-bundle.js?v=rc4-legacy-bundle1', applyAlpha21Polish)" in update
-assert "link.rel = 'preload'" not in readiness
-assert "LEGACY_MODULES" not in readiness
-assert "Loading dashboard interface bundle" in readiness
-
-# Release UI modules have their own tracked loader. A failed release module is
-# never reported as ready.
-assert "window.__YWD_RELEASE_UI_READY = false" in update
-assert "window.__YWD_RELEASE_UI_READY = ok" in update
-assert "window.__YWD_RELEASE_UI_PROGRESS" in update
-assert "failed:0" in update and ".failed += 1" in update
-
-# The hero/banner is a late cosmetic transform. If present its image must load,
-# but absence alone cannot deadlock the appliance UI. A short settle window
-# gives normal final transforms time to land before the splash leaves.
-assert "systemExtensionsMounted" in readiness
-assert "structuralReady" in readiness
-assert "SETTLE_MS = 500" in readiness
-assert "hero.complete && hero.naturalWidth > 0" in readiness
-assert "Finalizing dashboard interface" in readiness
-assert "hostPowerCard" in readiness
-assert "__YWD_RELEASE_UI_READY" in readiness
-assert "__YWD_RELEASE_UI_PROGRESS" in readiness
-assert "RC4 interface module load failed" in readiness
-assert "Element.prototype.remove" in readiness
-assert "45000" in readiness and "CONTINUE" in readiness
-assert "fullyReady()" in readiness
-assert "document.createElement('style')" not in readiness
-assert 'document.createElement("style")' not in readiness
-assert "#ywdStartupOverlay.ywd-startup-held" in css
-
-# The browser server is threaded and static release assets are explicitly
-# revalidated, while the composed legacy bundle is deliberately no-store.
-assert "ThreadingHTTPServer" in core
-assert 'cache="no-cache"' in core
-assert 'cache="no-store"' in update
-
-# Vocoder status polling remains scoped to a visible System page. Once a
-# readiness job is accepted, a client-side job-id latch keeps the action
-# disabled until the matching terminal state is observed from the server.
+# Vocoder readiness jobs retain the accepted full-job busy latch and visible
+# checking animation; this is independent of dashboard startup.
 assert "if (systemVisible()) await loadStatus();" in vocoder
 assert "launchPending || jobActive || maintenanceActive ? 1500 : 30000" in vocoder
 assert "launchedJobId" in vocoder and "launchPending" in vocoder
 assert "launchedTerminal" in vocoder
 assert "check.textContent = 'CHECKING…'" in vocoder
 assert "renderLaunch(out);" in vocoder
-
-# Busy job state must be visible even when the console is not being watched.
 assert ".vocoder-state.busy::before" in css
 assert "ywdVocoderBadgePulse" in css
 assert "prefers-reduced-motion:reduce" in css
 
-print("[OK] System extensions wait for the completed System layout without a fixed mount deadline")
-print("[OK] MMDVM and vocoder inventory are lazy and do not burden initial Status-page startup")
-print("[OK] legacy dashboard UI is served as one dependency-ordered classic-script bundle")
-print("[OK] plugin upload/update composition is preserved inside the legacy UI bundle")
-print("[OK] startup splash waits for functional dashboard structure and release/System modules")
-print("[OK] failed release UI modules keep the splash covered instead of reporting false readiness")
-print("[OK] late hero artwork is allowed to settle but cannot deadlock dashboard startup")
-print("[OK] slow startup offers manual CONTINUE instead of auto-exposing a partial dashboard")
-print("[OK] startup readiness styling remains CSP-safe")
-print("[OK] vocoder readiness action stays disabled until its matching job reaches a terminal state")
-print("[OK] vocoder CHECKING state has motion plus reduced-motion fallback")
-print("[OK] dashboard bundle/static serving remains compatible with threaded HTTP")
+# The dashboard server remains threaded and first-party static JS is revalidated.
+assert "ThreadingHTTPServer" in core
+assert 'cache="no-cache"' in core
+
+print("[OK] proven dependency-ordered dashboard loader is restored")
+print("[OK] preload and generated legacy-bundle startup experiments are absent")
+print("[OK] release-only RC4 modules retain tracked first-party loading")
+print("[OK] MMDVM and vocoder inventory remain lazy off the initial Status page")
+print("[OK] vocoder readiness action keeps full-job busy feedback")
+print("[OK] dashboard serving remains threaded with revalidated first-party assets")

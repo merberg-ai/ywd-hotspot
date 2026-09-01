@@ -29,7 +29,7 @@ case "${1:-}" in
   ssh-client-key-create)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/ssh_client_key_admin.py "$@"
     ;;
-  vocoder-preflight-start)
+  vocoder-preflight-start|vocoder-prepare-start|vocoder-job-cancel)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_job_admin.py "$@"
     ;;
   diagnostics)

@@ -2,13 +2,15 @@
 """Source-only regression for transactional vocoder activation.
 
 No live service, backend binary, updater lock, RF runtime, package manager, or
-system configuration is changed by this smoke.
+system configuration is changed by this smoke. Snapshot/rollback is exercised
+only inside a temporary directory with systemd calls stubbed out.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import platform
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -17,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "lib"
 sys.path.insert(0, str(LIB))
 
+import vocoder_activation_runner as activation
 import vocoder_prepared as prepared
 
 
@@ -67,6 +70,63 @@ with tempfile.TemporaryDirectory(prefix="ywd-vocoder-prepared-smoke-") as td:
     finally:
         prepared.STATE_DIR, prepared.PREPARED, prepared.CANDIDATE_ROOT = old
 
+# Exercise the real protected snapshot/rollback filesystem functions in a temp
+# tree. This proves old files are restored byte-for-byte and files introduced by
+# the failed activation are removed. No real systemd command is executed.
+with tempfile.TemporaryDirectory(prefix="ywd-vocoder-rollback-smoke-") as td:
+    root = Path(td)
+    live = root / "usr/local/libexec/ywd-vocoder-mbelib"
+    service = root / "etc/systemd/system/ywd-vocoder-mbelib.service"
+    socket = root / "etc/systemd/system/ywd-vocoder-mbelib.socket"
+    dropin = root / "etc/systemd/system/ywd-vocoder-mbelib.service.d/20-ywd-hotspot-normal-priority.conf"
+    provenance = root / "var/lib/ywd-hotspot/vocoder/installed.json"
+    backup_root = root / "var/backups/ywd-hotspot/vocoder"
+    for path in (live, service, socket, dropin):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    live.write_bytes(b"old-live-binary\n")
+    service.write_text("old-service\n", encoding="utf-8")
+    socket.write_text("old-socket\n", encoding="utf-8")
+    dropin.write_text("old-policy\n", encoding="utf-8")
+    old_bytes = {p: p.read_bytes() for p in (live, service, socket, dropin)}
+
+    saved = (
+        activation.LIVE_BINARY, activation.SERVICE_PATH, activation.SOCKET_PATH,
+        activation.DROPIN_PATH, activation.PROVENANCE, activation.BACKUP_ROOT,
+        activation._unit_state, activation._run, activation._must,
+        activation._restore_unit_policy,
+    )
+    try:
+        activation.LIVE_BINARY = live
+        activation.SERVICE_PATH = service
+        activation.SOCKET_PATH = socket
+        activation.DROPIN_PATH = dropin
+        activation.PROVENANCE = provenance
+        activation.BACKUP_ROOT = backup_root
+        activation._unit_state = lambda unit: {"active": "active" if "socket" in unit else "inactive", "enabled": "enabled" if "socket" in unit else "disabled"}
+        activation._run = lambda args, timeout=30: subprocess.CompletedProcess(args, 0, "")
+        activation._must = lambda args, timeout=30: ""
+        activation._restore_unit_policy = lambda manifest: None
+
+        snap = activation._snapshot({"job_id": "rollback-smoke"})
+        live.write_bytes(b"new-live-binary\n")
+        service.write_text("new-service\n", encoding="utf-8")
+        socket.write_text("new-socket\n", encoding="utf-8")
+        dropin.write_text("new-policy\n", encoding="utf-8")
+        provenance.parent.mkdir(parents=True, exist_ok=True)
+        provenance.write_text("new-provenance\n", encoding="utf-8")
+
+        activation._rollback({"backup": snap})
+        for path, wanted in old_bytes.items():
+            assert path.read_bytes() == wanted, f"rollback did not restore {path}"
+        assert not provenance.exists(), "rollback must remove provenance that did not exist before activation"
+    finally:
+        (
+            activation.LIVE_BINARY, activation.SERVICE_PATH, activation.SOCKET_PATH,
+            activation.DROPIN_PATH, activation.PROVENANCE, activation.BACKUP_ROOT,
+            activation._unit_state, activation._run, activation._must,
+            activation._restore_unit_policy,
+        ) = saved
+
 runner = text("lib/vocoder_activation_runner.py")
 admin = text("lib/vocoder_activation_admin.py")
 dash = text("lib/dashboard_vocoder_manager.py")
@@ -90,8 +150,6 @@ assert '_snapshot(job)' in runner and '_rollback(journal)' in runner
 assert 'state="ROLLING_BACK"' in runner and 'state="FAILED_SAFE"' in runner
 assert 'boot-recovered' in runner
 
-# Staged artifacts are never executed as root and copy-to-live is no-follow +
-# SHA checked before atomic replacement.
 assert 'def _run_ywd(' in runner
 assert '_must_ywd([candidate["binary"], "--self-test"]' in runner
 assert 'getattr(os, "O_NOFOLLOW", 0)' in runner
@@ -111,8 +169,6 @@ assert '["systemctl", "stop", SERVICE_UNIT]' in runner
 assert '["systemctl", "stop", SOCKET_UNIT]' in runner
 assert 'vocoder_client.py' in runner and 'decode-test' in runner
 
-# Boot recovery is enabled before launch, and an unexpected activation-service
-# failure triggers the same journal recovery immediately in the current boot.
 assert admin.index('systemctl", "enable", RECOVERY_SERVICE') < admin.index('reserve_launch(job_id, "vocoder-activate"')
 assert 'BACKUP_ROOT.mkdir(parents=True, exist_ok=True)' in admin
 assert 'User=root' in activate_unit and 'ProtectSystem=strict' in activate_unit
@@ -121,8 +177,6 @@ assert 'OnFailure=ywd-vocoder-recovery.service' in activate_unit
 assert 'ConditionPathExists=/var/lib/ywd-hotspot/private/vocoder-activation-journal.json' in recovery_unit
 assert 'Before=ywd-dashboard.service' in recovery_unit and 'ProtectSystem=strict' in recovery_unit
 
-# Live unit templates are install-on-activation only, not normal systemd payload
-# files that UPDATE-core would automatically replace.
 assert not (ROOT / "systemd" / "ywd-vocoder-mbelib.service").exists()
 assert not (ROOT / "systemd" / "ywd-vocoder-mbelib.socket").exists()
 assert 'ExecStart=/usr/local/libexec/ywd-vocoder-mbelib' in backend_service
@@ -132,6 +186,7 @@ assert 'SocketMode=0660' in backend_socket and 'WantedBy=sockets.target' in back
 assert 'Nice=0' in backend_policy and 'CPUWeight=200' in backend_policy
 
 assert '"/api/system/vocoder/activate": ("vocoder-activate-start", False)' in dash
+assert '_apply_managed_integrity' in dash and 'managed-binary-sha-mismatch' in dash
 assert 'vocoder-activate-start)' in dispatch
 assert '/usr/local/libexec/ywd-hotspot-admin vocoder-activate-start' in sudoers
 assert 'id="vocoderActivate"' in ui and '/api/system/vocoder/activate' in ui
@@ -142,7 +197,6 @@ assert '<button class="btn" id="vocoderPrepare"' in ui
 assert '<button class="btn primary" id="vocoderActivate"' in ui
 assert 'class="btn ctl" id="vocoder' not in ui
 
-# Live plugin mutations share the persistent maintenance lease.
 assert 'MAINTENANCE_ACTIONS' in plugin
 assert 'maintenance_coordinator.claim(' in plugin
 assert '"plugin-package-install"' in plugin and '"plugin-package-uninstall"' in plugin
@@ -150,10 +204,12 @@ assert '"plugin-runtime"' in plugin and '"plugin-config-save"' in plugin
 
 print("[OK] known-good Pi Zero dashboard startup file remains frozen")
 print("[OK] prepared candidate projection rejects stale/tampered candidate content")
+print("[OK] real protected snapshot/rollback functions restore old files in a synthetic transaction")
 print("[OK] activation is serialized against updater/channel and live plugin mutations")
 print("[OK] staged code never executes as root and atomic live copy is no-follow/SHA-verified")
 print("[OK] protected backup, power-loss journal, live verification and automatic rollback are wired")
 print("[OK] activation crash triggers same-boot recovery and boot recovery remains armed")
 print("[OK] activation cannot restart MMDVMHost/DMRGateway or install packages")
 print("[OK] managed backend unit templates are install-on-activation, not normal update payload")
+print("[OK] managed binary integrity drift is surfaced as repair-required")
 print("[OK] dashboard activation is unlocked/fixed-action only and job controls own their busy state")

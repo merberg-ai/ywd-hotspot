@@ -32,6 +32,9 @@ case "${1:-}" in
   vocoder-preflight-start|vocoder-prepare-start|vocoder-job-cancel)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_job_admin.py "$@"
     ;;
+  vocoder-activate-start)
+    exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_activation_admin.py "$@"
+    ;;
   diagnostics)
     exec /usr/bin/python3 /opt/ywd-hotspot/app/lib/diagnostics_policy.py "$@"
     ;;

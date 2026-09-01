@@ -1,0 +1,30 @@
+[Unit]
+Description=YWD-Hotspot managed mbelib vocoder backend
+Documentation=https://github.com/merberg-ai/ywd-hotspot
+After=ywd-vocoder-mbelib.socket
+
+[Service]
+Type=simple
+User=ywd-hotspot
+Group=ywd-hotspot
+UMask=0007
+ExecStart=/usr/local/libexec/ywd-vocoder-mbelib
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX
+Nice=0
+CPUWeight=200
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Socket activated; do not enable this service directly.

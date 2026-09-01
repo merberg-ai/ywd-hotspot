@@ -11,6 +11,7 @@ APP_LIB = Path("/opt/ywd-hotspot/app/lib")
 if str(APP_LIB) not in sys.path:
     sys.path.insert(0, str(APP_LIB))
 
+import maintenance_coordinator
 import plugin_catalog_overlay
 plugin_catalog_overlay.install()
 
@@ -31,6 +32,32 @@ FEATURE_RECONCILE_ACTIONS = frozenset({
     "plugin-package-apply",
     "plugin-package-remove",
 })
+
+# Live/service/data mutations serialize with appliance maintenance so a future
+# vocoder activation cannot race plugin replacement or runtime reconciliation.
+MAINTENANCE_ACTIONS = frozenset({
+    *FEATURE_RECONCILE_ACTIONS,
+    "plugin-config-save",
+    "plugin-runtime",
+    "plugin-data-remove",
+})
+
+
+def _claim(action: str) -> str | None:
+    if action not in MAINTENANCE_ACTIONS:
+        return None
+    lease = maintenance_coordinator.inspect()
+    if lease.get("stale"):
+        maintenance_coordinator.recover_stale()
+        lease = maintenance_coordinator.inspect()
+    if lease.get("active"):
+        raise RuntimeError(f"appliance maintenance is busy: {lease.get('job_type') or 'maintenance'}")
+    job_id = f"plugin-{os.getpid()}-{action}"
+    maintenance_coordinator.claim(
+        job_id, "plugin-mutation", "plugin-mutation",
+        cancellable=False, owner_pid=os.getpid(), service="plugin-admin",
+    )
+    return job_id
 
 
 def main():
@@ -57,15 +84,26 @@ def main():
     handler = handlers.get(action)
     if handler is None:
         raise ValueError("unsupported plugin admin action")
-    result = handler(data)
-    if action in FEATURE_RECONCILE_ACTIONS:
-        result["feature_runtime"] = plugin_feature_runtime.reconcile()
-    print(json.dumps(result, separators=(",", ":")))
+
+    lease_job = _claim(action)
+    try:
+        result = handler(data)
+        if action in FEATURE_RECONCILE_ACTIONS:
+            result["feature_runtime"] = plugin_feature_runtime.reconcile()
+        return result
+    finally:
+        if lease_job:
+            try:
+                maintenance_coordinator.release(lease_job, outcome="complete", owner_pid=os.getpid())
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
     try:
-        main()
+        result = main()
+        if result is not None:
+            print(json.dumps(result, separators=(",", ":")))
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)[:800]}, separators=(",", ":")))
         raise SystemExit(1)

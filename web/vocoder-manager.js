@@ -7,6 +7,10 @@
   let maintenanceActive = false;
   let launchPending = false;
   let launchedJobId = null;
+  let launchedOperation = null;
+  let currentJobId = null;
+  let currentJobType = null;
+  let currentJobCancellable = false;
   let pollTimer = null;
   let visibilityObserver = null;
 
@@ -63,8 +67,7 @@
     const test = doc?.last_self_test;
     if (!test || typeof test !== 'object') return 'NOT RECORDED';
     const ok = test.ok === true ? 'PASS' : test.ok === false ? 'FAIL' : 'UNKNOWN';
-    const when = stamp(test.completed_at || test.time || test.at);
-    return `${ok} · ${when}`;
+    return `${ok} · ${stamp(test.completed_at || test.time || test.at)}`;
   }
 
   function maintenanceText(doc) {
@@ -76,28 +79,44 @@
 
   function syncActionState() {
     const check = el('vocoderPreflight');
-    if (!check) return;
+    const prepare = el('vocoderPrepare');
+    const cancel = el('vocoderCancel');
+    if (!check || !prepare || !cancel) return;
     const unlocked = typeof state !== 'undefined' && !!state?.controls?.authenticated;
-    const localBusy = check.dataset.ywdVocoderBusy === '1';
+    const localBusy = [check, prepare].some(button => button.dataset.ywdVocoderBusy === '1');
     const vocoderBusy = launchPending || jobActive;
     const blocked = maintenanceActive || vocoderBusy || localBusy;
     check.disabled = !unlocked || blocked;
+    prepare.disabled = !unlocked || blocked;
 
     if (vocoderBusy && !localBusy) {
-      check.classList.add('ywd-working');
-      check.setAttribute('aria-busy', 'true');
-      check.textContent = 'CHECKING…';
+      check.classList.toggle('ywd-working', launchedOperation === 'preflight' || currentJobType === 'vocoder-preflight');
+      prepare.classList.toggle('ywd-working', launchedOperation === 'prepare' || currentJobType === 'vocoder-prepare');
+      check.textContent = launchedOperation === 'preflight' || currentJobType === 'vocoder-preflight' ? 'CHECKING…' : 'CHECK INSTALL READINESS';
+      prepare.textContent = launchedOperation === 'prepare' || currentJobType === 'vocoder-prepare' ? 'PREPARING…' : 'PREPARE VOCODER CANDIDATE';
     } else if (!localBusy) {
       check.classList.remove('ywd-working');
-      check.removeAttribute('aria-busy');
+      prepare.classList.remove('ywd-working');
       check.textContent = 'CHECK INSTALL READINESS';
+      prepare.textContent = 'PREPARE VOCODER CANDIDATE';
     }
 
-    check.title = !unlocked
-      ? 'Unlock the dashboard to run the install-readiness check.'
-      : maintenanceActive || vocoderBusy
-        ? 'Appliance maintenance is already in progress.'
-        : 'Check install/build prerequisites without changing the live RF runtime.';
+    [check, prepare].forEach(button => {
+      if (button.classList.contains('ywd-working')) button.setAttribute('aria-busy', 'true');
+      else button.removeAttribute('aria-busy');
+    });
+
+    check.title = !unlocked ? 'Unlock the dashboard to run the readiness check.'
+      : blocked ? 'Appliance maintenance is already in progress.'
+      : 'Check install/build prerequisites without changing the live RF runtime.';
+    prepare.title = !unlocked ? 'Unlock the dashboard to prepare a vocoder candidate.'
+      : blocked ? 'Appliance maintenance is already in progress.'
+      : 'Fetch the approved mbelib pin, build and self-test a staged candidate. The live backend and RF runtime are not changed.';
+
+    const canCancel = unlocked && jobActive && currentJobCancellable && !!currentJobId;
+    cancel.disabled = !canCancel;
+    cancel.hidden = !(jobActive || launchPending);
+    cancel.title = canCancel ? 'Safely cancel the current download/build/staging job.' : 'Cancellation is unavailable in the current phase.';
   }
 
   function renderConsole(job) {
@@ -106,32 +125,42 @@
     const rows = Array.isArray(job?.log_tail) ? job.log_tail : [];
     if (rows.length) {
       pre.textContent = rows.join('\n');
+      pre.scrollTop = pre.scrollHeight;
       return;
     }
     if (job?.active) {
       pre.textContent = `${String(job.phase || 'working').toUpperCase()}${Number.isFinite(Number(job.progress)) ? ` · ${Number(job.progress)}%` : ''}\n${job.message || 'Managed vocoder job is running.'}`;
       return;
     }
-    pre.textContent = 'No managed vocoder job transcript yet.\nUse CHECK INSTALL READINESS to exercise the guarded background job path without changing RF/runtime state.';
+    pre.textContent = 'No managed vocoder job transcript yet.\nCHECK INSTALL READINESS is read-only. PREPARE VOCODER CANDIDATE builds and self-tests only under YWD state/cache; it does not install or activate anything.';
   }
 
   function renderLaunch(out) {
     launchedJobId = String(out?.job_id || '');
+    launchedOperation = String(out?.operation || 'preflight');
     launchPending = true;
     jobActive = true;
     maintenanceActive = true;
+    currentJobId = launchedJobId;
+    currentJobType = launchedOperation === 'prepare' ? 'vocoder-prepare' : 'vocoder-preflight';
+    currentJobCancellable = false;
+    const preparing = launchedOperation === 'prepare';
     const badge = el('vocoderState');
     if (badge) {
       badge.textContent = 'CHECKING';
       badge.className = 'vocoder-state busy';
     }
-    text('vocoderSummary', 'Install-readiness job accepted. Exact runtime and appliance checks are running in the background.');
-    text('vocoderMaintenance', 'VOCODER-PREFLIGHT · LAUNCHING');
+    text('vocoderSummary', preparing
+      ? 'Candidate preparation accepted. Exact preflight, pinned-source fetch, build and staged self-test will run in the background without touching the live backend.'
+      : 'Install-readiness job accepted. Exact runtime and appliance checks are running in the background.');
+    text('vocoderMaintenance', `${preparing ? 'VOCODER-PREPARE' : 'VOCODER-PREFLIGHT'} · LAUNCHING`);
     text('vocoderCollected', 'JOB ACCEPTED · waiting for worker status');
     const pre = el('vocoderConsoleLog');
     if (pre) {
       const id = launchedJobId || 'managed job';
-      pre.textContent = `[JOB] ${id}\n[>>] Readiness check accepted by YWD-Hotspot\n[>>] Starting background worker…\n[>>] Exact runtime verification may take a little while on a Pi Zero.`;
+      pre.textContent = preparing
+        ? `[JOB] ${id}\n[>>] Staged candidate preparation accepted\n[>>] Starting unprivileged background worker…\n[>>] Live MMDVMHost, DMRGateway, vocoder socket and installed backend remain untouched.`
+        : `[JOB] ${id}\n[>>] Readiness check accepted by YWD-Hotspot\n[>>] Starting background worker…\n[>>] Exact runtime verification may take a little while on a Pi Zero.`;
     }
     el('vocoderConsoleDetails')?.setAttribute('open', '');
     syncActionState();
@@ -147,6 +176,9 @@
     const maintenance = doc?.maintenance || {};
     const serverJobActive = !!job.active;
     maintenanceActive = !!maintenance.active;
+    currentJobId = serverJobActive ? String(job.job_id || '') : null;
+    currentJobType = serverJobActive ? String(job.job_type || '') : null;
+    currentJobCancellable = serverJobActive && job.cancellable === true;
 
     const jobState = String(job.state || '').toUpperCase();
     const sameLaunchedJob = !!launchedJobId && String(job.job_id || '') === launchedJobId;
@@ -154,6 +186,7 @@
     if (launchedTerminal) {
       launchPending = false;
       launchedJobId = null;
+      launchedOperation = null;
     }
     jobActive = launchPending ? true : serverJobActive;
     if (launchPending) maintenanceActive = true;
@@ -177,9 +210,7 @@
     text('vocoderMaintenance', maintenanceText(doc));
     text('vocoderCollected', `STATUS ${stamp(doc?.collected_at)}`);
     const foundation = el('vocoderFoundationNote');
-    if (foundation) {
-      foundation.textContent = 'Background job foundation is active. CHECK INSTALL READINESS performs guarded preflight only; package install, source build, and live runtime activation remain disabled in this slice.';
-    }
+    if (foundation) foundation.textContent = 'Staged preparation is enabled. It may download the approved mbelib pin and compile in the background, but package installation, live backend activation, YWD Extended replacement, and socket changes remain disabled in this gate.';
     renderConsole(job);
     if (jobActive || maintenanceActive) el('vocoderConsoleDetails')?.setAttribute('open', '');
     syncActionState();
@@ -246,27 +277,50 @@
     document.addEventListener('visibilitychange', activateWhenVisible);
   }
 
-  async function startPreflight(button) {
+  async function startAction(button, endpoint, operation, busyText) {
     if (!button || button.dataset.ywdVocoderBusy === '1' || launchPending || jobActive || maintenanceActive) return;
     button.dataset.ywdVocoderBusy = '1';
     const old = button.textContent;
     button.disabled = true;
     button.classList.add('ywd-working');
     button.setAttribute('aria-busy', 'true');
-    button.textContent = 'STARTING CHECK…';
+    button.textContent = busyText;
     try {
-      const out = await post('/api/system/vocoder/preflight', {});
-      renderLaunch(out);
-      if (typeof toast === 'function') toast(out?.message || 'Vocoder readiness check started');
+      const out = await post(endpoint, {});
+      renderLaunch({...out, operation});
+      if (typeof toast === 'function') toast(out?.message || 'Vocoder background job started');
       schedulePoll(250);
       setTimeout(() => loadStatus(), 200);
     } catch (err) {
-      if (typeof toast === 'function') toast(`Vocoder readiness check failed to start: ${err?.message || err}`, true);
+      if (typeof toast === 'function') toast(`Vocoder job failed to start: ${err?.message || err}`, true);
     } finally {
       delete button.dataset.ywdVocoderBusy;
       button.classList.remove('ywd-working');
       button.removeAttribute('aria-busy');
       button.textContent = old;
+      syncActionState();
+    }
+  }
+
+  async function cancelJob(button) {
+    if (!button || button.dataset.ywdVocoderBusy === '1' || !currentJobId || !currentJobCancellable) return;
+    button.dataset.ywdVocoderBusy = '1';
+    button.disabled = true;
+    button.classList.add('ywd-working');
+    button.setAttribute('aria-busy', 'true');
+    button.textContent = 'CANCELING…';
+    try {
+      const out = await post('/api/system/vocoder/cancel', {job_id: currentJobId});
+      currentJobCancellable = false;
+      if (typeof toast === 'function') toast(out?.message || 'Safe cancellation requested');
+      schedulePoll(250);
+    } catch (err) {
+      if (typeof toast === 'function') toast(`Could not cancel vocoder job: ${err?.message || err}`, true);
+    } finally {
+      delete button.dataset.ywdVocoderBusy;
+      button.classList.remove('ywd-working');
+      button.removeAttribute('aria-busy');
+      button.textContent = 'CANCEL JOB';
       syncActionState();
     }
   }
@@ -302,7 +356,9 @@
       </div>
       <div class="notice vocoder-foundation-note" id="vocoderFoundationNote">Status foundation is loading…</div>
       <div class="buttonrow wrap vocoder-actions">
-        <button class="btn primary ctl" id="vocoderPreflight" type="button">CHECK INSTALL READINESS</button>
+        <button class="btn ctl" id="vocoderPreflight" type="button">CHECK INSTALL READINESS</button>
+        <button class="btn primary ctl" id="vocoderPrepare" type="button">PREPARE VOCODER CANDIDATE</button>
+        <button class="btn ctl" id="vocoderCancel" type="button" hidden disabled>CANCEL JOB</button>
         <button class="btn vocoder-refresh" id="vocoderRefresh" type="button">REFRESH STATUS</button>
         <span class="hint" id="vocoderCollected">—</span>
       </div>
@@ -310,7 +366,9 @@
     `;
     grid.insertBefore(card, host);
     el('vocoderRefresh').onclick = () => loadStatus({showError:true, showButtonBusy:true});
-    el('vocoderPreflight').onclick = event => startPreflight(event.currentTarget);
+    el('vocoderPreflight').onclick = event => startAction(event.currentTarget, '/api/system/vocoder/preflight', 'preflight', 'STARTING CHECK…');
+    el('vocoderPrepare').onclick = event => startAction(event.currentTarget, '/api/system/vocoder/prepare', 'prepare', 'STARTING PREPARE…');
+    el('vocoderCancel').onclick = event => cancelJob(event.currentTarget);
     if (typeof setCtl === 'function') setCtl();
     syncActionState();
     installVisibilityHook(page);
@@ -319,9 +377,6 @@
   }
 
   function init() {
-    // system-ui.js is loaded late in the legacy serial module chain. Do not race
-    // it with a fixed timeout: wait until its authoritative Host Power card
-    // exists, then mount immediately before that card.
     const timer = setInterval(() => {
       if (ensureCard()) clearInterval(timer);
     }, 250);

@@ -13,6 +13,7 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_activation_runner.py recover
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true

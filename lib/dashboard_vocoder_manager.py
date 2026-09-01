@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dashboard bridge for RC4 DMR Audio Vocoder status/readiness jobs."""
+"""Dashboard bridge for RC4 DMR Audio Vocoder status/background jobs."""
 from __future__ import annotations
 
 import threading
@@ -53,17 +53,28 @@ def wrap_handler(base):
 
         def do_POST(self):
             path = urlparse(self.path).path
-            if path != "/api/system/vocoder/preflight":
+            actions = {
+                "/api/system/vocoder/preflight": ("vocoder-preflight-start", False),
+                "/api/system/vocoder/prepare": ("vocoder-prepare-start", False),
+                "/api/system/vocoder/cancel": ("vocoder-job-cancel", True),
+            }
+            if path not in actions:
                 super().do_POST()
                 return
             if not self.require_control():
                 return
             try:
                 body = self.body_json()
-                if body:
-                    raise ValueError("vocoder readiness check accepts no options")
-                out = core.admin_call("vocoder-preflight-start", {}, 20)
-                # Never let an idle cached snapshot hide the launch reservation.
+                action, wants_job_id = actions[path]
+                if wants_job_id:
+                    if not isinstance(body, dict) or set(body) != {"job_id"} or not str(body.get("job_id") or "").strip():
+                        raise ValueError("vocoder cancellation requires only job_id")
+                    payload = {"job_id": str(body["job_id"])[:96]}
+                else:
+                    if body:
+                        raise ValueError("vocoder background action accepts no options")
+                    payload = {}
+                out = core.admin_call(action, payload, 20)
                 invalidate_status()
                 self.send_json(out)
             except ValueError as exc:

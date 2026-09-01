@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import dashboard_core as core
 import vocoder_manager
+import vocoder_prepared
 
 _CACHE_LOCK = threading.Lock()
 _CACHE = {"at": 0.0, "doc": None}
@@ -35,6 +36,7 @@ def cached_status(force: bool = False) -> dict:
         if not force and cached is not None and now - float(_CACHE["at"] or 0) < _cache_ttl(cached):
             return cached
         doc = vocoder_manager.status()
+        doc["prepared"] = vocoder_prepared.status()
         _CACHE.update(at=now, doc=doc)
         return doc
 
@@ -56,6 +58,7 @@ def wrap_handler(base):
             actions = {
                 "/api/system/vocoder/preflight": ("vocoder-preflight-start", False),
                 "/api/system/vocoder/prepare": ("vocoder-prepare-start", False),
+                "/api/system/vocoder/activate": ("vocoder-activate-start", False),
                 "/api/system/vocoder/cancel": ("vocoder-job-cancel", True),
             }
             if path not in actions:

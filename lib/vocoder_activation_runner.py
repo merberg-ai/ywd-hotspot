@@ -13,7 +13,9 @@ import hashlib
 import json
 import os
 import platform
+import pwd
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -156,6 +158,14 @@ def write_state(job: dict, *, state: str, phase: str, progress: int, message: st
     _atomic_json(JOB_STATE, doc)
 
 
+def _base_env() -> dict:
+    return {
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "LANG": "C",
+        "HOME": "/var/lib/ywd-hotspot",
+    }
+
+
 def _run(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
@@ -165,7 +175,30 @@ def _run(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
             stderr=subprocess.STDOUT,
             timeout=timeout,
             check=False,
-            env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C"},
+            env=_base_env(),
+        )
+    except Exception as exc:
+        return subprocess.CompletedProcess(args, 127, str(exc))
+
+
+def _run_ywd(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    try:
+        user = pwd.getpwnam("ywd-hotspot")
+
+        def demote() -> None:
+            os.setgroups([])
+            os.setgid(user.pw_gid)
+            os.setuid(user.pw_uid)
+
+        return subprocess.run(
+            args,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            check=False,
+            env=_base_env(),
+            preexec_fn=demote,
         )
     except Exception as exc:
         return subprocess.CompletedProcess(args, 127, str(exc))
@@ -175,6 +208,13 @@ def _must(args: list[str], timeout: int = 30) -> str:
     p = _run(args, timeout=timeout)
     if p.returncode != 0:
         raise RuntimeError((p.stdout or "command failed").strip()[-1200:])
+    return (p.stdout or "").strip()
+
+
+def _must_ywd(args: list[str], timeout: int = 30) -> str:
+    p = _run_ywd(args, timeout=timeout)
+    if p.returncode != 0:
+        raise RuntimeError((p.stdout or "unprivileged verification failed").strip()[-1200:])
     return (p.stdout or "").strip()
 
 
@@ -286,12 +326,27 @@ def _snapshot(job: dict) -> dict:
     return manifest
 
 
-def _atomic_install(src: Path, dst: Path, mode: int) -> None:
-    if not src.is_file():
-        raise RuntimeError(f"required activation source is missing: {src}")
+def _atomic_install(src: Path, dst: Path, mode: int, expected_sha: str | None = None) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + ".ywd-new")
-    shutil.copyfile(src, tmp)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(src, flags)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise RuntimeError(f"required activation source is not a regular file: {src}")
+        with os.fdopen(fd, "rb", closefd=False) as source, tmp.open("wb") as target:
+            shutil.copyfileobj(source, target, 128 * 1024)
+            target.flush()
+            os.fsync(target.fileno())
+    finally:
+        os.close(fd)
+    if expected_sha and _sha256(tmp) != expected_sha:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+        raise RuntimeError(f"activation copy SHA-256 mismatch for {src}")
     os.chmod(tmp, mode)
     os.chown(tmp, 0, 0)
     os.replace(tmp, dst)
@@ -317,6 +372,10 @@ def _restore_file(entry: dict) -> None:
         except FileNotFoundError:
             pass
         os.symlink(str(entry["symlink"]), path)
+        try:
+            os.lchown(path, int(entry.get("uid") or 0), int(entry.get("gid") or 0))
+        except Exception:
+            pass
         return
     backup = Path(str(entry.get("backup") or ""))
     if not backup.is_file():
@@ -371,9 +430,11 @@ def _finish_journal(journal: dict, outcome: str) -> None:
     journal["outcome"] = outcome
     journal["completed_at"] = _now()
     backup = journal.get("backup") if isinstance(journal.get("backup"), dict) else {}
-    backup_dir = Path(str(backup.get("backup_dir") or ""))
-    if backup_dir.is_dir():
-        _atomic_json(backup_dir / "transaction.json", journal, mode=0o600, gid=0)
+    backup_dir_text = str(backup.get("backup_dir") or "")
+    if backup_dir_text:
+        backup_dir = Path(backup_dir_text)
+        if backup_dir.is_dir():
+            _atomic_json(backup_dir / "transaction.json", journal, mode=0o600, gid=0)
     try:
         JOURNAL.unlink()
     except FileNotFoundError:
@@ -401,26 +462,27 @@ def _verify_live(candidate: dict) -> dict:
     policy = vocoder_manager._effective_policy()
     if not policy.get("ok"):
         raise RuntimeError(f"managed vocoder scheduling policy verification failed: {policy}")
-    status = _must([
-        "sudo", "-u", "ywd-hotspot", "--", "python3", str(APP / "lib" / "vocoder_client.py"), "status"
-    ], 25)
-    decode = _must([
-        "sudo", "-u", "ywd-hotspot", "--", "python3", str(APP / "lib" / "vocoder_client.py"), "decode-test", "--frames", "10"
-    ], 25)
+    status_text = _must_ywd(["python3", str(APP / "lib" / "vocoder_client.py"), "status"], 25)
+    decode_text = _must_ywd(["python3", str(APP / "lib" / "vocoder_client.py"), "decode-test", "--frames", "10"], 25)
     try:
-        status_doc = json.loads(status)
-        decode_doc = json.loads(decode)
+        status_doc = json.loads(status_text)
+        decode_doc = json.loads(decode_text)
     except Exception as exc:
         raise RuntimeError("live Protocol verification did not return valid JSON") from exc
     if status_doc.get("available") is not True or int(status_doc.get("protocol") or 0) != vocoder_manager.PROTOCOL_VERSION:
         raise RuntimeError("live vocoder STATUS verification failed")
     if int(decode_doc.get("pcm_bytes") or 0) != 3200 or int(decode_doc.get("protocol") or 0) != vocoder_manager.PROTOCOL_VERSION:
         raise RuntimeError("live 10-frame decode verification failed")
-    return {"status": status_doc, "decode": {k: decode_doc.get(k) for k in ("protocol", "codec", "sample_rate", "samples_per_frame", "channels", "frames", "pcm_bytes", "pcm_sha256") if k in decode_doc}}
+    return {
+        "status": status_doc,
+        "decode": {k: decode_doc.get(k) for k in (
+            "protocol", "codec", "sample_rate", "samples_per_frame", "channels", "frames", "pcm_bytes", "pcm_sha256"
+        ) if k in decode_doc},
+    }
 
 
 def _install_managed(candidate: dict) -> None:
-    _atomic_install(Path(candidate["binary"]), LIVE_BINARY, 0o755)
+    _atomic_install(Path(candidate["binary"]), LIVE_BINARY, 0o755, str(candidate["binary_sha256"]))
     _atomic_install(TEMPLATE_SERVICE, SERVICE_PATH, 0o644)
     _atomic_install(TEMPLATE_SOCKET, SOCKET_PATH, 0o644)
     _atomic_install(TEMPLATE_DROPIN, DROPIN_PATH, 0o644)
@@ -468,16 +530,6 @@ def _read_request() -> dict:
     return doc
 
 
-def _recover_existing_journal() -> None:
-    journal = _read_json(JOURNAL)
-    if not journal:
-        return
-    log("Found an incomplete prior vocoder activation journal; restoring its protected snapshot first")
-    _rollback(journal)
-    _finish_journal(journal, "recovered-before-new-activation")
-    log("Previous incomplete vocoder activation was rolled back successfully")
-
-
 def activate() -> int:
     if os.geteuid() != 0:
         raise SystemExit("vocoder activation runner must run as root")
@@ -486,7 +538,7 @@ def activate() -> int:
     job_id = str(job["job_id"])
     lease_claimed = False
     update_fd = -1
-    journal = {}
+    journal: dict = {}
     mutated = False
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     JOB_LOG.write_text("", encoding="utf-8")
@@ -507,15 +559,16 @@ def activate() -> int:
         write_state(job, state="ACTIVATING", phase="backing-up", progress=8,
                     message="Validating prepared candidate and protected rollback state")
 
-        _recover_existing_journal()
+        if JOURNAL.exists():
+            raise RuntimeError("an incomplete prior activation journal exists; recovery must complete before activation")
         candidate = _prepared_candidate()
         log(f"Prepared candidate verified: {candidate['binary_sha256']}")
         runtime = vocoder_manager.verified_runtime()
         if not runtime.get("ready"):
             raise RuntimeError("current exact YWD Extended runtime verification failed; refusing vocoder activation")
         log("Exact YWD Extended prerequisite verified")
-        direct_test = _must([candidate["binary"], "--self-test"], 20)
-        log("Prepared candidate self-test re-check PASS: " + direct_test[:240])
+        direct_test = _must_ywd([candidate["binary"], "--self-test"], 20)
+        log("Prepared candidate unprivileged self-test re-check PASS: " + direct_test[:240])
 
         manifest = _snapshot(job)
         backup_dir = str(manifest["backup_dir"])
@@ -581,13 +634,12 @@ def activate() -> int:
             except Exception as rollback_exc:
                 rollback_error = f"{error}; rollback failed: {rollback_exc}"[:1000]
                 log("CRITICAL rollback failure: " + str(rollback_exc)[:800])
-                if journal:
-                    journal["phase"] = "rollback-failed"
-                    journal["rollback_error"] = str(rollback_exc)[:1000]
-                    try:
-                        _write_journal(journal)
-                    except Exception:
-                        pass
+                journal["phase"] = "rollback-failed"
+                journal["rollback_error"] = str(rollback_exc)[:1000]
+                try:
+                    _write_journal(journal)
+                except Exception:
+                    pass
                 write_state(job, state="ERROR", phase="rollback-failed", progress=100,
                             message="Vocoder activation and rollback failed; recovery journal retained",
                             error=rollback_error, completed=True)
@@ -605,8 +657,8 @@ def activate() -> int:
             os.close(update_fd)
         if lease_claimed:
             try:
-                state = _read_json(JOB_STATE)
-                outcome = "complete" if state.get("state") == "COMPLETE" else "failed-safe" if state.get("state") == "FAILED_SAFE" else "error"
+                state_doc = _read_json(JOB_STATE)
+                outcome = "complete" if state_doc.get("state") == "COMPLETE" else "failed-safe" if state_doc.get("state") == "FAILED_SAFE" else "error"
                 maintenance_coordinator.release(job_id, outcome=outcome, owner_pid=os.getpid())
             except Exception:
                 pass
@@ -627,7 +679,10 @@ def recover() -> int:
             maintenance_coordinator.recover_stale()
         elif lease.get("active"):
             raise RuntimeError("live appliance maintenance is active; vocoder recovery will retry later")
-        maintenance_coordinator.claim(job_id, "vocoder-recovery", "rolling-back", cancellable=False, owner_pid=os.getpid(), service="ywd-vocoder-recovery.service")
+        maintenance_coordinator.claim(
+            job_id, "vocoder-recovery", "rolling-back", cancellable=False,
+            owner_pid=os.getpid(), service="ywd-vocoder-recovery.service",
+        )
         lease_claimed = True
         update_fd = _acquire_update_lock()
         _rollback(journal)

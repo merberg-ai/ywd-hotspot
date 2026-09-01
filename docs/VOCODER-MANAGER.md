@@ -4,98 +4,171 @@
 
 RC4 is moving DMR RX Monitor audio setup from a manual deployment-kit workflow to a normal YWD-Hotspot System-page manager. The manager is being enabled in controlled gates so a browser action cannot accidentally replace a working RF runtime.
 
+## Dashboard-startup boundary
+
+The vocoder manager is **not allowed to redesign or gate normal dashboard startup**. During this work a set of startup/splash experiments made the Pi Zero dashboard substantially slower and, in several iterations, prevented the final UI from assembling. Hardware A/B testing restored `web/app.js` byte-for-byte to the accepted pre-vocoder dashboard startup implementation.
+
+That recovered file is now pinned by the vocoder staging regression. Vocoder work stays inside the System extension and background-job paths. The current dashboard may still finish the hero artwork shortly after the splash closes; that known behavior is intentionally left alone for this RC4 work.
+
 ## What appears under System
 
-The dashboard has a `DMR AUDIO VOCODER` card. Passive status reads the appliance state without changing MMDVMHost, changing RF services, installing packages, or waking the socket-activated decoder.
+The dashboard has a `DMR AUDIO VOCODER` card. Passive status reads appliance state without changing MMDVMHost, changing RF services, installing packages, or waking the socket-activated decoder.
 
-It reports:
+It reports operator-facing backend/runtime state, decoder process mode, Protocol version, approved recipe/mbelib pin, socket activation, scheduling policy, YWD Extended readiness, maintenance state, and the latest bounded managed-job transcript.
 
-- operator-facing state such as `NOT INSTALLED`, `READY`, `DISABLED`, `UPDATE REQUIRED`, `REPAIR REQUIRED`, or `YWD EXTENDED REQUIRED`;
-- whether the decoder process is active or normally `DORMANT`;
-- YWD Vocoder Protocol version expected by this release;
-- the YWD-owned backend recipe version;
-- the approved pinned mbelib revision;
-- socket-unit enablement/runtime state;
-- effective `Nice` / `CPUWeight` scheduling policy;
-- YWD Extended runtime/capability readiness;
-- the last recorded managed self-test when one exists;
-- the appliance maintenance lease state;
-- the latest bounded managed-job transcript when one exists.
+A dormant decoder process is **normal**. The real backend is socket activated and demand driven. Normal System polling deliberately does not send Protocol `STATUS`, because doing so would wake the decoder just to prove that it can sleep.
 
-A dormant decoder process is **normal**. The real backend is socket activated and demand driven. The System card deliberately does not send a Protocol `STATUS` request during polling because doing so would wake the decoder just to prove that it can sleep.
+The separate `MODEM / MMDVM` card remains passive inventory. YWD Extended work required specifically for DMR audio belongs to this Vocoder workflow, not to a second MMDVM maintenance UI.
 
-The separate `MODEM / MMDVM` System card remains passive inventory. Earlier disabled placeholders for `BUILD / UPDATE YWD-EXTENDED` and HAT firmware maintenance were removed so there is not a second competing runtime-maintenance UI. YWD Extended preparation needed for DMR audio belongs to this Vocoder workflow.
+## Fast status vs exact background verification
 
-## Fast dashboard status vs exact background verification
+Exact MMDVM runtime verification can take tens of seconds on the reference Pi Zero, so it is never part of normal dashboard polling.
 
-The Pi Zero hardware gate exposed an important performance boundary: exact MMDVM runtime verification can take tens of seconds on the reference appliance. That work must not run on every WebUI status poll.
+Normal status uses the last verified persisted MMDVM runtime identity bound to the pins expected by the installed YWD release. Before a readiness/build decision, the guarded background worker performs the expensive **exact installed-runtime verification** using the canonical MMDVM helpers.
 
-Normal `DMR AUDIO VOCODER` polling therefore uses the **last verified persisted MMDVM runtime identity**, bound to the upstream commit and YWD patch SHA expected by the currently installed YWD release. This is enough to detect a stale runtime after a release changes its accepted pins without launching the expensive runtime helper chain.
+Idle System polling is slow/lightweight. During a managed job, polling speeds up so phase and console updates are visible without turning ordinary status refresh into a heavyweight operation.
 
-Before a later build/install decision is allowed, the guarded background worker performs the **exact installed-runtime verification** using the canonical MMDVM runtime helpers. That slower verification stays off the HTTP request path and is visible in the managed transcript.
+## CHECK INSTALL READINESS — hardware accepted
 
-After the WebUI accepts a readiness-job launch it immediately renders `CHECKING`, `VOCODER-PREFLIGHT · LAUNCHING`, opens the managed console, and explains that exact verification can take a little while on a Pi Zero. It does not wait for the first heavyweight check to finish before acknowledging the operator's click.
+`CHECK INSTALL READINESS` requires the normal dashboard unlock and starts a persistent systemd worker. The browser request returns immediately and the worker continues if the page is closed or reloaded.
 
-Idle WebUI polling is intentionally slow/lightweight. While a job or launch reservation is active, status cache/poll intervals shorten so phase/log changes become visible promptly without turning the refresh button into a permanent spinner.
-
-## Guarded install-readiness job
-
-The first real background operation is `CHECK INSTALL READINESS`.
-
-It requires the normal dashboard unlock and starts a persistent systemd worker. The browser request returns immediately; the worker continues if the browser is reloaded or closed. The managed console reconnects to the bounded transcript through the normal status API.
-
-This readiness job checks, without changing the live runtime:
+The readiness job checks without changing the live runtime:
 
 - supported CPU architecture;
-- free disk space, with additional headroom required when YWD Extended also needs to be prepared;
-- **exact installed** YWD Extended runtime/capability identity;
-- required base/package/build tools;
-- dpkg consistency;
-- whether another apt/dpkg process is already active;
+- free disk space;
+- exact installed YWD Extended runtime/capability identity;
+- required package/build tools;
+- dpkg consistency and active apt/dpkg work;
 - reachability of GitHub and the approved mbelib source;
-- current system temperature where Linux exposes it.
+- current CPU temperature where Linux exposes it.
 
-Missing compiler/build tools are reported as work the later managed installer will need to perform. A busy package manager or excessive temperature is treated as a temporary blocker rather than something YWD should force through.
+The real Pi Zero readiness job passed on 2026-08-31: `COMPLETE / 100%`, worker exit `0`, maintenance lease released, and zero failed systemd units. See `docs/checkpoints/rc4-vocoder-preflight-job-hardware-pass.md`.
 
-### Hardware acceptance
+The readiness operation itself still does **not** download source, compile, install packages, stop/restart RF, replace MMDVMHost, or modify the live vocoder backend.
 
-The first real Pi Zero readiness job passed on 2026-08-31. The worker completed `COMPLETE / 100%`, exited with status `0`, released the appliance maintenance lease, and left zero failed systemd units. The real appliance reported current YWD Extended ready, healthy disk space, all required build tools present, idle/clean package-manager state, reachable approved mbelib source, and a healthy CPU temperature.
+## PREPARE VOCODER CANDIDATE — implemented, hardware build gate pending
 
-That hardware pass accepts the persistent background-job and maintenance-lease mechanics only. See `docs/checkpoints/rc4-vocoder-preflight-job-hardware-pass.md` for the recorded evidence. The same test exposed the dashboard-responsiveness defect described above; the backend pass remains valid because the persistent job itself completed correctly.
+The next gated operation is `PREPARE VOCODER CANDIDATE`.
 
-### What the readiness worker is allowed to do
+This operation is deliberately **build-only**. It may perform real network and compiler work, but all output stays under YWD state/cache. It cannot install or activate the candidate.
 
-This gated worker may only:
+The preparation flow is:
 
-- claim/release the appliance maintenance lease;
-- read prerequisite/system state;
-- perform the canonical exact MMDVM runtime verification;
-- perform a read-only approved-source reachability check;
-- write its bounded job state/log and a preflight report under `/var/lib/ywd-hotspot/vocoder/`.
+```text
+exact preflight
+    ↓
+fetch approved mbelib commit
+    ↓
+verify exact source HEAD
+    ↓
+cmake Release configuration
+    ↓
+build libmbe.a with one job
+    ↓
+build YWD Protocol v1 adapter
+    ↓
+run staged 10-frame decode self-test
+    ↓
+write verified candidate cache/provenance
+    ↓
+COMPLETE
+```
+
+YWD-owned adapter source now ships in core as:
+
+```text
+lib/vocoder_mbelib_adapter.cpp
+```
+
+mbelib itself is **not bundled**. The worker fetches only the approved upstream repository and exact commit owned by the installed YWD recipe:
+
+```text
+https://github.com/szechyjs/mbelib.git
+9a04ed5c78176a9965f3d43f7aa1b1f5330e771f
+```
+
+The staged builder is `lib/vocoder_backend_build.py`. It uses a Release build, disables mbelib's test framework for this appliance build, builds the static library with one job for Pi Zero friendliness, then links the YWD adapter against that static library.
+
+The adapter implements YWD Vocoder Protocol v1 over AF_UNIX and provides STATUS, RESET, and AMBE49 DECODE. Its built-in `--self-test` exercises ten AMBE49 frames and must produce the expected 8 kHz mono s16le payload (`10 × 160 × 2 = 3200` PCM bytes) before the candidate can be published as prepared.
+
+### Staging/cache ownership
+
+Preparation writes only below:
+
+```text
+/var/lib/ywd-hotspot/vocoder/
+```
+
+Candidate/source caches are YWD-owned state. Cache identity includes the recipe, Protocol version, exact mbelib pin, YWD adapter SHA-256, architecture, compiler identity, and build flags. A cache hit is not trusted blindly: the candidate hash and self-test are checked again before reuse.
+
+Only two candidate-cache generations are retained and recent job directories are bounded. The managed console remains bounded to 64 KiB / 80 visible lines.
+
+### What PREPARE is allowed to change
+
+It may:
+
+- claim/update/release the appliance maintenance lease;
+- perform the same exact preflight as the readiness operation;
+- fetch the approved pinned mbelib source;
+- compile mbelib and the YWD adapter as the unprivileged `ywd-hotspot` user;
+- write build/source caches, staged files, provenance, and bounded job logs under `/var/lib/ywd-hotspot/vocoder/`;
+- self-test the staged candidate;
+- safely cancel during cancellable download/build/staging phases.
 
 It does **not**:
 
-- run `apt install`;
-- clone/download/build mbelib or MMDVMHost source;
-- invoke a compiler;
-- stop/restart MMDVMHost, DMRGateway, BrandMeister, TGIF, or the scanner;
-- replace MMDVMHost or the vocoder backend;
-- enable/disable the vocoder socket;
-- flash the physical MMDVM HAT.
+- run `apt install` or repair missing packages;
+- write `/usr/local/libexec/ywd-vocoder-mbelib`;
+- install/replace/enable/disable `ywd-vocoder-mbelib.service` or `.socket`;
+- stop/restart MMDVMHost or DMRGateway;
+- change BrandMeister, TGIF, or scanner session state;
+- replace/build/activate YWD Extended;
+- flash MMDVM HAT firmware.
 
-The worker runs as the unprivileged `ywd-hotspot` account with `NoNewPrivileges`, a read-only system filesystem, a narrow writable `/var/lib/ywd-hotspot` state area, low CPU priority, and idle-class I/O scheduling.
+If a compiler/source/self-test error occurs, the managed job reports `FAILED_SAFE`, releases the maintenance lease, and leaves the live backend/runtime untouched. Handled failed-safe/canceled job exits are accepted by the runtime-only worker unit so they do not become misleading failed systemd units.
 
-## Install/build actions are still gated
+## Safe cancellation
 
-`INSTALL VOCODER`, `BUILD YWD EXTENDED`, `TEST VOCODER`, update/repair, enable/disable, and uninstall controls are **not enabled yet**.
+The root helper exposes no arbitrary process controls. Cancellation accepts only the exact current managed `job_id`, verifies that the appliance lease belongs to a vocoder preflight/prepare job, verifies the current phase is marked cancellable, and then sends SIGTERM only to the main process of `ywd-vocoder-job.service`.
 
-They will be added only after source/build staging, narrow privileged activation, rollback/recovery journal, RF-idle activation, and RF/TGIF-scanner preservation paths pass their own gates.
+The browser cannot choose a PID, service name, signal, command, source URL, commit, package, compiler, path, or build flag.
 
-Until the managed installation slice is accepted, the manual external deployment-kit workflow documented in [VOCODER.md](VOCODER.md) remains the existing installation method for development systems that need it.
+The System card shows `CANCEL JOB` only while a matching job is active, and enables it only while cancellation is safe.
+
+## Worker security boundary
+
+The background worker runs as `ywd-hotspot`, not root, with:
+
+- `NoNewPrivileges=true`;
+- `ProtectSystem=strict`;
+- `ProtectHome=true`;
+- restricted namespaces/realtime access;
+- `ReadWritePaths=/var/lib/ywd-hotspot`;
+- `Nice=10`;
+- `CPUWeight=50`;
+- idle-class I/O scheduling.
+
+Root authority remains limited to the fixed launch/cancel helper actions and future narrow activation helpers. Compilation and source checkout do not run as root.
+
+## Live install/activation is still gated
+
+The following controls are still **not enabled**:
+
+- `INSTALL VOCODER` / activate prepared candidate;
+- package/dependency installation;
+- `BUILD YWD EXTENDED` / MMDVM replacement;
+- live vocoder update/repair;
+- enable/disable;
+- uninstall;
+- live Protocol/decode test through the installed socket.
+
+Those require the later privileged activation transaction, protected last-known-good rollback, crash/power-loss journal, RF-idle activation, and RF/TGIF-scanner preservation gates.
+
+Until live managed activation is accepted, the existing external/deployment-kit backend can remain installed and continue serving RX Monitor. Preparing a candidate does not overwrite or disturb it.
 
 ## YWD Extended prerequisite
 
-The manager uses the canonical MMDVM runtime identity instead of guessing from service state. Live RX audio requires the current verified `ywd-extended` runtime with all of these capabilities:
+Live RX audio requires current verified `ywd-extended` with:
 
 ```text
 passive-dmr-voice
@@ -103,30 +176,17 @@ plugin-rx-monitor
 demand-gated-dmr-voice
 ```
 
-If the current runtime does not satisfy that exact contract, the card reports `YWD EXTENDED REQUIRED`. The readiness job reports the prerequisite but does not rebuild or replace MMDVMHost.
+The current preparation gate verifies that runtime exactly. If it is not ready, the job records that YWD Extended work will be required, but this slice does not rebuild or replace MMDVMHost.
 
 ## Appliance-wide maintenance coordinator
 
-RC4 has a shared maintenance-lease primitive in `lib/maintenance_coordinator.py`.
+The shared lease in `lib/maintenance_coordinator.py` serializes managed vocoder jobs and records only bounded operational metadata: job/type/PID/service, boot identity, timestamps, phase, and cancellability. It stores no credentials, private keys, cookies, arbitrary shell commands, or browser-controlled environment data.
 
-The lease records only bounded operational metadata such as:
+A root launch reservation closes the browser-request/systemd-start race; the worker adopts the exact reserved job. Conflicting live maintenance is rejected, and stale previous-boot/dead-owner leases can be recovered safely.
 
-- job ID and type;
-- owning PID/service identity;
-- boot identity;
-- start/update timestamps;
-- phase;
-- whether cancellation is currently safe.
-
-It does not contain dashboard passwords, BrandMeister/TGIF credentials, SSH private keys, cookies, arbitrary environment variables, or shell commands.
-
-Claims are serialized with `flock`. The coordination lock is group-writable by the trusted YWD service group so the root launcher/recovery helper and the unprivileged worker serialize against the same inode. A root-side launch reservation is taken before systemd queues the worker, preventing two near-simultaneous browser requests from slipping through the launch gap. The worker atomically adopts that exact job ID. A live conflicting job is rejected. A failed launch reservation ages out rather than wedging maintenance indefinitely. A lease from a previous boot or a dead owner is reported as stale and may be recovered. Read-only status never steals or deletes a live lease.
-
-The vocoder manager is the first consumer. Normal updater/channel changes and plugin package mutations are **not yet migrated onto this coordinator**; that integration remains an anti-footgun gate before mutating vocoder install/build controls are enabled.
+The vocoder manager is currently the first consumer. Updater/channel and plugin-package mutations still need to be migrated onto the shared coordinator before live vocoder activation is enabled.
 
 ## Approved backend identity
-
-The manager describes the same selected backend baseline already used by the accepted RX Monitor work:
 
 ```text
 YWD Vocoder Protocol: 1
@@ -134,25 +194,25 @@ recipe:               mbelib-v1 / 1
 mbelib commit:         9a04ed5c78176a9965f3d43f7aa1b1f5330e771f
 socket unit:           ywd-vocoder-mbelib.socket
 service unit:          ywd-vocoder-mbelib.service
-binary:                /usr/local/libexec/ywd-vocoder-mbelib
+live binary:           /usr/local/libexec/ywd-vocoder-mbelib
 socket:                /run/ywd-vocoder.sock
 expected Nice:         0
 expected CPUWeight:    200
 ```
 
-YWD-Hotspot still does **not** bundle mbelib source or a prebuilt mbelib decoder in core or in a `.ywdplugin` package.
+YWD-Hotspot does not bundle mbelib source or a prebuilt mbelib decoder in core or a `.ywdplugin` package.
 
 ## State interpretation
 
-`READY` means the backend files/units and YWD scheduling policy look complete, socket activation is available, and the persisted current-pin YWD Extended prerequisite is satisfied for ordinary dashboard presentation. Before a mutating workflow is eventually allowed to depend on that state, the background worker performs exact installed-runtime verification again. The decoder service itself may say `inactive`; the card renders that as `DORMANT`, not as a failure.
+`READY` means the existing live backend files/units and YWD scheduling policy look complete, socket activation is available, and the persisted current-pin YWD Extended prerequisite is satisfied. The service itself may be inactive; the card intentionally renders that as `DORMANT`.
 
-A working external/deployment-kit installation that predates manager provenance can still report `READY`. It is labeled `LEGACY/EXTERNAL` until a later managed repair/reinstall transaction adopts it and writes deterministic install provenance.
+A working pre-manager deployment-kit backend can remain `READY · LEGACY/EXTERNAL`. Preparing a new candidate does not adopt or modify that installation. Managed provenance is written only by a future accepted activation transaction.
 
-`REPAIR REQUIRED` means required backend files/units or scheduling/socket health are incomplete. `DISABLED` means the backend is installed but socket activation is not enabled. `UPDATE REQUIRED` is reserved for a managed installation whose recorded recipe/protocol/mbelib identity no longer matches the approved identity owned by the installed YWD release.
+`REPAIR REQUIRED`, `DISABLED`, `UPDATE REQUIRED`, and `YWD EXTENDED REQUIRED` keep their existing meanings for the live backend/runtime.
 
 ## Regressions
 
-Focused source-only regressions:
+Source-only/offline regressions:
 
 ```bash
 sudo env PYTHONDONTWRITEBYTECODE=1 \
@@ -160,6 +220,9 @@ sudo env PYTHONDONTWRITEBYTECODE=1 \
 
 sudo env PYTHONDONTWRITEBYTECODE=1 \
   python3 /opt/ywd-hotspot/repo/tools/vocoder-job-preflight-smoke.py
+
+sudo env PYTHONDONTWRITEBYTECODE=1 \
+  python3 /opt/ywd-hotspot/repo/tools/vocoder-build-staging-smoke.py
 ```
 
-These tests do not transmit RF, install packages, access the Internet, compile software, start the decoder, or replace MMDVMHost. The foundation smoke explicitly proves normal dashboard runtime projection cannot call the expensive exact-runtime helper. The preflight smoke injects synthetic facts and verifies successful and failed-safe job completion, exact-runtime ownership by the background worker, maintenance-lease release, bounded logs, dashboard authorization, and the unprivileged worker sandbox.
+The new staging smoke explicitly pins the exact recovered Pi Zero `web/app.js` Git blob so future vocoder work cannot accidentally re-enter the global dashboard startup path. These source-only tests do not access the Internet, compile mbelib, or modify RF. The real fetch/build/self-test remains a hardware gate on the reference Pi Zero.

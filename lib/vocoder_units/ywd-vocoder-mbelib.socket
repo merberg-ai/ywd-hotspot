@@ -1,0 +1,14 @@
+[Unit]
+Description=YWD-Hotspot managed mbelib vocoder socket
+Documentation=https://github.com/merberg-ai/ywd-hotspot
+
+[Socket]
+ListenStream=/run/ywd-vocoder.sock
+SocketUser=ywd-hotspot
+SocketGroup=ywd-hotspot
+SocketMode=0660
+RemoveOnStop=true
+Service=ywd-vocoder-mbelib.service
+
+[Install]
+WantedBy=sockets.target

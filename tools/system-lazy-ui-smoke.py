@@ -44,11 +44,16 @@ assert "Loading YWD dashboard artwork" in app
 assert "45000" in app and "CONTINUE" in app
 assert "setTimeout(() => closeStartup(true), 12000)" not in app
 
-# Release-only modules are explicit first-party assets and retain their tracked
-# loader. A module failure is observable without changing the base loader.
+# Release-only modules are explicit first-party assets and retain tracked
+# completion without being serialized. The accepted RC4 behavior requests all
+# release extensions immediately so splash accounting cannot slow startup.
 assert "window.__YWD_RELEASE_UI_READY = false" in update
 assert "window.__YWD_RELEASE_UI_PROGRESS" in update
-assert "window.__YWD_RELEASE_UI_READY = ok" in update
+assert "sources.forEach" in update
+assert "progress.loaded += 1" in update
+assert "window.__YWD_RELEASE_UI_READY = progress.failed === 0" in update
+assert "for (const src of sources) ok = (await loadReleaseUi(src))" not in update
+assert "new Promise(resolve" not in update
 assert "/update-branch.js?v=rc3-wire1" in update
 assert "/modem-ui.js?v=rc3-wire1" in update
 assert "/vocoder-manager.js?v=rc4-vocoder-foundation3" in update
@@ -83,6 +88,7 @@ assert 'cache="no-cache"' in core
 
 print("[OK] proven dependency-ordered dashboard loader remains untouched")
 print("[OK] preload, generated bundle, and external readiness interception remain absent")
+print("[OK] RC4 release extensions are tracked without serializing their network startup")
 print("[OK] existing splash waits for base data, dashboard polish, RC4 modules, System cards, and hero artwork")
 print("[OK] slow/broken presentation offers manual CONTINUE instead of auto-closing early")
 print("[OK] MMDVM and vocoder inventory remain lazy off the initial Status page")

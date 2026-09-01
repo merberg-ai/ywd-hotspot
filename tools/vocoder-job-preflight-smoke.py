@@ -76,7 +76,6 @@ with tempfile.TemporaryDirectory(prefix="ywd-vocoder-job-smoke-") as td:
         mc.BOOT_ID = root / "boot-id"
         mc.BOOT_ID.write_text("boot-vocoder-job-smoke\n", encoding="utf-8")
 
-        # Preflight must never wander into the real staged builder.
         build.prepare_candidate = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("preflight invoked builder"))
 
         reserved = mc.reserve_launch("vocoder-reserved", "vocoder-preflight", "ywd-vocoder-job.service")
@@ -121,8 +120,8 @@ admin_src = (LIB / "vocoder_job_admin.py").read_text(encoding="utf-8")
 dashboard_src = (LIB / "dashboard_vocoder_manager.py").read_text(encoding="utf-8")
 dispatch_src = (LIB / "admin_dispatch.sh").read_text(encoding="utf-8")
 sudoers_src = (ROOT / "sudoers/ywd-hotspot").read_text(encoding="utf-8")
-unit_src = (ROOT / "systemd/ywd-vocoder-job.service").read_text(encoding="utf-8")
-ui_src = (ROOT / "web/vocoder-manager.js").read_text(encoding="utf-8")
+unit_src = (ROOT / "systemd" / "ywd-vocoder-job.service").read_text(encoding="utf-8")
+ui_src = (ROOT / "web" / "vocoder-manager.js").read_text(encoding="utf-8")
 
 assert 'operation not in {"preflight", "prepare"}' in runner_src
 assert "runtime = vocoder_manager.verified_runtime()" in runner_src
@@ -135,7 +134,7 @@ assert '"/api/system/vocoder/preflight"' in dashboard_src and "self.require_cont
 assert "vocoder-preflight-start" in dispatch_src and "vocoder-preflight-start" in sudoers_src
 assert "User=ywd-hotspot" in unit_src and "User=root" not in unit_src
 assert "NoNewPrivileges=true" in unit_src and "ProtectSystem=strict" in unit_src
-assert "ReadWritePaths=/var/lib/ywd-hotspot" in unit_src and "SuccessExitStatus=0 3" in unit_src
+assert "ReadWritePaths=/var/lib/ywd-hotspot" in unit_src and "SuccessExitStatus=0 2 3" in unit_src
 assert "CHECK INSTALL READINESS" in ui_src and "/api/system/vocoder/preflight" in ui_src
 assert "launchPending || jobActive || maintenanceActive ? 1500 : 30000" in ui_src
 assert "launchedTerminal" in ui_src

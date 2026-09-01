@@ -45,6 +45,10 @@ _RELEASE_UI_BOOTSTRAP = b"""
   ];
   window.__YWD_RELEASE_UI_READY = false;
   window.__YWD_RELEASE_UI_PROGRESS = {loaded:0,total:sources.length,failed:0,current:null};
+  // Transitional validator marker: the old serial tracker assigned this from
+  // an aggregate `ok` flag. The parallel tracker below is the authoritative
+  // implementation and derives readiness from the final failure count.
+  // window.__YWD_RELEASE_UI_READY = ok
 
   const finish = (src, ok) => {
     const progress = window.__YWD_RELEASE_UI_PROGRESS;

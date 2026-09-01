@@ -21,6 +21,8 @@ Cmnd_Alias YWDHOTSPOT_ADMIN = \
  /usr/local/libexec/ywd-hotspot-admin ssh-keys-export, \
  /usr/local/libexec/ywd-hotspot-admin ssh-client-key-create, \
  /usr/local/libexec/ywd-hotspot-admin vocoder-preflight-start, \
+ /usr/local/libexec/ywd-hotspot-admin vocoder-prepare-start, \
+ /usr/local/libexec/ywd-hotspot-admin vocoder-job-cancel, \
  /usr/local/libexec/ywd-hotspot-admin update-check, \
  /usr/local/libexec/ywd-hotspot-admin update-start, \
  /usr/local/libexec/ywd-hotspot-admin update-branches, \

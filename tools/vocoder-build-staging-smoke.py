@@ -74,17 +74,28 @@ assert '"/api/system/vocoder/prepare"' in dash
 assert '"/api/system/vocoder/cancel"' in dash
 
 # System UI exposes build-only language and the matching cancel surface without
-# moving any of this work into global dashboard startup.
+# moving any of this work into global dashboard startup. Vocoder controls own
+# their disabled state so the dashboard's generic .ctl refresh cannot briefly
+# re-enable them while a managed job/maintenance lease is active.
 assert "PREPARE VOCODER CANDIDATE" in ui
 assert "/api/system/vocoder/prepare" in ui
 assert "/api/system/vocoder/cancel" in ui
 assert "Live MMDVMHost, DMRGateway, vocoder socket and installed backend remain untouched." in ui
 assert "currentJobCancellable" in ui
 assert "CANCEL JOB" in ui
+assert 'class="btn ctl" id="vocoderPreflight"' not in ui
+assert 'class="btn primary ctl" id="vocoderPrepare"' not in ui
+assert 'class="btn ctl" id="vocoderCancel"' not in ui
+assert "controlObserver" in ui and "installControlHook" in ui
+assert "new MutationObserver(() => syncActionState())" in ui
+assert "attributeFilter: ['hidden']" in ui
+assert "check.disabled = !unlocked || blocked" in ui
+assert "prepare.disabled = !unlocked || blocked" in ui
 
 print("[OK] known-good Pi Zero dashboard startup file remains frozen")
 print("[OK] YWD-owned Protocol v1 adapter source is present without bundling mbelib")
 print("[OK] staged builder pins/fetches/builds/caches/self-tests only under YWD state")
 print("[OK] staged prepare worker cannot install packages or modify live RF/backend services")
 print("[OK] prepare/cancel authority is fixed, dashboard-locked, and job-id bounded")
+print("[OK] vocoder job controls cannot be re-enabled by generic dashboard control refresh")
 print("[OK] vocoder System UI exposes staged preparation without entering dashboard startup")

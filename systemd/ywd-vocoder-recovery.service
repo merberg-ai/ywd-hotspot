@@ -1,0 +1,29 @@
+[Unit]
+Description=YWD-Hotspot vocoder transaction recovery
+After=local-fs.target
+Before=ywd-dashboard.service
+ConditionPathExists=/var/lib/ywd-hotspot/private/vocoder-activation-journal.json
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/ywd-hotspot/app/lib/vocoder_activation_runner.py recover
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+ReadWritePaths=/usr/local/libexec /etc/systemd/system /var/lib/ywd-hotspot /var/backups/ywd-hotspot /run
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

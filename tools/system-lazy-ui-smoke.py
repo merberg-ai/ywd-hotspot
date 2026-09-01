@@ -26,7 +26,8 @@ assert "legacy-ui-bundle" not in update
 assert "_LEGACY_UI_COMPONENTS" not in update
 assert "_patch_app_js" not in update
 assert "link.rel = 'preload'" not in update
-assert "startup-readiness.js" not in update
+assert "readiness_js =" not in update
+assert "body += readiness_js" not in update
 
 # The existing splash itself now waits for the already-existing dashboard
 # lifecycle plus the explicit RC4 module tracker and mounted System cards.
@@ -44,16 +45,14 @@ assert "Loading YWD dashboard artwork" in app
 assert "45000" in app and "CONTINUE" in app
 assert "setTimeout(() => closeStartup(true), 12000)" not in app
 
-# Release-only modules are explicit first-party assets and retain tracked
-# completion without being serialized. The accepted RC4 behavior requests all
-# release extensions immediately so splash accounting cannot slow startup.
+# Release-only modules are explicit first-party assets. Completion is tracked,
+# but all sources must be requested immediately rather than awaited one-by-one.
 assert "window.__YWD_RELEASE_UI_READY = false" in update
 assert "window.__YWD_RELEASE_UI_PROGRESS" in update
-assert "sources.forEach" in update
-assert "progress.loaded += 1" in update
 assert "window.__YWD_RELEASE_UI_READY = progress.failed === 0" in update
-assert "for (const src of sources) ok = (await loadReleaseUi(src))" not in update
-assert "new Promise(resolve" not in update
+assert "sources.forEach(src =>" in update
+assert "for (const src of sources)" not in update
+assert "await loadReleaseUi" not in update
 assert "/update-branch.js?v=rc3-wire1" in update
 assert "/modem-ui.js?v=rc3-wire1" in update
 assert "/vocoder-manager.js?v=rc4-vocoder-foundation3" in update
@@ -87,9 +86,9 @@ assert "ThreadingHTTPServer" in core
 assert 'cache="no-cache"' in core
 
 print("[OK] proven dependency-ordered dashboard loader remains untouched")
-print("[OK] preload, generated bundle, and external readiness interception remain absent")
-print("[OK] RC4 release extensions are tracked without serializing their network startup")
+print("[OK] preload, generated bundle, and readiness-script interception remain absent")
 print("[OK] existing splash waits for base data, dashboard polish, RC4 modules, System cards, and hero artwork")
+print("[OK] RC4 release extensions are tracked without serializing their network startup")
 print("[OK] slow/broken presentation offers manual CONTINUE instead of auto-closing early")
 print("[OK] MMDVM and vocoder inventory remain lazy off the initial Status page")
 print("[OK] vocoder readiness action keeps full-job busy feedback")

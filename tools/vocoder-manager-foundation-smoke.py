@@ -135,13 +135,12 @@ modem_ui_src = (ROOT / "web" / "modem-ui.js").read_text(encoding="utf-8")
 
 assert "import vocoder_client" not in manager_src
 assert "vocoder_client.status" not in manager_src
-assert '"mutations_enabled": False' in manager_src  # live install/activation still disabled
 assert "def verified_runtime()" in manager_src
 assert '"persisted-current-pin-identity"' in manager_src
-assert '"/api/system/vocoder/preflight"' in dashboard_src
-assert '"/api/system/vocoder/prepare"' in dashboard_src
-assert '"/api/system/vocoder/cancel"' in dashboard_src
+for endpoint in ("/api/system/vocoder/preflight", "/api/system/vocoder/prepare", "/api/system/vocoder/activate", "/api/system/vocoder/cancel"):
+    assert endpoint in dashboard_src
 assert "self.require_control()" in dashboard_src
+assert "vocoder_prepared.status()" in dashboard_src
 assert "_ACTIVE_CACHE_TTL = 0.75" in dashboard_src
 assert "invalidate_status()" in dashboard_src
 assert "vocoder-manager.js?v=rc4-vocoder-foundation3" in update_src
@@ -150,18 +149,17 @@ assert "DMR AUDIO VOCODER" in ui_src
 assert "REFRESH STATUS" in ui_src
 assert "CHECK INSTALL READINESS" in ui_src
 assert "PREPARE VOCODER CANDIDATE" in ui_src
+assert "ACTIVATE PREPARED CANDIDATE" in ui_src
 assert "CANCEL JOB" in ui_src
 assert "fetch('/api/system/vocoder'" in ui_src
-assert "/api/system/vocoder/preflight" in ui_src
-assert "/api/system/vocoder/prepare" in ui_src
-assert "/api/system/vocoder/cancel" in ui_src
+assert "/api/system/vocoder/activate" in ui_src
 assert "launchedJobId" in ui_src and "launchPending" in ui_src
 assert "launchedTerminal" in ui_src
 assert "currentJobCancellable" in ui_src
-assert "INSTALL VOCODER" not in ui_src
 assert "BUILD YWD EXTENDED" not in ui_src
+assert "apt-get install" not in ui_src
 assert "showButtonBusy" in ui_src
-assert "launchPending || jobActive || maintenanceActive ? 1500 : 30000" in ui_src
+assert "launchPending || jobActive || maintenanceActive ? 1200 : 30000" in ui_src
 assert ".vocoder-state.busy::before" in css_src
 assert "ywdVocoderBadgePulse" in css_src
 assert "@media(max-width:620px)" in css_src
@@ -174,6 +172,6 @@ print("[OK] appliance maintenance lease rejects conflicting live jobs")
 print("[OK] maintenance lease supports idempotent owner updates and stale recovery")
 print("[OK] vocoder manager classifies passive backend/runtime states and dormant socket activation")
 print("[OK] dashboard runtime projection remains lightweight and never wakes the vocoder backend")
-print("[OK] System card exposes guarded preflight + staged prepare + matching safe cancel")
-print("[OK] live install/YWD Extended activation controls remain gated off")
-print("[OK] MODEM / MMDVM remains passive inventory; vocoder preparation owns DMR-audio build workflow")
+print("[OK] System card exposes guarded preflight + staged prepare + transactional vocoder-only activation")
+print("[OK] YWD Extended replacement and package installation remain gated off")
+print("[OK] MODEM / MMDVM remains passive inventory; vocoder workflow owns DMR-audio backend maintenance")

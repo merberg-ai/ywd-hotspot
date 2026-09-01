@@ -16,6 +16,7 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=6
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true

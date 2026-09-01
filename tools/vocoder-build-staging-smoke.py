@@ -43,7 +43,7 @@ assert "h[0] = 'Y'; h[1] = 'V'; h[2] = 'C'; h[3] = 'P'" in adapter
 assert "--self-test" in adapter
 assert "pcm_bytes" in adapter and "3200" not in adapter  # computed from constants
 assert "APPROVED_SOURCE" in builder and "APPROVED_MBELIB_COMMIT" in builder
-assert "git\", \"fetch\", \"--depth\", \"1\", \"origin\", commit" in builder
+assert '"fetch", "--depth", "1", "origin", commit' in builder
 assert "CMAKE_BUILD_TYPE=Release" in builder and '"-j1"' in builder
 assert "vocoder_mbelib_adapter.cpp" in builder
 assert "validate_candidate" in builder and "candidate self-test" in builder

@@ -27,6 +27,7 @@ PY_SOURCES = (
     "lib/dashboard_vocoder_manager.py",
     "lib/maintenance_coordinator.py",
     "lib/vocoder_manager.py",
+    "lib/vocoder_backend_build.py",
     "lib/vocoder_job_admin.py",
     "lib/vocoder_job_runner.py",
     "lib/update_runner.py",
@@ -44,6 +45,7 @@ PY_SOURCES = (
     "tools/system-lazy-ui-smoke.py",
     "tools/vocoder-manager-foundation-smoke.py",
     "tools/vocoder-job-preflight-smoke.py",
+    "tools/vocoder-build-staging-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
     "tools/startup-theme-config-smoke.py",
     "tools/rc4-ui-setup-smoke.py",
@@ -79,6 +81,7 @@ SMOKES = (
     "tools/system-lazy-ui-smoke.py",
     "tools/vocoder-manager-foundation-smoke.py",
     "tools/vocoder-job-preflight-smoke.py",
+    "tools/vocoder-build-staging-smoke.py",
     "tools/settings-backup-tgif-smoke.py",
     "tools/startup-theme-config-smoke.py",
     "tools/rc4-ui-setup-smoke.py",
@@ -140,6 +143,7 @@ def main() -> int:
     print("[OK] Pi Zero lazy System extension startup + no fixed mount race")
     print("[OK] passive vocoder manager + appliance maintenance coordination foundation")
     print("[OK] unprivileged persistent vocoder install-readiness job + bounded transcript")
+    print("[OK] staged/cancellable pinned mbelib vocoder candidate build with frozen dashboard startup")
     print("[OK] encrypted TGIF/BrandMeister backup round trip + redacted preview")
     print("[OK] RC4 HTTP setup/TGIF presentation/default-waterfall policy")
     print("[OK] TGIF routing/UI/status/directory regressions")
